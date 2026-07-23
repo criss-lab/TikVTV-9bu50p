@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@capacitor-community/file-opener": "^8.0.1",
-    "@capacitor-community/http": "^1.4.1",
     "@capacitor-community/native-audio": "^8.0.0",
     "@capacitor-community/sqlite": "^8.1.0",
     "@capacitor/android": "^8.4.2",
