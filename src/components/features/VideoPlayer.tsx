@@ -1,0 +1,354 @@
+
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle, useCallback } from 'react';
+import { Volume2, VolumeX, WifiOff, RefreshCw, PictureInPicture2, Settings2, Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import type { QualityLevel } from '@/types';
+
+export interface VideoPlayerHandle {
+  play:  () => void;
+  pause: () => void;
+}
+
+interface Props {
+  src:           string;
+  isActive:      boolean;
+  shouldLoad:    boolean;
+  channelName:   string;
+  channelLogo?:  string;
+  onError?:      () => void;
+  onReady?:      () => void;
+}
+
+const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
+  ({ src, isActive, shouldLoad, channelName, channelLogo, onError, onReady }, ref) => {
+    const videoRef    = useRef<HTMLVideoElement>(null);
+    const hlsRef      = useRef<unknown>(null);
+    const timerRef    = useRef<ReturnType<typeof setTimeout>>();
+    const readyRef    = useRef(false);
+    const retryCount  = useRef(0);
+
+    const [muted,       setMuted]       = useState(true);
+    const [error,       setError]       = useState(false);
+    const [buffering,   setBuffering]   = useState(false);
+    const [ready,       setReady]       = useState(false);
+    const [pipActive,   setPipActive]   = useState(false);
+    const [qualities,   setQualities]   = useState<QualityLevel[]>([]);
+    const [currentLvl,  setCurrentLvl]  = useState<number>(-1);
+    const [showQuality, setShowQuality] = useState(false);
+
+    const pipSupported = typeof document !== 'undefined' && 'pictureInPictureEnabled' in document;
+
+    useImperativeHandle(ref, () => ({
+      play:  () => videoRef.current?.play().catch(() => {}),
+      pause: () => videoRef.current?.pause(),
+    }));
+
+    // ── HLS init ────────────────────────────────────────────────────────────
+    useEffect(() => {
+      if (!shouldLoad || !src) return;
+
+      const video = videoRef.current;
+      if (!video) return;
+
+      setError(false);
+      setReady(false);
+      setBuffering(true);
+      setQualities([]);
+      setCurrentLvl(-1);
+      readyRef.current = false;
+
+      timerRef.current = setTimeout(() => {
+        if (!readyRef.current) {
+          setError(true);
+          setBuffering(false);
+          onError?.();
+        }
+      }, 14_000);
+
+      const markReady = () => {
+        clearTimeout(timerRef.current);
+        readyRef.current = true;
+        setReady(true);
+        setBuffering(false);
+        retryCount.current = 0;
+        onReady?.();
+        if (isActive) video.play().catch(() => {});
+      };
+
+      const markError = () => {
+        clearTimeout(timerRef.current);
+        setError(true);
+        setBuffering(false);
+        onError?.();
+      };
+
+      const destroyHls = () => {
+        if (hlsRef.current) {
+          (hlsRef.current as { destroy: () => void }).destroy();
+          hlsRef.current = null;
+        }
+      };
+
+      const init = async () => {
+        try {
+          const { default: Hls } = await import('hls.js');
+          destroyHls();
+
+          if (Hls.isSupported()) {
+            const hls = new Hls({
+              enableWorker:           true,
+              lowLatencyMode:         true,
+              maxBufferLength:        12,
+              maxMaxBufferLength:     24,
+              maxBufferSize:          24 * 1000 * 1000,
+              startLevel:             -1,
+              abrEwmaDefaultEstimate: 2_000_000,
+              progressive:            true,
+              // Faster segment load retry
+              manifestLoadingMaxRetry: 1,
+              levelLoadingMaxRetry:    1,
+              fragLoadingMaxRetry:     1,
+            });
+            hlsRef.current = hls;
+
+            hls.loadSource(src);
+            hls.attachMedia(video);
+
+            hls.on(Hls.Events.MANIFEST_PARSED, (_: unknown, data: { levels: {height: number; bitrate: number}[] }) => {
+              // Build quality levels list
+              const lvls: QualityLevel[] = [
+                { level: -1, height: 0, bitrate: 0, label: 'Auto' },
+                ...data.levels.map((l, i) => ({
+                  level:   i,
+                  height:  l.height ? l.height : 0, // Ensure height is number
+                  bitrate: l.bitrate ? l.bitrate : 0, // Ensure bitrate is number
+                  label:   l.height ? `${l.height}p` : `Level ${i + 1}`,
+                })).reverse(),
+              ];
+              setQualities(lvls);
+              markReady();
+            });
+
+            hls.on(Hls.Events.LEVEL_SWITCHED, (_: unknown, data: { level: number }) => {
+              setCurrentLvl(data.level);
+            });
+
+            hls.on(Hls.Events.ERROR, (_: unknown, d: { fatal: boolean; type: string }) => {
+              if (d.fatal) {
+                if (retryCount.current < 1) {
+                  retryCount.current++;
+                  hls.recoverMediaError();
+                } else {
+                  markError();
+                }
+              }
+            });
+          } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = src;
+            video.onloadedmetadata = markReady;
+            video.onerror = markError;
+          } else {
+            markError();
+          }
+        } catch {
+          markError();
+        }
+      };
+
+      init();
+
+      return () => {
+        clearTimeout(timerRef.current);
+        destroyHls();
+        if (video) { video.pause(); video.src = ''; }
+        setReady(false);
+        readyRef.current = false;
+        setBuffering(false);
+      };
+    }, [src, shouldLoad, isActive, onError, onReady]); // Added missing dependencies to `useEffect`
+
+    // ── Play / pause ─────────────────────────────────────────────────────────
+    useEffect(() => {
+      const video = videoRef.current;
+      if (!video || !ready) return;
+      if (isActive) video.play().catch(() => {});
+      else          video.pause();
+    }, [isActive, ready]);
+
+    // ── PiP events ───────────────────────────────────────────────────────────
+    useEffect(() => {
+      const video = videoRef.current;
+      if (!video) return;
+      const onEnter = () => setPipActive(true);
+      const onLeave = () => setPipActive(false);
+      video.addEventListener('enterpictureinpicture', onEnter);
+      video.addEventListener('leavepictureinpicture', onLeave);
+      return () => {
+        video.removeEventListener('enterpictureinpicture', onEnter);
+        video.removeEventListener('leavepictureinpicture', onLeave);
+      };
+    }, []);
+
+    const handlePiP = async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture().catch(() => {});
+      } else {
+        await videoRef.current?.requestPictureInPicture().catch(() => {});
+      }
+    };
+
+    const handleQualityChange = useCallback((level: number) => {
+      const hls = hlsRef.current as { currentLevel: number } | null;
+      if (hls) hls.currentLevel = level;
+      setCurrentLvl(level);
+      setShowQuality(false);
+    }, []);
+
+    const handleRetry = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setError(false);
+      setBuffering(true);
+      setReady(false);
+      readyRef.current = false;
+      retryCount.current = 0;
+      // Reinit by briefly triggering a re-render via error→false
+    };
+
+    const currentQualityLabel = qualities.find(q => q.level === currentLvl)?.label || 'Auto';
+
+    return (
+      <div
+        className="absolute inset-0 bg-black cursor-pointer"
+        onClick={() => { setMuted(m => !m); setShowQuality(false); }}
+      >
+        {/* ── Video element: object-contain keeps original TV aspect ratio ── */}
+        <video
+          ref={videoRef}
+          className="w-full h-full object-contain bg-black"
+          muted={muted}
+          playsInline
+          loop={false}
+          preload="auto"
+        />
+
+        {/* Placeholder while loading */}
+        {!ready && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-900 via-black to-gray-900">
+            {channelLogo ? (
+              <img
+                src={channelLogo}
+                alt={channelName}
+                className="w-28 h-28 object-contain opacity-35"
+                onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            ) : (
+              <div className="w-20 h-20 rounded-2xl bg-white/10 flex items-center justify-center">
+                <span className="text-white text-4xl font-bold">{channelName.charAt(0).toUpperCase()}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Buffering spinner */}
+        {buffering && !error && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="w-12 h-12 rounded-full border-3 border-white/20 border-t-white animate-spin" style={{ borderWidth: 3 }} />
+          </div>
+        )}
+
+        {/* Error overlay */}
+        {error && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none">
+            <div className="bg-black/60 backdrop-blur rounded-2xl p-6 flex flex-col items-center gap-3">
+              <WifiOff className="w-9 h-9 text-white/40" />
+              <p className="text-white/50 text-sm">Stream unavailable</p>
+              <button
+                className="pointer-events-auto flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white text-sm px-4 py-2 rounded-full transition-colors"
+                onClick={handleRetry}
+              >
+                <RefreshCw className="w-4 h-4" />
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Mute indicator */}
+        <div className="absolute top-16 right-4 pointer-events-none">
+          <div className="bg-black/50 backdrop-blur rounded-full p-1.5">
+            {muted
+              ? <VolumeX className="w-4 h-4 text-white/80" />
+              : <Volume2 className="w-4 h-4 text-white/80" />}
+          </div>
+        </div>
+
+        {/* LIVE badge */}
+        {ready && !error && (
+          <div className="absolute top-4 left-4 flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-md">
+            <div className="w-1.5 h-1.5 bg-white rounded-full live-dot" />
+            LIVE
+          </div>
+        )}
+
+        {/* Top-right controls */}
+        {ready && !error && (
+          <div className="absolute top-4 right-4 flex items-center gap-2">
+            {/* Quality selector */}
+            {qualities.length > 1 && (
+              <div className="relative">
+                <button
+                  onClick={e => { e.stopPropagation(); setShowQuality(v => !v); }}
+                  className="flex items-center gap-1 bg-black/50 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1.5 rounded-lg hover:bg-black/70 transition-colors"
+                >
+                  <Settings2 className="w-3 h-3" />
+                  {currentQualityLabel}
+                </button>
+
+                {showQuality && (
+                  <div
+                    className="absolute top-full right-0 mt-1 bg-black/90 backdrop-blur-xl border border-white/15 rounded-xl overflow-hidden min-w-[100px] z-50"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    {qualities.map(q => (
+                      <button
+                        key={q.level}
+                        onClick={() => handleQualityChange(q.level)}
+                        className={cn(
+                          'w-full flex items-center justify-between gap-2 px-3 py-2 text-xs hover:bg-white/10 transition-colors',
+                          q.level === currentLvl ? 'text-primary font-semibold' : 'text-white/80'
+                        )}
+                      >
+                        <span>{q.label}</span>
+                        {q.bitrate > 0 && (
+                          <span className="text-white/30 text-[10px]">{Math.round(q.bitrate / 1000)}k</span>
+                        )}
+                        {q.level === currentLvl && <Check className="w-3 h-3 text-primary" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* PiP button */}
+            {pipSupported && (
+              <button
+                onClick={handlePiP}
+                className={cn(
+                  'w-8 h-8 rounded-full flex items-center justify-center transition-all',
+                  pipActive ? 'bg-primary' : 'bg-black/50 hover:bg-black/70 backdrop-blur-sm'
+                )}
+              >
+                <PictureInPicture2 className="w-4 h-4 text-white" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+);
+
+VideoPlayer.displayName = 'VideoPlayer';
+export default VideoPlayer;
