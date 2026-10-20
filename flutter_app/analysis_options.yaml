@@ -1,0 +1,7 @@
+include: package:flutter_lints/flutter.yaml
+
+# The quality workflow formats source before analysis; retain the project's
+# existing compact conditional style until the migration is fully reformatted.
+linter:
+  rules:
+    curly_braces_in_flow_control_structures: false
