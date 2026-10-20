@@ -12,8 +12,8 @@ import AuthModal from '@/components/features/AuthModal';
 import { useT } from '@/lib/i18n';
 import type { IPTVChannel, AuthUser } from '@/types';
 
-// Match the main feed: active channel plus one neighbour on each side.
-const PRELOAD_RADIUS = 1;
+// Only the focused saved channel may initialise playback.
+const PRELOAD_RADIUS = 0;
 
 export default function Favorites() {
   const { user }                      = useAuthStore();
@@ -30,23 +30,38 @@ export default function Favorites() {
     .map(f => f.channel_data)
     .filter(ch => !deadIds.has(ch.id));
 
+  // Track the card nearest the viewport center; don't let an old card retain focus
+  // just because an IntersectionObserver batch only reported a different card.
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || channels.length === 0) return;
-    observerRef.current?.disconnect();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // A single dominant visible card owns playback during fast vertical swipes.
-        const best = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-        if (best && best.intersectionRatio >= 0.55) {
-          setActiveIndex(parseInt(best.target.getAttribute('data-index') || '0', 10));
-        }
-      },
-      { threshold: [0.25, 0.55, 0.8], root: container }
-    );
-    container.querySelectorAll('[data-index]').forEach(c => observer.observe(c));
-    observerRef.current = observer;
-    return () => observer.disconnect();
+    if (!container) return;
+    let frame = 0;
+    const updateFocusedChannel = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const viewport = container.getBoundingClientRect();
+        const center = viewport.top + viewport.height / 2;
+        let bestIndex = -1;
+        let bestDistance = Number.POSITIVE_INFINITY;
+        container.querySelectorAll<HTMLElement>('[data-index]').forEach(card => {
+          const rect = card.getBoundingClientRect();
+          const visibleHeight = Math.max(0, Math.min(rect.bottom, viewport.bottom) - Math.max(rect.top, viewport.top));
+          if (visibleHeight <= 0) return;
+          const distance = Math.abs((rect.top + rect.bottom) / 2 - center);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestIndex = Number.parseInt(card.dataset.index || '-1', 10);
+          }
+        });
+        if (bestIndex >= 0) setActiveIndex(previous => previous === bestIndex ? previous : bestIndex);
+      });
+    };
+    container.addEventListener('scroll', updateFocusedChannel, { passive: true });
+    updateFocusedChannel();
+    return () => {
+      container.removeEventListener('scroll', updateFocusedChannel);
+      cancelAnimationFrame(frame);
+    };
   }, [channels.length]);
 
   const handleDead = useCallback((id: string) =>
@@ -152,7 +167,7 @@ export default function Favorites() {
             key={channel.id}
             channel={channel}
             isActive={index === activeIndex}
-            shouldLoad={Math.abs(index - activeIndex) <= PRELOAD_RADIUS}
+            shouldLoad={index === activeIndex && Math.abs(index - activeIndex) <= PRELOAD_RADIUS}
             index={index}
             user={user}
             onAuthRequired={() => setShowAuth(true)}
