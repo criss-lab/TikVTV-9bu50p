@@ -1,9 +1,6 @@
 name: Cloudflare Pages preview
 on:
   workflow_dispatch:
-  push:
-    branches: [feature/pesapal-premium-integration]
-    paths: ['src/**', 'public/**', 'package*.json', 'vite.config.ts', '.github/workflows/cloudflare-pages.yml']
 permissions:
   contents: read
   deployments: write
