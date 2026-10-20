@@ -156,6 +156,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           if (Hls.isSupported()) {
             const hls = new Hls({
               enableWorker:           true,
+              // Keep inactive neighbours from downloading media segments. Start network loading only for the visible player.
+              autoStartLoad:           false,
               // Prefer a healthy forward buffer over ultra-low latency to reduce stalls.
               lowLatencyMode:         false,
               maxBufferLength:        30,
@@ -190,6 +192,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
                 })).reverse(),
               ];
               setQualities(lvls);
+              if (activeRef.current) hls.startLoad();
+              else hls.stopLoad();
               tryStartPlayback();
               // A parsed playlist alone does not mean media segments are playable.
             });
@@ -254,14 +258,28 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     // ── Play / pause ─────────────────────────────────────────────────────────
     useEffect(() => {
       const video = videoRef.current;
-      if (!video || !ready) return;
+      if (!video) return;
+      const hls = hlsRef.current as { startLoad?: () => void; stopLoad?: () => void } | null;
       if (isActive && shouldLoad) {
-        // The init effect starts playback once the forward buffer is ready.
-        // This effect remains the fast path when the player is already buffered.
-        const ahead = video.buffered.length ? video.buffered.end(video.buffered.length - 1) - video.currentTime : 0;
-        if (ahead >= 15 || startupFallbackRef.current) video.play().catch(() => {});
+        // Only the visible card downloads segments and plays. Neighbours stay lightweight until selected.
+        try { hls?.startLoad?.(); } catch { /* player may still be initializing */ }
+        if (ready) {
+          let ahead = 0;
+          for (let i = 0; i < video.buffered.length; i++) {
+            if (video.currentTime >= video.buffered.start(i) - 0.25 && video.currentTime <= video.buffered.end(i)) {
+              ahead = video.buffered.end(i) - video.currentTime;
+              break;
+            }
+          }
+          if (ahead >= 15 || startupFallbackRef.current) video.play().catch(() => {});
+        }
+      } else {
+        // Stop playback immediately on vertical scroll and release the inactive stream's network load.
+        video.pause();
+        try { hls?.stopLoad?.(); } catch { /* HLS may already be destroyed */ }
+        setBuffering(false);
+        clearTimeout(recoveryRef.current);
       }
-      else { video.pause(); setBuffering(false); }
     }, [isActive, ready, shouldLoad]);
 
     // ── PiP events ───────────────────────────────────────────────────────────
