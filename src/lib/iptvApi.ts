@@ -1,5 +1,6 @@
 import type { IPTVChannel, ChannelPage } from '@/types';
 import { PAGE_SIZE } from '@/constants/categories';
+import { prioritizeStreams } from '@/lib/streamHealth';
 
 // ── Primary JSON API ──────────────────────────────────────────────────────────
 const CHANNELS_API = 'https://iptv-org.github.io/api/channels.json';
@@ -407,6 +408,7 @@ export function getChannelPage(channels: IPTVChannel[], category: string, page: 
   if (countryCode) {
     filtered = filtered.filter(ch => ch.countryCode.toLowerCase() === countryCode.toLowerCase());
   }
+  filtered = prioritizeStreams(filtered);
   const start = (page - 1) * PAGE_SIZE;
   return { items: filtered.slice(start, start + PAGE_SIZE), hasMore: start + PAGE_SIZE < filtered.length, total: filtered.length };
 }
