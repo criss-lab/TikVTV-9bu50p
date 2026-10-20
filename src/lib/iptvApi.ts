@@ -1,5 +1,6 @@
 import type { IPTVChannel, ChannelPage } from '@/types';
-import { PAGE_SIZE } from '@/constants/categories';
+// Fetch catalogue entries in groups of three; only the active viewing window opens HLS connections.
+const PAGE_SIZE = 3;
 import { prioritizeStreams } from '@/lib/streamHealth';
 
 // ── Primary JSON API ──────────────────────────────────────────────────────────
