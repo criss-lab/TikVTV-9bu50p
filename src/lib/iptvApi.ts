@@ -401,6 +401,7 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
         console.warn('[IPTV] Enriched cache write failed:', e);
       }
       console.log(`[IPTV] Background enrichment added ${deduped.length} channels`);
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('iptv-channels-updated'));
     });
     return initial;
   } catch (err) {
