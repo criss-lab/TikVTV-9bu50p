@@ -113,10 +113,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         if (ahead >= 15 || startupFallbackRef.current) video.play().catch(() => {});
       };
 
-      startupTimerRef.current = setTimeout(() => {
-        startupFallbackRef.current = true;
-        tryStartPlayback();
-      }, 8000);
+      // Do not let an inactive neighbour's timer bypass the forward-buffer target when it is selected later.
+      if (activeRef.current && document.visibilityState !== 'hidden') {
+        startupTimerRef.current = setTimeout(() => {
+          startupFallbackRef.current = true;
+          tryStartPlayback();
+        }, 8000);
+      }
       const markError = () => {
         if (disposed) return;
         clearTimeout(timerRef.current);
