@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Heart, MessageCircle, Share2, Bookmark, Globe, PictureInPicture2, Loader2, Wifi } from 'lucide-react';
+import { ArrowLeft, Heart, MessageCircle, Share2, Bookmark, Globe, Loader2, Wifi } from 'lucide-react';
 import { fetchAllChannels, getChannelById } from '@/lib/iptvApi';
 import { getCountryFlag, categoryColor, cn, formatCount, timeAgo } from '@/lib/utils';
 import { useReactions } from '@/hooks/useReactions';
@@ -8,6 +8,7 @@ import { useFavorites } from '@/hooks/useFavorites';
 import { useComments } from '@/hooks/useComments';
 import { useAuthStore } from '@/stores/authStore';
 import AuthModal from '@/components/features/AuthModal';
+import VideoPlayer from '@/components/features/VideoPlayer';
 import type { IPTVChannel } from '@/types';
 import { toast } from 'sonner';
 import { useViewingAccess } from '@/hooks/useViewingAccess';
@@ -21,13 +22,6 @@ export default function ChannelDetail() {
   const [showAuth, setShowAuth] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [sending, setSending] = useState(false);
-  const videoRef           = useRef<HTMLVideoElement>(null);
-  const hlsRef             = useRef<unknown>(null);
-  const [videoReady, setVideoReady] = useState(false);
-  const [videoError, setVideoError] = useState(false);
-  const [muted, setMuted]  = useState(false);
-  const [pipActive, setPipActive] = useState(false);
-  const [retryKey, setRetryKey] = useState(0);
   const { allowed, active, remainingMs, loading: accessLoading } = useViewingAccess();
 
   const { liked, likeCount, toggleLike }     = useReactions(id || '', user?.id);
@@ -48,55 +42,7 @@ export default function ChannelDetail() {
 
   useEffect(() => {
     if (channel) fetchComments();
-    if (channel && allowed && !accessLoading) void initVideo(channel.streamUrl);
-    return () => destroyHls();
-  }, [channel, retryKey, allowed, accessLoading]);
-
-  const initVideo = async (src: string) => {
-    const video = videoRef.current;
-    if (!video || !src) return;
-    setVideoReady(false);
-    setVideoError(false);
-    const { default: Hls } = await import('hls.js').catch(() => ({ default: null }));
-    if (!Hls) { setVideoError(true); return; }
-    if ((Hls as { isSupported: () => boolean }).isSupported()) {
-      const hls = new (Hls as new (o: object) => {
-        loadSource: (s: string) => void;
-        attachMedia: (v: HTMLVideoElement) => void;
-        on: (e: string, cb: unknown) => void;
-        destroy: () => void;
-      })({ enableWorker: false, maxBufferLength: 20, startLevel: -1 });
-      hlsRef.current = hls;
-      hls.loadSource(src);
-      hls.attachMedia(video);
-      hls.on('hlsManifestParsed', () => { setVideoReady(true); video.play().catch(() => {}); });
-      hls.on('hlsError', (_: unknown, d: { fatal: boolean }) => { if (d.fatal) setVideoError(true); });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = src;
-      video.onloadedmetadata = () => { setVideoReady(true); video.play().catch(() => {}); };
-      video.onerror = () => setVideoError(true);
-    } else { setVideoError(true); }
-  };
-
-  const destroyHls = () => {
-    if (hlsRef.current) {
-      (hlsRef.current as { destroy: () => void }).destroy();
-      hlsRef.current = null;
-    }
-    if (videoRef.current) { videoRef.current.pause(); videoRef.current.removeAttribute('src'); videoRef.current.load(); }
-  };
-
-  const handlePiP = async () => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (document.pictureInPictureElement) {
-      await document.exitPictureInPicture().catch(() => {});
-      setPipActive(false);
-    } else {
-      await video.requestPictureInPicture().catch(() => toast.error('PiP not supported'));
-      setPipActive(true);
-    }
-  };
+  }, [channel, fetchComments]);
 
   const handleShare = async () => {
     const text = `Watching ${channel?.name} live on TikVTV!`;
@@ -156,64 +102,24 @@ export default function ChannelDetail() {
         <h1 className="text-white font-semibold text-sm truncate pointer-events-auto max-w-[60vw]">{channel.name}</h1>
       </div>
 
-      {/* Video */}
+      {/* Shared IPTV player: same adaptive buffering and recovery as vertical feed */}
       <div
-        className="relative bg-black cursor-pointer"
+        className="relative bg-black overflow-hidden"
         style={{ height: '56vw', maxHeight: 380, minHeight: 200 }}
-        onClick={() => setMuted(m => !m)}
       >
-        <video
-          ref={videoRef}
-          className="w-full h-full object-cover"
-          muted={muted}
-          playsInline
-          controls
+        <VideoPlayer
+          src={channel.streamUrl}
+          isActive={true}
+          shouldLoad={allowed && !accessLoading}
+          channelName={channel.name}
+          channelLogo={channel.logo}
         />
         {!accessLoading && !allowed && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/95 px-6 text-center text-white">
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/95 px-6 text-center text-white">
             <h2 className="text-xl font-bold">Channel Locked</h2>
             <p className="text-sm text-white/70">15-minute free preview ended</p>
-            <button type="button" className="rounded-xl bg-primary px-5 py-3 font-bold" onClick={e => { e.stopPropagation(); navigate('/premium'); }}>Unlock Premium</button>
+            <button type="button" className="rounded-xl bg-primary px-5 py-3 font-bold" onClick={() => navigate('/premium')}>Unlock Premium</button>
           </div>
-        )}
-        {!videoReady && !videoError && allowed && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-900 to-black">
-            {channel.logo ? (
-              <img src={channel.logo} alt={channel.name} className="w-24 h-24 object-contain opacity-40" />
-            ) : (
-              <div className="w-20 h-20 rounded-full bg-white/10 flex items-center justify-center">
-                <span className="text-white text-4xl font-bold">{channel.name.charAt(0)}</span>
-              </div>
-            )}
-            <div className="absolute w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
-          </div>
-        )}
-        {videoError && allowed && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
-            <div className="flex flex-col items-center gap-2">
-              <Wifi className="w-10 h-10 text-white/20" />
-              <p className="text-white/40 text-sm">Stream unavailable</p>
-              <button type="button" onClick={() => setRetryKey(key => key + 1)} className="mt-2 rounded-full bg-white px-5 py-2 text-sm font-semibold text-black">Retry stream</button>
-            </div>
-          </div>
-        )}
-        {videoReady && allowed && (
-          <div className="absolute top-12 left-3 flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded">
-            <div className="w-1.5 h-1.5 bg-white rounded-full live-dot" />
-            LIVE
-          </div>
-        )}
-        {/* PiP button */}
-        {videoReady && allowed && 'pictureInPictureEnabled' in document && (
-          <button
-            onClick={e => { e.stopPropagation(); handlePiP(); }}
-            className={cn(
-              'absolute bottom-3 right-3 w-9 h-9 rounded-full flex items-center justify-center transition-colors',
-              pipActive ? 'bg-primary' : 'bg-black/50 backdrop-blur hover:bg-black/70'
-            )}
-          >
-            <PictureInPicture2 className="w-4 h-4 text-white" />
-          </button>
         )}
       </div>
 
