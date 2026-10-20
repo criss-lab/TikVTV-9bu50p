@@ -26,6 +26,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     const timerRef    = useRef<ReturnType<typeof setTimeout>>();
     const readyRef    = useRef(false);
     const retryCount  = useRef(0);
+    const activeRef = useRef(isActive);
+    activeRef.current = isActive;
+    const [retryKey, setRetryKey] = useState(0);
 
     const [muted,       setMuted]       = useState(true);
     const [error,       setError]       = useState(false);
@@ -57,6 +60,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       setCurrentLvl(-1);
       readyRef.current = false;
 
+      retryCount.current = 0;
       timerRef.current = setTimeout(() => {
         if (!readyRef.current) {
           setError(true);
@@ -66,16 +70,20 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       }, 14_000);
 
       const markReady = () => {
+        if (disposed) return;
+        if (readyRef.current) return;
         clearTimeout(timerRef.current);
         readyRef.current = true;
         setReady(true);
         setBuffering(false);
         retryCount.current = 0;
         onReady?.();
-        if (isActive) video.play().catch(() => {});
+        if (activeRef.current) video.play().catch(() => {});
       };
 
+      let disposed = false;
       const markError = () => {
+        if (disposed) return;
         clearTimeout(timerRef.current);
         setError(true);
         setBuffering(false);
@@ -89,9 +97,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         }
       };
 
+      video.addEventListener('playing', markReady);
+      video.addEventListener('loadeddata', markReady);
+
       const init = async () => {
         try {
           const { default: Hls } = await import('hls.js');
+          if (disposed) return;
           destroyHls();
 
           if (Hls.isSupported()) {
@@ -126,7 +138,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
                 })).reverse(),
               ];
               setQualities(lvls);
-              markReady();
+              if (activeRef.current) video.play().catch(() => {});
+              // A parsed playlist alone does not mean media segments are playable.
             });
 
             hls.on(Hls.Events.LEVEL_SWITCHED, (_: unknown, data: { level: number }) => {
@@ -135,7 +148,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
 
             hls.on(Hls.Events.ERROR, (_: unknown, d: { fatal: boolean; type: string }) => {
               if (d.fatal) {
-                if (retryCount.current < 1) {
+                if (retryCount.current < 2 && d.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                  retryCount.current++;
+                  hls.startLoad();
+                } else if (retryCount.current < 2 && d.type === Hls.ErrorTypes.MEDIA_ERROR) {
                   retryCount.current++;
                   hls.recoverMediaError();
                 } else {
@@ -145,7 +161,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             });
           } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = src;
-            video.onloadedmetadata = markReady;
             video.onerror = markError;
           } else {
             markError();
@@ -158,14 +173,16 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       init();
 
       return () => {
+        disposed = true;
         clearTimeout(timerRef.current);
+        video.removeEventListener('playing', markReady);
+        video.removeEventListener('loadeddata', markReady);
+        video.onerror = null;
         destroyHls();
-        if (video) { video.pause(); video.src = ''; }
-        setReady(false);
+        if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
         readyRef.current = false;
-        setBuffering(false);
       };
-    }, [src, shouldLoad, isActive, onError, onReady]); // Added missing dependencies to `useEffect`
+    }, [src, shouldLoad, retryKey, onError, onReady]);
 
     // ── Play / pause ─────────────────────────────────────────────────────────
     useEffect(() => {
@@ -212,7 +229,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       setReady(false);
       readyRef.current = false;
       retryCount.current = 0;
-      // Reinit by briefly triggering a re-render via error→false
+      setRetryKey(key => key + 1);
     };
 
     const currentQualityLabel = qualities.find(q => q.level === currentLvl)?.label || 'Auto';

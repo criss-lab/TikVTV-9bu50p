@@ -22,7 +22,7 @@ export default function BottomNav() {
   const visibleTabs = tabs.slice(0, 7);
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/95 backdrop-blur-xl border-t border-white/8">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 glass-panel border-x-0 border-b-0 shadow-[0_-12px_36px_rgba(0,0,0,0.35)]">
       {/* AI suggestion strip - shown when history exists on home */}
       {history.length > 3 && location.pathname === '/' && (
         <AiSuggestionStrip />
@@ -38,14 +38,16 @@ export default function BottomNav() {
             <button
               key={tab.id}
               onClick={() => navigate(tab.path)}
+              aria-label={tab.label}
+              aria-current={isActive ? 'page' : undefined}
               className={cn(
                 'relative flex flex-col items-center justify-center gap-0.5 py-2 px-2 rounded-xl transition-all duration-200 flex-1',
-                isActive ? 'scale-105' : 'opacity-55 hover:opacity-75'
+                isActive ? 'text-white' : 'opacity-65 hover:opacity-100'
               )}
             >
               {/* Active background glow */}
               {isActive && (
-                <div className="absolute inset-0 bg-primary/10 rounded-xl border border-primary/20" />
+                <div className="absolute inset-0 bg-gradient-to-b from-primary/20 to-primary/5 rounded-xl border border-primary/25" />
               )}
 
               {/* AI badge on Explore */}
