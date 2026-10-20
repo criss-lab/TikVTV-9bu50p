@@ -1,0 +1,48 @@
+name: Flutter Web build and preview
+on:
+  push:
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/flutter-web.yml'
+  pull_request:
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/flutter-web.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  deployments: write
+jobs:
+  flutter-web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter create . --platforms=web --project-name tikvtv
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build web --release
+      - name: Configure SPA navigation
+        run: |
+          printf '/* /index.html 200\n' > build/web/_redirects
+          test -f build/web/index.html
+          test -f build/web/flutter_bootstrap.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tikvtv-flutter-web
+          path: flutter_app/build/web/
+      - name: Deploy Flutter Web preview (never production)
+        if: github.event_name == 'workflow_dispatch'
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy flutter_app/build/web --project-name=${{ vars.CLOUDFLARE_PROJECT_NAME }} --branch=flutter-migration-preview
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
