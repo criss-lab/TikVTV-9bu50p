@@ -103,6 +103,8 @@ export default function Feed() {
     };
   }, [liveChannels, hasMore, loadMore, addToHistory]);
 
+  const handleAuthRequired = useCallback(() => setShowAuth(true), []);
+
   const handleCategoryChange = useCallback((id: string) => {
     setCategory(id);
     setActiveIndex(0);
@@ -182,7 +184,7 @@ export default function Feed() {
             shouldLoad={allowed && !accessLoading && index === activeIndex && Math.abs(index - activeIndex) <= PRELOAD_RADIUS}
             index={index}
             user={user}
-            onAuthRequired={() => setShowAuth(true)}
+            onAuthRequired={handleAuthRequired}
             onChannelDead={handleChannelDead}
             onChannelReady={handleChannelReady}
           />
