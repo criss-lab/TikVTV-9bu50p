@@ -43,9 +43,10 @@ export default function Feed() {
   const liveChannels = useMemo(() => channels.filter(ch => !deadIds.has(ch.id)), [channels, deadIds]);
   const liveCount    = liveIds.size;
 
-  // Cards have a fixed 100dvh snap height. Derive focus from the scroller's own
-  // scroll offset instead of visibility batches/viewport geometry, which can drift
-  // on mobile when the category/header/nav consume part of the screen.
+  // Determine focus from the actual card geometry inside the feed viewport.
+  // Do not infer it from scrollTop / 100dvh: the scroll viewport is shorter than
+  // a card (header, category strip and bottom navigation take space), and mobile
+  // viewport units can change while the browser chrome expands/collapses.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -56,20 +57,39 @@ export default function Feed() {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const cards = Array.from(container.querySelectorAll<HTMLElement>('[data-index]'));
-        if (cards.length === 0) return;
-        const cardHeight = cards[0].getBoundingClientRect().height;
-        if (!Number.isFinite(cardHeight) || cardHeight <= 0) return;
+        if (cards.length === 0 || liveChannels.length === 0) return;
 
-        const rawIndex = Math.round(container.scrollTop / cardHeight);
-        const idx = Math.max(0, Math.min(rawIndex, liveChannels.length - 1));
-        setActiveIndex(previous => previous === idx ? previous : idx);
+        const viewport = container.getBoundingClientRect();
+        const viewportCenter = viewport.top + viewport.height / 2;
+        let focusedIndex = -1;
+        let closestDistance = Number.POSITIVE_INFINITY;
 
-        const channel = liveChannels[idx];
+        for (const card of cards) {
+          const rect = card.getBoundingClientRect();
+          const visibleHeight = Math.max(
+            0,
+            Math.min(rect.bottom, viewport.bottom) - Math.max(rect.top, viewport.top),
+          );
+          if (visibleHeight <= 0) continue;
+
+          const index = Number.parseInt(card.dataset.index || '-1', 10);
+          if (index < 0 || index >= liveChannels.length) continue;
+          const distance = Math.abs((rect.top + rect.bottom) / 2 - viewportCenter);
+          if (distance < closestDistance) {
+            closestDistance = distance;
+            focusedIndex = index;
+          }
+        }
+
+        if (focusedIndex < 0) return;
+        setActiveIndex(previous => previous === focusedIndex ? previous : focusedIndex);
+
+        const channel = liveChannels[focusedIndex];
         if (channel && channel.id !== lastRecordedId) {
           lastRecordedId = channel.id;
           addToHistory(channel);
         }
-        if (idx >= liveChannels.length - 5 && hasMore) loadMore();
+        if (focusedIndex >= liveChannels.length - 5 && hasMore) loadMore();
       });
     };
 
