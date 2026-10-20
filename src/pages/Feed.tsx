@@ -43,6 +43,32 @@ export default function Feed() {
   const liveChannels = useMemo(() => channels.filter(ch => !deadIds.has(ch.id)), [channels, deadIds]);
   const liveCount    = liveIds.size;
 
+  // Warm the next channel's DNS/TLS connection without downloading its manifest or segments.
+  // This gives the next swipe a head start without making a second decoder compete for bandwidth.
+  useEffect(() => {
+    const nextChannel = liveChannels[activeIndex + 1];
+    if (!nextChannel?.streamUrl || typeof document === 'undefined') return;
+
+    let origin = '';
+    try {
+      origin = new URL(nextChannel.streamUrl).origin;
+    } catch {
+      return;
+    }
+    if (!origin || origin === window.location.origin) return;
+
+    const link = document.createElement('link');
+    link.rel = 'preconnect';
+    link.href = origin;
+    link.crossOrigin = 'anonymous';
+    link.setAttribute('data-tikvtv-preconnect', 'next-channel');
+    document.head.appendChild(link);
+
+    return () => {
+      link.remove();
+    };
+  }, [activeIndex, liveChannels]);
+
   // Determine focus from the actual card geometry inside the feed viewport.
   // Do not infer it from scrollTop / 100dvh: the scroll viewport is shorter than
   // a card (header, category strip and bottom navigation take space), and mobile
