@@ -9,3 +9,5 @@ Run from this directory after installing Flutter: `flutter pub get && flutter ru
 Not yet migrated: Supabase auth, reactions, comments, favourites, premium/payments, clips, EPG, country explorer, history, casting, and full existing UI. Not every upstream source is guaranteed playable; provider availability, DRM, platform codecs and geo/CORS restrictions remain external constraints.
 
 Migration increment: persistent offline catalogue cache, refresh action, app background pause/resume, serialized player disposal, and runtime fallback when an already-started stream errors. These changes still require Flutter SDK analysis, compilation and device tests.
+
+Next migration increment: local favorites and recently watched channel navigation (not yet Supabase-synced); automated Flutter analysis, unit tests, and debug APK workflow. Existing React/Capacitor workflows remain available. CI results must be checked before claiming the APK builds.

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'src/catalogue.dart';
 import 'src/playback.dart';
+import 'src/library.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -10,6 +11,7 @@ void main() {
 
 final catalogue = ChannelCatalogue();
 final playback = SharedPlayback();
+final library = ChannelLibrary();
 
 class TikVTV extends StatelessWidget {
   const TikVTV({super.key});
@@ -29,11 +31,14 @@ class ChannelHome extends StatefulWidget {
 
 class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   String query = '';
+  int tab = 0;
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     catalogue.load();
+    library.load();
+    library.addListener(refresh);
     catalogue.addListener(refresh);
   }
   void refresh() { if (mounted) setState(() {}); }
@@ -45,15 +50,22 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     catalogue.removeListener(refresh);
+    library.removeListener(refresh);
     super.dispose();
   }
   @override
   Widget build(BuildContext context) {
     final channels = catalogue.channels.where((c) =>
+      (tab == 0 || (tab == 1 ? library.isFavorite(c.id) : library.wasWatched(c.id))) &&
       c.name.toLowerCase().contains(query.toLowerCase())).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('TikVTV Live'), actions: [
         IconButton(tooltip: 'Refresh catalogue', onPressed: () => catalogue.load(force: true), icon: const Icon(Icons.refresh)),
+      ]),
+      bottomNavigationBar: NavigationBar(selectedIndex: tab, onDestinationSelected: (value) => setState(() => tab = value), destinations: const [
+        NavigationDestination(icon: Icon(Icons.live_tv), label: 'Channels'),
+        NavigationDestination(icon: Icon(Icons.favorite), label: 'Favorites'),
+        NavigationDestination(icon: Icon(Icons.history), label: 'History'),
       ]),
       body: Column(children: [
         Padding(padding: const EdgeInsets.all(12), child: TextField(
@@ -72,6 +84,11 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
                 Image.network(channel.logo, width: 48, errorBuilder: (_, __, ___) => const Icon(Icons.live_tv)),
               title: Text(channel.name),
               subtitle: Text(channel.country),
+              trailing: IconButton(
+                tooltip: library.isFavorite(channel.id) ? 'Remove favorite' : 'Add favorite',
+                icon: Icon(library.isFavorite(channel.id) ? Icons.favorite : Icons.favorite_border),
+                onPressed: () => library.toggleFavorite(channel.id),
+              ),
               onTap: () => Navigator.push(context, MaterialPageRoute(
                 builder: (_) => ChannelScreen(channel: channel))),
             );
@@ -94,12 +111,15 @@ class _ChannelScreenState extends State<ChannelScreen> {
   void initState() {
     super.initState();
     playback.addListener(refresh);
+    library.addListener(refresh);
+    library.recordWatch(widget.channel.id);
     playback.open(widget.channel);
   }
   void refresh() { if (mounted) setState(() {}); }
   @override
   void dispose() {
     playback.removeListener(refresh);
+    library.removeListener(refresh);
     playback.stopIfCurrent(widget.channel.id);
     super.dispose();
   }
@@ -108,7 +128,10 @@ class _ChannelScreenState extends State<ChannelScreen> {
     final controller = playback.controller;
     final selected = playback.channel?.id == widget.channel.id;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.channel.name)),
+      appBar: AppBar(title: Text(widget.channel.name), actions: [
+        IconButton(tooltip: 'Favorite', onPressed: () => library.toggleFavorite(widget.channel.id),
+          icon: Icon(library.isFavorite(widget.channel.id) ? Icons.favorite : Icons.favorite_border)),
+      ]),
       body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         AspectRatio(aspectRatio: 16 / 9, child: ColoredBox(color: Colors.black,
           child: selected && controller != null && controller.value.isInitialized
