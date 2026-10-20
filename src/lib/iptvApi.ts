@@ -439,9 +439,13 @@ async function loadAllChannels(): Promise<IPTVChannel[]> {
     const rawStreams:  RawStream[]  = await streamRes.json();
 
     console.log(`[IPTV] Primary: ${rawChannels.length} channels, ${rawStreams.length} streams`);
-    const streamMap = new Map<string, string>();
-    for (const s of rawStreams) {
-      if (s.channel && isValidStreamUrl(s.url) && !streamMap.has(s.channel)) streamMap.set(s.channel, s.url.trim());
+    const streamMap = new Map<string, string[]>();
+    for (const stream of rawStreams) {
+      if (!stream.channel || !isValidStreamUrl(stream.url)) continue;
+      const urls = streamMap.get(stream.channel) || [];
+      const url = stream.url.trim();
+      if (!urls.includes(url)) urls.push(url);
+      streamMap.set(stream.channel, urls);
     }
 
     const primary: IPTVChannel[] = rawChannels
@@ -454,7 +458,8 @@ async function loadAllChannels(): Promise<IPTVChannel[]> {
         countryCode: ch.country || 'INT',
         languages:   ch.languages || [],
         categories:  ch.categories?.length ? ch.categories : ['general'],
-        streamUrl:   streamMap.get(ch.id)!,
+        streamUrl:   streamMap.get(ch.id)![0],
+        alternativeStreamUrls: streamMap.get(ch.id)!.slice(1),
         alt_names:   ch.alt_names || [],
         website:     ch.website,
         network:     ch.network,
