@@ -90,3 +90,28 @@ export interface AppNotification {
 }
 
 export type Language = 'en' | 'fr' | 'es' | 'ar' | 'zh';
+
+// Shared feature contracts used by clips, EPG, sleep timer and theme state.
+export type Theme = 'dark' | 'light';
+export interface SleepTimerState {
+  active: boolean;
+  minutes: number;
+  endsAt: number | null;
+}
+export interface EPGProgram {
+  title: string;
+  start: string;
+  stop: string;
+  desc?: string;
+  category?: string;
+}
+export interface ChannelClip {
+  id: string;
+  channel_id: string;
+  storage_path: string;
+  public_url: string;
+  duration_secs: number;
+  recorded_by: string;
+  expires_at: string;
+  created_at: string;
+}

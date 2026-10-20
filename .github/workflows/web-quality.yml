@@ -1,0 +1,33 @@
+name: Web quality gate
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, polish/foundation-and-security, feature/pesapal-premium-integration]
+    paths: ['src/**', 'public/**', 'package*.json', 'tsconfig*.json', 'vite.config.ts', '.github/workflows/web-quality.yml']
+  pull_request:
+    paths: ['src/**', 'public/**', 'package*.json', 'tsconfig*.json', 'vite.config.ts', '.github/workflows/web-quality.yml']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.app.json
+      - name: Build for Cloudflare Pages
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          test -n "$VITE_SUPABASE_URL" || { echo "Missing VITE_SUPABASE_URL"; exit 1; }
+          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Missing VITE_SUPABASE_ANON_KEY"; exit 1; }
+          npm run build
+          test -f dist/index.html
+          grep -Fx '/* /index.html 200' dist/_redirects
