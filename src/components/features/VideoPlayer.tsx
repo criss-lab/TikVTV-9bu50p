@@ -24,6 +24,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     const videoRef    = useRef<HTMLVideoElement>(null);
     const hlsRef      = useRef<unknown>(null);
     const timerRef    = useRef<ReturnType<typeof setTimeout>>();
+    const preloadTimerRef = useRef<ReturnType<typeof setTimeout>>();
     const readyRef    = useRef(false);
     const retryCount  = useRef(0);
     const activeRef = useRef(isActive);
@@ -72,7 +73,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           setBuffering(false);
           onError?.();
         }
-      }, 18_000);
+      }, 15_000);
 
       const markReady = () => {
         if (disposed) return;
@@ -137,6 +138,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
 
             hls.loadSource(src);
             hls.attachMedia(video);
+            // Warm a neighbouring stream for at most 15 seconds, then stop downloading.
+            if (!activeRef.current) preloadTimerRef.current = setTimeout(() => {
+              if (!disposed && !activeRef.current) hls.stopLoad();
+            }, 15_000);
 
             hls.on(Hls.Events.MANIFEST_PARSED, (_: unknown, data: { levels: {height: number; bitrate: number}[] }) => {
               // Build quality levels list
@@ -186,6 +191,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       return () => {
         disposed = true;
         clearTimeout(timerRef.current);
+        clearTimeout(preloadTimerRef.current);
         video.removeEventListener('waiting', onWaiting);
         video.removeEventListener('stalled', onWaiting);
         video.removeEventListener('canplay', onCanPlay);
@@ -202,8 +208,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     useEffect(() => {
       const video = videoRef.current;
       if (!video || !ready) return;
-      if (isActive && shouldLoad) video.play().catch(() => {});
-      else { video.pause(); setBuffering(false); }
+      const hls = hlsRef.current as { startLoad: () => void } | null;
+      if (isActive && shouldLoad) {
+        clearTimeout(preloadTimerRef.current);
+        hls?.startLoad();
+        video.play().catch(() => {});
+      } else { video.pause(); setBuffering(false); }
     }, [isActive, ready, shouldLoad]);
 
     // ── PiP events ───────────────────────────────────────────────────────────
