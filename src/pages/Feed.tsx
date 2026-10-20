@@ -171,8 +171,8 @@ export default function Feed() {
       {/* Feed scroll container — extra padding-bottom for bottom nav */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-y-scroll"
-        style={{ scrollSnapType: 'y mandatory', overscrollBehavior: 'contain' }}
+        className="flex-1 min-h-0 overflow-y-scroll"
+        style={{ scrollSnapType: 'y mandatory', overscrollBehavior: 'contain', scrollBehavior: 'auto' }}
       >
         {liveChannels.map((channel, index) => (
           <ChannelCard
@@ -191,7 +191,7 @@ export default function Feed() {
         {hasMore ? (
           <div
             className="flex items-center justify-center bg-black"
-            style={{ height: '100dvh', scrollSnapAlign: 'start' }}
+            style={{ height: '100%', minHeight: '100%', flex: '0 0 100%', scrollSnapAlign: 'start' }}
           >
             <div className="flex flex-col items-center gap-3">
               <Loader2 className="w-8 h-8 text-white/30 animate-spin" />
@@ -201,7 +201,7 @@ export default function Feed() {
         ) : liveChannels.length > 0 ? (
           <div
             className="flex items-center justify-center bg-black"
-            style={{ height: '50dvh', scrollSnapAlign: 'start' }}
+            style={{ height: '50%', minHeight: '50%', flex: '0 0 50%', scrollSnapAlign: 'start' }}
           >
             <p className="text-white/20 text-sm">
               {t('seenAll')} {total.toLocaleString()} {t('channelsLabel')} 🎉
