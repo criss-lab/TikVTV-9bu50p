@@ -28,12 +28,18 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     const retryCount  = useRef(0);
     const activeRef = useRef(isActive);
     const shouldLoadRef = useRef(shouldLoad);
+    // Parent callbacks may be recreated during scrolling; keep current handlers without
+    // tearing down and reinitialising a healthy stream on every render.
+    const onErrorRef = useRef(onError);
+    const onReadyRef = useRef(onReady);
     const nativeHlsRef = useRef(false);
     const recoveryRef = useRef<ReturnType<typeof setTimeout>>();
     const startupTimerRef = useRef<ReturnType<typeof setTimeout>>();
     const startupFallbackRef = useRef(false);
     activeRef.current = isActive;
     shouldLoadRef.current = shouldLoad;
+    onErrorRef.current = onError;
+    onReadyRef.current = onReady;
     const [retryKey, setRetryKey] = useState(0);
 
     const [muted,       setMuted]       = useState(true);
@@ -79,7 +85,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           if (!readyRef.current && activeRef.current) {
             setError(true);
             setBuffering(false);
-            onError?.();
+            onErrorRef.current?.();
           }
         }, 30_000);
       }
@@ -91,7 +97,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         readyRef.current = true;
         setReady(true);
         retryCount.current = 0;
-        onReady?.();
+        onReadyRef.current?.();
         tryStartPlayback();
       };
 
@@ -126,7 +132,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         clearTimeout(timerRef.current);
         setError(true);
         setBuffering(false);
-        onError?.();
+        onErrorRef.current?.();
       };
 
       const destroyHls = () => {
@@ -269,7 +275,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
         readyRef.current = false;
       };
-    }, [src, shouldLoad, retryKey, onError, onReady]);
+    }, [src, shouldLoad, retryKey]);
 
     // ── Play / pause ─────────────────────────────────────────────────────────
     useEffect(() => {
@@ -289,7 +295,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             if (!readyRef.current && activeRef.current && document.visibilityState !== 'hidden') {
               setError(true);
               setBuffering(false);
-              onError?.();
+              onErrorRef.current?.();
             }
           }, 30_000);
         }
@@ -322,7 +328,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         setBuffering(false);
         clearTimeout(recoveryRef.current);
       }
-    }, [isActive, ready, shouldLoad, src, onError]);
+    }, [isActive, ready, shouldLoad, src]);
 
     // Pause and release network activity when the app is backgrounded; resume only the selected player.
     useEffect(() => {
@@ -350,7 +356,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
               if (!readyRef.current && activeRef.current && document.visibilityState !== 'hidden') {
                 setError(true);
                 setBuffering(false);
-                onError?.();
+                onErrorRef.current?.();
               }
             }, 30_000);
           }
