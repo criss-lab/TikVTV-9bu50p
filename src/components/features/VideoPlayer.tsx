@@ -138,6 +138,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
                 })).reverse(),
               ];
               setQualities(lvls);
+              if (activeRef.current) video.play().catch(() => {});
               // A parsed playlist alone does not mean media segments are playable.
             });
 
