@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Camera, Edit2, LogOut, Heart, Bookmark, Clock,
-  Film, Globe, Check, Loader2, User, Settings
+  Film, Globe, Check, Loader2, User, Settings, Crown
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
@@ -226,6 +226,7 @@ export default function Profile() {
       </Section>
 
       {/* Actions */}
+      <Section title="Premium"><div className="px-4"><button onClick={() => navigate("/premium")} className="w-full flex items-center gap-3 px-4 py-4 bg-primary/15 border border-primary/30 rounded-xl text-white font-semibold"><Crown className="w-5 h-5 text-primary" /> Manage Premium / PesaPal subscription</button></div></Section>
       <Section title="Actions">
         <div className="px-4 space-y-2">
           <button

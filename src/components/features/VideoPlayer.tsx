@@ -27,6 +27,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     const readyRef    = useRef(false);
     const retryCount  = useRef(0);
     const activeRef = useRef(isActive);
+    const recoveryRef = useRef<ReturnType<typeof setTimeout>>();
     activeRef.current = isActive;
     const [retryKey, setRetryKey] = useState(0);
 
@@ -48,7 +49,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
 
     // ── HLS init ────────────────────────────────────────────────────────────
     useEffect(() => {
-      if (!shouldLoad || !src) return;
+      if (!shouldLoad || !src) {
+        setReady(false);
+        setBuffering(false);
+        return;
+      }
 
       const video = videoRef.current;
       if (!video) return;
@@ -67,7 +72,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           setBuffering(false);
           onError?.();
         }
-      }, 14_000);
+      }, isActive ? 18_000 : 25_000);
 
       const markReady = () => {
         if (disposed) return;
@@ -97,7 +102,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         }
       };
 
-      video.addEventListener('playing', markReady);
+      const onWaiting = () => { if (!disposed && activeRef.current && readyRef.current) setBuffering(true); };
+      const onPlaying = () => { markReady(); if (!disposed) { setBuffering(false); clearTimeout(recoveryRef.current); } };
+      const onCanPlay = () => { if (!disposed) setBuffering(false); };
+      video.addEventListener('waiting', onWaiting);
+      video.addEventListener('stalled', onWaiting);
+      video.addEventListener('playing', onPlaying);
+      video.addEventListener('canplay', onCanPlay);
       video.addEventListener('loadeddata', markReady);
 
       const init = async () => {
@@ -110,16 +121,16 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             const hls = new Hls({
               enableWorker:           true,
               lowLatencyMode:         true,
-              maxBufferLength:        12,
-              maxMaxBufferLength:     24,
-              maxBufferSize:          24 * 1000 * 1000,
+              maxBufferLength:        20,
+              maxMaxBufferLength:     35,
+              maxBufferSize:          32 * 1000 * 1000,
               startLevel:             -1,
-              abrEwmaDefaultEstimate: 2_000_000,
+              abrEwmaDefaultEstimate: 1_000_000,
               progressive:            true,
               // Faster segment load retry
-              manifestLoadingMaxRetry: 1,
-              levelLoadingMaxRetry:    1,
-              fragLoadingMaxRetry:     1,
+              manifestLoadingMaxRetry: 3,
+              levelLoadingMaxRetry:    3,
+              fragLoadingMaxRetry:     3,
             });
             hlsRef.current = hls;
 
@@ -175,7 +186,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       return () => {
         disposed = true;
         clearTimeout(timerRef.current);
-        video.removeEventListener('playing', markReady);
+        clearTimeout(recoveryRef.current);
+        video.removeEventListener('waiting', onWaiting);
+        video.removeEventListener('stalled', onWaiting);
+        video.removeEventListener('canplay', onCanPlay);
+        video.removeEventListener('playing', onPlaying);
         video.removeEventListener('loadeddata', markReady);
         video.onerror = null;
         destroyHls();
@@ -188,9 +203,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     useEffect(() => {
       const video = videoRef.current;
       if (!video || !ready) return;
-      if (isActive) video.play().catch(() => {});
-      else          video.pause();
-    }, [isActive, ready]);
+      if (isActive && shouldLoad) video.play().catch(() => {});
+      else { video.pause(); setBuffering(false); }
+    }, [isActive, ready, shouldLoad]);
 
     // ── PiP events ───────────────────────────────────────────────────────────
     useEffect(() => {
@@ -268,9 +283,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         )}
 
         {/* Buffering spinner */}
-        {buffering && !error && (
+        {buffering && !error && isActive && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-12 h-12 rounded-full border-3 border-white/20 border-t-white animate-spin" style={{ borderWidth: 3 }} />
+            <div role="status" aria-label={ready ? 'Reconnecting stream' : 'Loading live stream'} className="flex flex-col items-center gap-3 rounded-2xl bg-black/60 px-6 py-5 backdrop-blur-sm"><div className="w-10 h-10 rounded-full border-white/20 border-t-white animate-spin" style={{ borderWidth: 3 }} /><span className="text-xs font-semibold text-white/80">{ready ? 'Reconnecting live stream…' : 'Preparing live stream…'}</span></div>
           </div>
         )}
 

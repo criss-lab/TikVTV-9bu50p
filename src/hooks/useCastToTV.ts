@@ -1,35 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 
-// Google Cast SDK types
-declare global {
-  interface Window {
-    chrome?: {
-      cast?: {
-        initialize: (apiConfig: unknown, onInitSuccess: () => void, onError: (err: unknown) => void) => void;
-        SessionRequest: new (appId: string) => unknown;
-        ApiConfig: new (sessionRequest: unknown, onSessionStarted: (session: unknown) => void, onSessionListener: (session: unknown) => void) => unknown;
-        requestSession: (onSuccess: (session: unknown) => void, onError: (err: unknown) => void) => void;
-      };
-    };
-    __onGCastApiAvailable?: (isAvailable: boolean) => void;
-    cast?: {
-      framework?: {
-        CastContext: {
-          getInstance: () => {
-            requestSession: () => Promise<void>;
-            endCurrentSession: (stopCasting: boolean) => void;
-            getCurrentSession: () => {
-              loadMedia: (req: unknown) => Promise<void>;
-            } | null;
-          };
-        };
-        CastSession: unknown;
-        RemotePlayer: new () => unknown;
-        RemotePlayerController: new (player: unknown) => { addEventListener: (event: string, cb: () => void) => void };
-      };
-    };
-  }
-}
+// Share the single Google Cast Window declaration with the Chromecast integration.
+import type {} from '@/lib/chromecast';
 
 const CAST_APP_ID = 'CC1AD845'; // Default Media Receiver
 

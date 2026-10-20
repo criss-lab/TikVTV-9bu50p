@@ -10,6 +10,7 @@ import { useAuthStore } from '@/stores/authStore';
 import AuthModal from '@/components/features/AuthModal';
 import type { IPTVChannel } from '@/types';
 import { toast } from 'sonner';
+import { useViewingAccess } from '@/hooks/useViewingAccess';
 
 export default function ChannelDetail() {
   const { id }             = useParams<{ id: string }>();
@@ -27,6 +28,7 @@ export default function ChannelDetail() {
   const [muted, setMuted]  = useState(false);
   const [pipActive, setPipActive] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+  const { allowed, active, remainingMs, loading: accessLoading } = useViewingAccess();
 
   const { liked, likeCount, toggleLike }     = useReactions(id || '', user?.id);
   const { isFavorite, toggleFavorite }       = useFavorites(user?.id);
@@ -45,12 +47,10 @@ export default function ChannelDetail() {
   }, [id]);
 
   useEffect(() => {
-    if (channel) {
-      fetchComments();
-      void initVideo(channel.streamUrl);
-    }
+    if (channel) fetchComments();
+    if (channel && allowed && !accessLoading) void initVideo(channel.streamUrl);
     return () => destroyHls();
-  }, [channel, retryKey]);
+  }, [channel, retryKey, allowed, accessLoading]);
 
   const initVideo = async (src: string) => {
     const video = videoRef.current;
@@ -169,7 +169,14 @@ export default function ChannelDetail() {
           playsInline
           controls
         />
-        {!videoReady && !videoError && (
+        {!accessLoading && !allowed && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/95 px-6 text-center text-white">
+            <h2 className="text-xl font-bold">Channel Locked</h2>
+            <p className="text-sm text-white/70">15-minute free preview ended</p>
+            <button type="button" className="rounded-xl bg-primary px-5 py-3 font-bold" onClick={e => { e.stopPropagation(); navigate('/premium'); }}>Unlock Premium</button>
+          </div>
+        )}
+        {!videoReady && !videoError && allowed && (
           <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-900 to-black">
             {channel.logo ? (
               <img src={channel.logo} alt={channel.name} className="w-24 h-24 object-contain opacity-40" />
@@ -181,7 +188,7 @@ export default function ChannelDetail() {
             <div className="absolute w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
           </div>
         )}
-        {videoError && (
+        {videoError && allowed && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
             <div className="flex flex-col items-center gap-2">
               <Wifi className="w-10 h-10 text-white/20" />
@@ -190,14 +197,14 @@ export default function ChannelDetail() {
             </div>
           </div>
         )}
-        {videoReady && (
+        {videoReady && allowed && (
           <div className="absolute top-12 left-3 flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded">
             <div className="w-1.5 h-1.5 bg-white rounded-full live-dot" />
             LIVE
           </div>
         )}
         {/* PiP button */}
-        {videoReady && 'pictureInPictureEnabled' in document && (
+        {videoReady && allowed && 'pictureInPictureEnabled' in document && (
           <button
             onClick={e => { e.stopPropagation(); handlePiP(); }}
             className={cn(
@@ -210,6 +217,7 @@ export default function ChannelDetail() {
         )}
       </div>
 
+      {!accessLoading && !active && allowed && <div className="bg-black px-4 py-2 text-center text-xs font-semibold text-white/80">Free preview remaining: {String(Math.floor(remainingMs / 60000)).padStart(2, '0')}:{String(Math.floor(remainingMs % 60000 / 1000)).padStart(2, '0')}</div>}
       {/* Channel info + actions */}
       <div className="px-4 py-4 border-b border-white/10">
         <div className="flex items-start justify-between gap-3">

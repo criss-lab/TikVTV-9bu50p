@@ -47,6 +47,7 @@ declare global {
       autoJoinPolicy: string;
     }) => void;
     requestSession: () => Promise<void>;
+    endCurrentSession: (stopCasting: boolean) => void;
     getCurrentSession: () => CastSession | null;
     getCastState: () => string;
     addEventListener: (event: string, handler: () => void) => void;
@@ -54,7 +55,7 @@ declare global {
   }
 
   interface CastSession {
-    loadMedia: (req: LoadRequest) => Promise<void>;
+    loadMedia: (req: unknown) => Promise<void>;
   }
 
   interface MediaInfo {
