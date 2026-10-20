@@ -126,7 +126,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         }
       };
 
-      const onWaiting = () => { if (!disposed && activeRef.current && readyRef.current) setBuffering(true); };
+      const onWaiting = () => {
+        if (disposed || !activeRef.current || !readyRef.current) return;
+        setBuffering(true);
+        clearTimeout(recoveryRef.current);
+        recoveryRef.current = setTimeout(() => {
+          if (disposed || !activeRef.current) return;
+          const hls = hlsRef.current as { startLoad?: () => void; recoverMediaError?: () => void } | null;
+          try { hls?.startLoad?.(); } catch { /* transient reconnect */ }
+          try { hls?.recoverMediaError?.(); } catch { /* browser may not need media recovery */ }
+        }, 3500);
+      };
       const onPlaying = () => { markReady(); if (!disposed) { setBuffering(false); clearTimeout(recoveryRef.current); clearTimeout(startupTimerRef.current); } };
       const onCanPlay = () => { if (!disposed) tryStartPlayback(); };
       const onProgress = () => tryStartPlayback();
@@ -189,16 +199,25 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             });
 
             hls.on(Hls.Events.ERROR, (_: unknown, d: { fatal: boolean; type: string }) => {
-              if (d.fatal) {
-                if (retryCount.current < 2 && d.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                  retryCount.current++;
-                  hls.startLoad();
-                } else if (retryCount.current < 2 && d.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                  retryCount.current++;
-                  hls.recoverMediaError();
-                } else {
-                  markError();
-                }
+              if (!d.fatal || disposed) return;
+              // Retry transient CDN/network failures with backoff before giving up.
+              if (retryCount.current < 4 && d.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                retryCount.current++;
+                clearTimeout(recoveryRef.current);
+                recoveryRef.current = setTimeout(() => {
+                  if (!disposed) hls.startLoad();
+                }, Math.min(1000 * 2 ** (retryCount.current - 1), 8000));
+              } else if (retryCount.current < 4 && d.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                retryCount.current++;
+                try { hls.recoverMediaError(); } catch { markError(); }
+              } else if (retryCount.current < 4) {
+                retryCount.current++;
+                clearTimeout(recoveryRef.current);
+                recoveryRef.current = setTimeout(() => {
+                  if (!disposed) hls.startLoad();
+                }, Math.min(1000 * 2 ** (retryCount.current - 1), 8000));
+              } else {
+                markError();
               }
             });
           } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
