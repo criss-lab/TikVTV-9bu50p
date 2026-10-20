@@ -44,6 +44,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
 
     const [muted,       setMuted]       = useState(true);
     const [error,       setError]       = useState(false);
+    const [errorDetail, setErrorDetail] = useState('');
     const [buffering,   setBuffering]   = useState(false);
     const [ready,       setReady]       = useState(false);
     const [pipActive,   setPipActive]   = useState(false);
@@ -70,6 +71,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       if (!video) return;
 
       setError(false);
+      setErrorDetail('');
       setReady(false);
       setBuffering(true);
       clearTimeout(startupTimerRef.current);
@@ -82,7 +84,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       // Only the selected stream gets a startup deadline. Give slower providers a fair chance.
       if (activeRef.current && document.visibilityState !== 'hidden') {
         timerRef.current = setTimeout(() => {
-          if (video.paused && activeRef.current) {
+          if (video.paused && activeRef.current && document.visibilityState !== 'hidden') {
+            setErrorDetail('The stream did not begin playback within 18 seconds. Check its source and network access.');
             setError(true);
             setBuffering(false);
             onErrorRef.current?.();
@@ -116,7 +119,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           }
         }
         // Start quickly once a small safety buffer exists; keep filling toward the larger target during playback.
-        if (ahead >= 3 || startupFallbackRef.current) video.play().catch(() => {});
+        if (ahead >= 0.25 || startupFallbackRef.current || video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) video.play().catch(e => { if (e?.name !== 'AbortError' && e?.name !== 'NotAllowedError') console.warn('[IPTV] play rejected', channelName, e); });
       };
 
       // The selected stream may start after a short buffer target or the bounded startup fallback.
@@ -154,7 +157,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         }, 3500);
       };
       const onPlaying = () => { markReady(); if (!disposed) { clearTimeout(timerRef.current); setBuffering(false); clearTimeout(recoveryRef.current); clearTimeout(startupTimerRef.current); } };
-      const onCanPlay = () => { if (!disposed) tryStartPlayback(); };
+      const onCanPlay = () => { if (!disposed) { markReady(); tryStartPlayback(); } };
       const onProgress = () => tryStartPlayback();
       video.addEventListener('waiting', onWaiting);
       video.addEventListener('stalled', onWaiting);
@@ -202,8 +205,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             });
             hlsRef.current = hls;
 
-            hls.loadSource(src);
             hls.attachMedia(video);
+            hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+              if (disposed) return;
+              hls.loadSource(src);
+              if (activeRef.current && shouldLoadRef.current && document.visibilityState !== 'hidden') hls.startLoad();
+            });
 
             hls.on(Hls.Events.MANIFEST_PARSED, (_: unknown, data: { levels: {height: number; bitrate: number}[] }) => {
               // Build quality levels list
@@ -227,7 +234,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
               setCurrentLvl(data.level);
             });
 
-            hls.on(Hls.Events.ERROR, (_: unknown, d: { fatal: boolean; type: string }) => {
+            hls.on(Hls.Events.ERROR, (_: unknown, d: { fatal: boolean; type: string; details?: string; response?: { code?: number } }) => {
+              if (d.fatal) { console.warn('[IPTV] Fatal HLS failure', { channelName, type: d.type, details: d.details, status: d.response?.code }); setErrorDetail(`Stream failure: ${d.details || d.type}${d.response?.code ? ` (HTTP ${d.response.code})` : ''}`); }
               if (!d.fatal || disposed || !activeRef.current || document.visibilityState === 'hidden') return;
               // Retry transient CDN/network failures with backoff before giving up.
               if (retryCount.current < 4 && d.type === Hls.ErrorTypes.NETWORK_ERROR) {
@@ -302,6 +310,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           clearTimeout(timerRef.current);
           timerRef.current = setTimeout(() => {
             if (video.paused && activeRef.current && document.visibilityState !== 'hidden') {
+              setErrorDetail('The stream did not start within 18 seconds.');
               setError(true);
               setBuffering(false);
               onErrorRef.current?.();
@@ -316,7 +325,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
               break;
             }
           }
-          if (ahead >= 3 || startupFallbackRef.current) {
+          if (ahead >= 0.25 || video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA || startupFallbackRef.current) {
             clearTimeout(startupTimerRef.current);
             video.play().catch(() => {});
           } else {
@@ -479,7 +488,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none">
             <div className="bg-black/60 backdrop-blur rounded-2xl p-6 flex flex-col items-center gap-3">
               <WifiOff className="w-9 h-9 text-white/40" />
-              <p className="text-white/50 text-sm">Stream unavailable</p>
+              <p className="text-white/70 text-sm">Stream unavailable</p>
+              {errorDetail && <p className="text-white/50 text-xs text-center max-w-[280px] break-words">{errorDetail}</p>}
               <button
                 className="pointer-events-auto flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white text-sm px-4 py-2 rounded-full transition-colors"
                 onClick={handleRetry}
