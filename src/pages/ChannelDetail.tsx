@@ -23,6 +23,7 @@ export default function ChannelDetail() {
   const [sending, setSending] = useState(false);
   const videoRef           = useRef<HTMLVideoElement>(null);
   const hlsRef             = useRef<unknown>(null);
+  const detailCleanupRef   = useRef<(() => void) | null>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const [muted, setMuted]  = useState(false);
@@ -57,33 +58,69 @@ export default function ChannelDetail() {
     if (!video || !src) return;
     setVideoReady(false);
     setVideoError(false);
-    const { default: Hls } = await import('hls.js').catch(() => ({ default: null }));
-    if (!Hls) { setVideoError(true); return; }
-    if ((Hls as { isSupported: () => boolean }).isSupported()) {
-      const hls = new (Hls as new (o: object) => {
-        loadSource: (s: string) => void;
-        attachMedia: (v: HTMLVideoElement) => void;
-        on: (e: string, cb: unknown) => void;
-        destroy: () => void;
-      })({ enableWorker: false, maxBufferLength: 20, startLevel: -1 });
-      hlsRef.current = hls;
-      hls.loadSource(src);
-      hls.attachMedia(video);
-      hls.on('hlsManifestParsed', () => { setVideoReady(true); video.play().catch(() => {}); });
-      hls.on('hlsError', (_: unknown, d: { fatal: boolean }) => { if (d.fatal) setVideoError(true); });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = src;
-      video.onloadedmetadata = () => { setVideoReady(true); video.play().catch(() => {}); };
-      video.onerror = () => setVideoError(true);
-    } else { setVideoError(true); }
+    let disposed = false;
+    let retries = 0;
+    const fail = () => {
+      if (disposed) return;
+      setVideoError(true);
+      setVideoReady(false);
+      video.pause();
+    };
+    const ready = () => {
+      if (disposed) return;
+      window.clearTimeout(startupTimer);
+      setVideoReady(true);
+      video.play().catch(() => {});
+    };
+    const startupTimer = window.setTimeout(fail, 18000);
+    video.addEventListener('loadeddata', ready, { once: true });
+    video.addEventListener('error', fail, { once: true });
+    try {
+      const { default: Hls } = await import('hls.js');
+      if (Hls.isSupported()) {
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false,
+          maxBufferLength: 20,
+          maxMaxBufferLength: 35,
+          startLevel: -1,
+          abrEwmaDefaultEstimate: 1000000,
+        });
+        hlsRef.current = hls;
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (!data.fatal) return;
+          if (retries++ < 2 && data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+          else if (retries <= 2 && data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+          else fail();
+        });
+        hls.attachMedia(video);
+        hls.loadSource(src);
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = src;
+        video.load();
+      } else fail();
+    } catch { fail(); }
+    // The effect cleanup invokes destroyHls and invalidates this attempt.
+    detailCleanupRef.current = () => {
+      disposed = true;
+      window.clearTimeout(startupTimer);
+      video.removeEventListener('loadeddata', ready);
+      video.removeEventListener('error', fail);
+    };
   };
 
   const destroyHls = () => {
+    detailCleanupRef.current?.();
+    detailCleanupRef.current = null;
     if (hlsRef.current) {
       (hlsRef.current as { destroy: () => void }).destroy();
       hlsRef.current = null;
     }
-    if (videoRef.current) { videoRef.current.pause(); videoRef.current.removeAttribute('src'); videoRef.current.load(); }
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.removeAttribute('src');
+      videoRef.current.load();
+    }
   };
 
   const handlePiP = async () => {
