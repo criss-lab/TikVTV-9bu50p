@@ -82,7 +82,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       // Only the selected stream gets a startup deadline. Give slower providers a fair chance.
       if (activeRef.current && document.visibilityState !== 'hidden') {
         timerRef.current = setTimeout(() => {
-          if (!readyRef.current && activeRef.current) {
+          if (video.paused && activeRef.current) {
             setError(true);
             setBuffering(false);
             onErrorRef.current?.();
@@ -93,7 +93,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       const markReady = () => {
         if (disposed) return;
         if (readyRef.current) return;
-        clearTimeout(timerRef.current);
         readyRef.current = true;
         setReady(true);
         retryCount.current = 0;
@@ -154,7 +153,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           try { hls?.startLoad?.(); } catch { /* transient reconnect */ }
         }, 3500);
       };
-      const onPlaying = () => { markReady(); if (!disposed) { setBuffering(false); clearTimeout(recoveryRef.current); clearTimeout(startupTimerRef.current); } };
+      const onPlaying = () => { markReady(); if (!disposed) { clearTimeout(timerRef.current); setBuffering(false); clearTimeout(recoveryRef.current); clearTimeout(startupTimerRef.current); } };
       const onCanPlay = () => { if (!disposed) tryStartPlayback(); };
       const onProgress = () => tryStartPlayback();
       video.addEventListener('waiting', onWaiting);
@@ -302,7 +301,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         if (!readyRef.current) {
           clearTimeout(timerRef.current);
           timerRef.current = setTimeout(() => {
-            if (!readyRef.current && activeRef.current && document.visibilityState !== 'hidden') {
+            if (video.paused && activeRef.current && document.visibilityState !== 'hidden') {
               setError(true);
               setBuffering(false);
               onErrorRef.current?.();
@@ -363,7 +362,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           if (!readyRef.current) {
             clearTimeout(timerRef.current);
             timerRef.current = setTimeout(() => {
-              if (!readyRef.current && activeRef.current && document.visibilityState !== 'hidden') {
+              if (video.paused && activeRef.current && document.visibilityState !== 'hidden') {
                 setError(true);
                 setBuffering(false);
                 onErrorRef.current?.();
