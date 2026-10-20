@@ -44,30 +44,57 @@ export default function Feed() {
   const liveChannels = channels.filter(ch => !deadIds.has(ch.id));
   const liveCount    = liveIds.size;
 
-  // IntersectionObserver: detect active card & load more
+  // Determine the channel closest to the feed viewport's center on every scroll.
+  // IntersectionObserver batches can omit the card that just left view, leaving an old
+  // active index stuck. Center-based selection always hands playback to the focused card.
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || liveChannels.length === 0) return;
-    observerRef.current?.disconnect();
+    if (!container) return;
+    let frame = 0;
+    let lastRecordedId = '';
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Pick the most visible card once per observer batch so two partially visible cards never fight for playback.
-        const best = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-        if (best && best.intersectionRatio >= 0.6) {
-          const idx = parseInt(best.target.getAttribute('data-index') || '0', 10);
-          setActiveIndex(idx);
-          if (liveChannels[idx]) addToHistory(liveChannels[idx]);
-          if (idx >= liveChannels.length - 5 && hasMore) loadMore();
+    const updateFocusedChannel = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const cards = Array.from(container.querySelectorAll<HTMLElement>('[data-index]'));
+        if (cards.length === 0) return;
+        const viewport = container.getBoundingClientRect();
+        const center = viewport.top + viewport.height / 2;
+        let best: HTMLElement | null = null;
+        let bestDistance = Number.POSITIVE_INFINITY;
+
+        for (const card of cards) {
+          const rect = card.getBoundingClientRect();
+          const visibleHeight = Math.max(0, Math.min(rect.bottom, viewport.bottom) - Math.max(rect.top, viewport.top));
+          if (visibleHeight <= 0) continue;
+          const distance = Math.abs((rect.top + rect.bottom) / 2 - center);
+          if (distance < bestDistance) {
+            best = card;
+            bestDistance = distance;
+          }
         }
-      },
-      { threshold: [0.25, 0.6, 0.8], root: container }
-    );
 
-    container.querySelectorAll('[data-index]').forEach(c => observer.observe(c));
-    observerRef.current = observer;
-    return () => observer.disconnect();
-  }, [liveChannels.length, hasMore, loadMore, addToHistory, containerRef]);
+        if (!best) return;
+        const idx = Number.parseInt(best.dataset.index || '0', 10);
+        if (!Number.isFinite(idx)) return;
+        setActiveIndex(previous => previous === idx ? previous : idx);
+
+        const channel = liveChannels[idx];
+        if (channel && channel.id !== lastRecordedId) {
+          lastRecordedId = channel.id;
+          addToHistory(channel);
+        }
+        if (idx >= liveChannels.length - 5 && hasMore) loadMore();
+      });
+    };
+
+    container.addEventListener('scroll', updateFocusedChannel, { passive: true });
+    updateFocusedChannel();
+    return () => {
+      container.removeEventListener('scroll', updateFocusedChannel);
+      cancelAnimationFrame(frame);
+    };
+  }, [liveChannels, hasMore, loadMore, addToHistory]);
 
   const handleCategoryChange = useCallback((id: string) => {
     setCategory(id);
