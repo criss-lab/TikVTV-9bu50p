@@ -20,14 +20,25 @@ export function useChannels(category: string, countryCode = '') {
     setHasMore(true);
     pageRef.current = 1;
 
+    const applyChannels = (all: IPTVChannel[]) => {
+      allChannelsRef.current = all;
+      const loadedPages = Math.max(1, pageRef.current);
+      const items: IPTVChannel[] = [];
+      let lastPage = getChannelPage(all, category, 1, countryCode);
+      for (let pageNumber = 1; pageNumber <= loadedPages; pageNumber++) {
+        lastPage = getChannelPage(all, category, pageNumber, countryCode);
+        items.push(...lastPage.items);
+        if (!lastPage.hasMore) break;
+      }
+      setChannels(items);
+      setHasMore(lastPage.hasMore);
+      setTotal(lastPage.total);
+    };
+
     fetchAllChannels()
       .then(all => {
         if (!mounted) return;
-        allChannelsRef.current = all;
-        const page = getChannelPage(all, category, 1, countryCode);
-        setChannels(page.items);
-        setHasMore(page.hasMore);
-        setTotal(page.total);
+        applyChannels(all);
         setLoading(false);
       })
       .catch(err => {
@@ -36,7 +47,17 @@ export function useChannels(category: string, countryCode = '') {
         setLoading(false);
       });
 
-    return () => { mounted = false; };
+    // Optional M3U sources enrich the list after the first screen is already usable.
+    const onChannelsUpdated = () => {
+      fetchAllChannels().then(all => {
+        if (mounted) applyChannels(all);
+      }).catch(() => {});
+    };
+    window.addEventListener('iptv-channels-updated', onChannelsUpdated);
+    return () => {
+      mounted = false;
+      window.removeEventListener('iptv-channels-updated', onChannelsUpdated);
+    };
   }, [category, countryCode]);
 
   const loadMore = useCallback(() => {
