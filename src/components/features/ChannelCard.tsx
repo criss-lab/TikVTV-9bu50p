@@ -10,7 +10,7 @@ import { useComments } from '@/hooks/useComments';
 interface Props {
   channel:        IPTVChannel;
   isActive:       boolean;
-  shouldLoad:     boolean; // within ±2 of active → preload HLS
+  shouldLoad:     boolean; // true only for the focused card
   index:          number;
   user:           AuthUser | null;
   onAuthRequired: () => void;
@@ -51,16 +51,19 @@ export default function ChannelCard({
       className="relative w-full bg-black"
       style={{ height: '100dvh', scrollSnapAlign: 'start' }}
     >
-      {/* Video — only initialise HLS when shouldLoad */}
-      <VideoPlayer
-        src={channel.streamUrl}
-        isActive={isActive}
-        shouldLoad={shouldLoad}
-        channelName={channel.name}
-        channelLogo={channel.logo}
-        onError={handleError}
-        onReady={handleReady}
-      />
+      {/* Mount a player only for the focused card. Unmounting off-focus cards runs
+          VideoPlayer cleanup immediately, destroying HLS and releasing the media source. */}
+      {shouldLoad && isActive && (
+        <VideoPlayer
+          src={channel.streamUrl}
+          isActive={isActive}
+          shouldLoad={shouldLoad}
+          channelName={channel.name}
+          channelLogo={channel.logo}
+          onError={handleError}
+          onReady={handleReady}
+        />
+      )}
 
       {streamFailed && (
         <button
