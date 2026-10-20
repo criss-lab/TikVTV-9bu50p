@@ -18,6 +18,7 @@ class SharedPlayback extends ChangeNotifier {
   int _generation = 0;
   Future<void> _disposals = Future<void>.value();
   VideoPlayerController? _candidate;
+  Completer<void>? _candidateSettled;
 
   Future<void> _release(VideoPlayerController? player) {
     if (player == null) return _disposals;
@@ -42,7 +43,7 @@ class SharedPlayback extends ChangeNotifier {
   Future<void> open(Channel next) async {
     final token = ++_generation;
     final previous = controller;
-    final pending = _candidate;
+    final pending = _candidateSettled?.future;
     controller = null;
     _candidate = null;
     channel = next;
@@ -55,9 +56,7 @@ class SharedPlayback extends ChangeNotifier {
     // settles; don't dispose it concurrently with initialize().
     // Do not start a second decoder while the previous initialize is in flight.
     if (pending != null) {
-      while (identical(_candidate, pending) && token == _generation) {
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      }
+      await pending;
     }
     await _disposals;
     if (token == _generation) await _trySources(next, token, 0);
@@ -72,6 +71,8 @@ class SharedPlayback extends ChangeNotifier {
       notifyListeners();
       final candidate = VideoPlayerController.networkUrl(Uri.parse(selected.urls[i]));
       _candidate = candidate;
+      final settled = Completer<void>();
+      _candidateSettled = settled;
       try {
         // A timeout does not cancel initialize(). Wait for its completion
         // before disposing the native controller on a timed-out attempt.
@@ -127,6 +128,8 @@ class SharedPlayback extends ChangeNotifier {
         notifyListeners();
       } finally {
         if (identical(_candidate, candidate)) _candidate = null;
+        if (identical(_candidateSettled, settled)) _candidateSettled = null;
+        if (!settled.isCompleted) settled.complete();
       }
     }
     if (token != _generation) return;
