@@ -340,6 +340,24 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             video.src = src;
             video.load();
           }
+          if (!readyRef.current) {
+            clearTimeout(timerRef.current);
+            timerRef.current = setTimeout(() => {
+              if (!readyRef.current && activeRef.current && document.visibilityState !== 'hidden') {
+                setError(true);
+                setBuffering(false);
+                onError?.();
+              }
+            }, 18_000);
+          }
+          clearTimeout(startupTimerRef.current);
+          startupFallbackRef.current = false;
+          startupTimerRef.current = setTimeout(() => {
+            if (activeRef.current && shouldLoadRef.current && document.visibilityState !== 'hidden') {
+              startupFallbackRef.current = true;
+              video.play().catch(() => {});
+            }
+          }, 8_000);
         }
       };
       const onPageHide = () => {
