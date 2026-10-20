@@ -47,7 +47,9 @@ class ChannelCatalogue extends ChangeNotifier {
       } catch (e) { debugPrint('Catalogue cache unavailable: $e'); }
     }
     if (!force && channels.isNotEmpty && _loadedAt != null &&
-        DateTime.now().difference(_loadedAt!) < const Duration(hours: 6)) return;
+        DateTime.now().difference(_loadedAt!) < const Duration(hours: 6)) {
+      return;
+    }
     await _fetch();
   }
 
