@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class Channel {
   final String id, name, logo, country;
@@ -17,6 +18,7 @@ class ChannelCatalogue extends ChangeNotifier {
   bool loading = false;
   String? error;
   Future<void>? _pending;
+  bool _hydrated = false;
   DateTime? _loadedAt;
   Future<void> load({bool force = false}) {
     if (_pending != null) return _pending!;
@@ -24,8 +26,29 @@ class ChannelCatalogue extends ChangeNotifier {
         DateTime.now().difference(_loadedAt!) < const Duration(hours: 6)) {
       return Future.value();
     }
-    _pending = _fetch().whenComplete(() => _pending = null);
+    _pending = _loadAndFetch(force).whenComplete(() => _pending = null);
     return _pending!;
+  }
+
+  Future<void> _loadAndFetch(bool force) async {
+    if (!_hydrated) {
+      _hydrated = true;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final raw = prefs.getString('channel_catalogue_v1');
+        if (raw != null) {
+          final data = jsonDecode(raw) as Map<String, dynamic>;
+          final saved = (data['channels'] as List<dynamic>).cast<Map<String, dynamic>>();
+          channels = List.unmodifiable(saved.map((v) => Channel(v['id'] as String, v['name'] as String,
+            v['logo'] as String, v['country'] as String, List<String>.from(v['urls'] as List))));
+          _loadedAt = DateTime.fromMillisecondsSinceEpoch(data['timestamp'] as int);
+          notifyListeners();
+        }
+      } catch (e) { debugPrint('Catalogue cache unavailable: $e'); }
+    }
+    if (!force && channels.isNotEmpty && _loadedAt != null &&
+        DateTime.now().difference(_loadedAt!) < const Duration(hours: 6)) return;
+    await _fetch();
   }
 
   Future<void> _fetch() async {
@@ -63,6 +86,14 @@ class ChannelCatalogue extends ChangeNotifier {
       }
       channels = List.unmodifiable(parsed);
       _loadedAt = DateTime.now();
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('channel_catalogue_v1', jsonEncode({
+          'timestamp': _loadedAt!.millisecondsSinceEpoch,
+          'channels': parsed.map((ch) => {'id': ch.id, 'name': ch.name,
+            'logo': ch.logo, 'country': ch.country, 'urls': ch.urls}).toList(),
+        }));
+      } catch (e) { debugPrint('Catalogue cache write failed: $e'); }
     } catch (e) {
       error = e.toString(); // Preserve last successful catalogue when offline.
     } finally {

@@ -7,3 +7,5 @@ Implemented: one singleton catalogue fetch with six-hour in-memory TTL and concu
 Run from this directory after installing Flutter: `flutter pub get && flutter run`. Android/iOS/web platform runners should be generated with `flutter create . --platforms=android,ios,web` before building. This has not been compiled or device-tested here.
 
 Not yet migrated: Supabase auth, reactions, comments, favourites, premium/payments, clips, EPG, country explorer, history, casting, and full existing UI. Not every upstream source is guaranteed playable; provider availability, DRM, platform codecs and geo/CORS restrictions remain external constraints.
+
+Migration increment: persistent offline catalogue cache, refresh action, app background pause/resume, serialized player disposal, and runtime fallback when an already-started stream errors. These changes still require Flutter SDK analysis, compilation and device tests.

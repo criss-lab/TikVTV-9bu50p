@@ -27,17 +27,23 @@ class ChannelHome extends StatefulWidget {
   State<ChannelHome> createState() => _ChannelHomeState();
 }
 
-class _ChannelHomeState extends State<ChannelHome> {
+class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   String query = '';
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     catalogue.load();
     catalogue.addListener(refresh);
   }
   void refresh() { if (mounted) setState(() {}); }
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    playback.setBackgrounded(state != AppLifecycleState.resumed);
+  }
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     catalogue.removeListener(refresh);
     super.dispose();
   }
@@ -46,7 +52,9 @@ class _ChannelHomeState extends State<ChannelHome> {
     final channels = catalogue.channels.where((c) =>
       c.name.toLowerCase().contains(query.toLowerCase())).toList();
     return Scaffold(
-      appBar: AppBar(title: const Text('TikVTV Live')),
+      appBar: AppBar(title: const Text('TikVTV Live'), actions: [
+        IconButton(tooltip: 'Refresh catalogue', onPressed: () => catalogue.load(force: true), icon: const Icon(Icons.refresh)),
+      ]),
       body: Column(children: [
         Padding(padding: const EdgeInsets.all(12), child: TextField(
           decoration: const InputDecoration(labelText: 'Search channels', prefixIcon: Icon(Icons.search)),
@@ -105,7 +113,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
         AspectRatio(aspectRatio: 16 / 9, child: ColoredBox(color: Colors.black,
           child: selected && controller != null && controller.value.isInitialized
             ? VideoPlayer(controller)
-            : Center(child: playback.error != null
+            : Center(child: playback.error != null && !playback.loading
               ? Text(playback.error!, textAlign: TextAlign.center)
               : const CircularProgressIndicator()))),
         if (playback.error != null) TextButton.icon(
