@@ -35,12 +35,14 @@ export default function Favorites() {
     if (!container || channels.length === 0) return;
     observerRef.current?.disconnect();
     const observer = new IntersectionObserver(
-      (entries) => entries.forEach(e => {
-        if (e.isIntersecting) {
-          setActiveIndex(parseInt(e.target.getAttribute('data-index') || '0', 10));
+      (entries) => {
+        // A single dominant visible card owns playback during fast vertical swipes.
+        const best = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (best && best.intersectionRatio >= 0.55) {
+          setActiveIndex(parseInt(best.target.getAttribute('data-index') || '0', 10));
         }
-      }),
-      { threshold: 0.55, root: container }
+      },
+      { threshold: [0.25, 0.55, 0.8], root: container }
     );
     container.querySelectorAll('[data-index]').forEach(c => observer.observe(c));
     observerRef.current = observer;
