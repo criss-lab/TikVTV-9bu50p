@@ -301,18 +301,18 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
               break;
             }
           }
-          if (ahead >= 15 || startupFallbackRef.current) {
+          if (ahead >= 3 || startupFallbackRef.current) {
             clearTimeout(startupTimerRef.current);
             video.play().catch(() => {});
           } else {
-            // If the user returns to this card before a full buffer is ready, keep waiting briefly then use the live-stream fallback.
+            // Keep the startup deadline short; the player continues buffering while playback runs.
             clearTimeout(startupTimerRef.current);
             startupTimerRef.current = setTimeout(() => {
               if (activeRef.current && shouldLoad && document.visibilityState !== 'hidden') {
                 startupFallbackRef.current = true;
                 video.play().catch(() => {});
               }
-            }, 8000);
+            }, 4000);
           }
         }
       } else {
@@ -361,7 +361,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
               startupFallbackRef.current = true;
               video.play().catch(() => {});
             }
-          }, 8_000);
+          }, 4_000);
         }
       };
       const onPageHide = () => {
