@@ -298,7 +298,7 @@ function parseM3U(text: string, sourceTag: string): IPTVChannel[] {
 
 async function fetchM3U(url: string, tag: string): Promise<IPTVChannel[]> {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(12_000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(5_000) });
     if (!res.ok) return [];
     const text = await res.text();
     if (!text.includes('#EXTINF')) return [];
@@ -312,14 +312,11 @@ async function fetchM3U(url: string, tag: string): Promise<IPTVChannel[]> {
 }
 
 async function fetchExtraSources(): Promise<IPTVChannel[]> {
-  const all: IPTVChannel[] = [];
-  // Fetch in parallel batches of 8
-  for (let i = 0; i < EXTRA_SOURCES.length; i += 8) {
-    const batch = EXTRA_SOURCES.slice(i, i + 8);
-    const results = await Promise.all(batch.map(([tag, url]) => fetchM3U(url, tag)));
-    for (const r of results) all.push(...r);
-  }
-  return all;
+  // A small curated batch avoids serially waiting on dozens of remote playlists.
+  // The primary IPTV-org JSON API already covers countries and categories.
+  const sources = EXTRA_SOURCES.slice(0, 8);
+  const results = await Promise.all(sources.map(([tag, url]) => fetchM3U(url, tag)));
+  return results.flat();
 }
 
 export async function fetchAllChannels(): Promise<IPTVChannel[]> {
