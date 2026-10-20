@@ -6,7 +6,6 @@ import ChannelInfo from './ChannelInfo';
 import ReactionBar from './ReactionBar';
 import CommentSheet from './CommentSheet';
 import { useComments } from '@/hooks/useComments';
-import { markChannelDead } from '@/lib/iptvApi';
 
 interface Props {
   channel:        IPTVChannel;
@@ -24,7 +23,7 @@ export default function ChannelCard({
   user, onAuthRequired, onChannelDead, onChannelReady,
 }: Props) {
   const [showComments, setShowComments] = useState(false);
-  const [dead,         setDead]         = useState(false);
+  const [streamFailed, setStreamFailed] = useState(false);
   const { count, fetchCount }           = useComments(channel.id);
   const navigate                        = useNavigate();
   const sharedOnReady                   = useRef(false);
@@ -34,19 +33,17 @@ export default function ChannelCard({
   }, [isActive, fetchCount]);
 
   const handleError = useCallback(() => {
-    markChannelDead(channel.id);
-    setDead(true);
-    onChannelDead(channel.id);
-  }, [channel.id, onChannelDead]);
+    // Keep the card mounted so VideoPlayer can retry transient stream failures.
+    setStreamFailed(true);
+  }, []);
 
   const handleReady = useCallback(() => {
+    setStreamFailed(false);
     if (!sharedOnReady.current) {
       sharedOnReady.current = true;
       onChannelReady(channel.id);
     }
   }, [channel.id, onChannelReady]);
-
-  if (dead) return null;
 
   return (
     <div
@@ -64,6 +61,16 @@ export default function ChannelCard({
         onError={handleError}
         onReady={handleReady}
       />
+
+      {streamFailed && (
+        <button
+          type="button"
+          onClick={() => onChannelDead(channel.id)}
+          className="absolute top-16 left-4 z-20 rounded-full border border-white/20 bg-black/70 px-4 py-2 text-xs font-semibold text-white backdrop-blur hover:bg-white/20"
+        >
+          Skip unavailable channel →
+        </button>
+      )}
 
       {/* Gradient overlays */}
       <div className="absolute inset-0 pointer-events-none gradient-overlay" />
