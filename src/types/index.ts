@@ -7,6 +7,7 @@ export interface IPTVChannel {
   languages: string[];
   categories: string[];
   streamUrl: string;
+  alternativeStreamUrls?: string[];
   website?: string;
   alt_names?: string[];
   network?: string;
