@@ -28,6 +28,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     const retryCount  = useRef(0);
     const activeRef = useRef(isActive);
     const recoveryRef = useRef<ReturnType<typeof setTimeout>>();
+    const startupTimerRef = useRef<ReturnType<typeof setTimeout>>();
+    const startupFallbackRef = useRef(false);
     activeRef.current = isActive;
     const [retryKey, setRetryKey] = useState(0);
 
@@ -61,6 +63,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       setError(false);
       setReady(false);
       setBuffering(true);
+      clearTimeout(startupTimerRef.current);
+      startupFallbackRef.current = false;
       setQualities([]);
       setCurrentLvl(-1);
       readyRef.current = false;
@@ -83,10 +87,31 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         setBuffering(false);
         retryCount.current = 0;
         onReady?.();
-        if (activeRef.current) video.play().catch(() => {});
+        tryStartPlayback();
       };
 
       let disposed = false;
+
+      // Give HLS time to build a forward buffer before starting playback.
+      // Some live playlists cannot provide 15 seconds, so fall back after 8s.
+      const tryStartPlayback = () => {
+        if (disposed || !activeRef.current || !readyRef.current || !video.paused) return;
+        let ahead = 0;
+        for (let i = 0; i < video.buffered.length; i++) {
+          const start = video.buffered.start(i);
+          const end = video.buffered.end(i);
+          if (video.currentTime >= start - 0.25 && video.currentTime <= end) {
+            ahead = end - video.currentTime;
+            break;
+          }
+        }
+        if (ahead >= 15 || startupFallbackRef.current) video.play().catch(() => {});
+      };
+
+      startupTimerRef.current = setTimeout(() => {
+        startupFallbackRef.current = true;
+        tryStartPlayback();
+      }, 8000);
       const markError = () => {
         if (disposed) return;
         clearTimeout(timerRef.current);
@@ -104,11 +129,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
 
       const onWaiting = () => { if (!disposed && activeRef.current && readyRef.current) setBuffering(true); };
       const onPlaying = () => { markReady(); if (!disposed) { setBuffering(false); clearTimeout(recoveryRef.current); } };
-      const onCanPlay = () => { if (!disposed) setBuffering(false); };
+      const onCanPlay = () => { if (!disposed) { setBuffering(false); tryStartPlayback(); } };
+      const onProgress = () => tryStartPlayback();
       video.addEventListener('waiting', onWaiting);
       video.addEventListener('stalled', onWaiting);
       video.addEventListener('playing', onPlaying);
       video.addEventListener('canplay', onCanPlay);
+      video.addEventListener('progress', onProgress);
       video.addEventListener('loadeddata', markReady);
 
       const init = async () => {
@@ -120,17 +147,22 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           if (Hls.isSupported()) {
             const hls = new Hls({
               enableWorker:           true,
-              lowLatencyMode:         true,
-              maxBufferLength:        20,
-              maxMaxBufferLength:     35,
-              maxBufferSize:          32 * 1000 * 1000,
+              // Prefer a healthy forward buffer over ultra-low latency to reduce stalls.
+              lowLatencyMode:         false,
+              maxBufferLength:        45,
+              maxMaxBufferLength:     90,
+              maxBufferSize:          64 * 1000 * 1000,
+              backBufferLength:       30,
+              maxBufferHole:          0.5,
+              startFragPrefetch:      true,
               startLevel:             -1,
               abrEwmaDefaultEstimate: 1_000_000,
               progressive:            true,
               // Faster segment load retry
-              manifestLoadingMaxRetry: 3,
-              levelLoadingMaxRetry:    3,
-              fragLoadingMaxRetry:     3,
+              manifestLoadingMaxRetry: 5,
+              levelLoadingMaxRetry:    5,
+              fragLoadingMaxRetry:     6,
+              fragLoadingMaxRetryTimeout: 64000,
             });
             hlsRef.current = hls;
 
@@ -187,9 +219,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         disposed = true;
         clearTimeout(timerRef.current);
         clearTimeout(recoveryRef.current);
+        clearTimeout(startupTimerRef.current);
         video.removeEventListener('waiting', onWaiting);
         video.removeEventListener('stalled', onWaiting);
         video.removeEventListener('canplay', onCanPlay);
+        video.removeEventListener('progress', onProgress);
         video.removeEventListener('playing', onPlaying);
         video.removeEventListener('loadeddata', markReady);
         video.onerror = null;
@@ -203,7 +237,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     useEffect(() => {
       const video = videoRef.current;
       if (!video || !ready) return;
-      if (isActive && shouldLoad) video.play().catch(() => {});
+      if (isActive && shouldLoad) {
+        // The init effect starts playback once the forward buffer is ready.
+        // This effect remains the fast path when the player is already buffered.
+        const ahead = video.buffered.length ? video.buffered.end(video.buffered.length - 1) - video.currentTime : 0;
+        if (ahead >= 15) video.play().catch(() => {});
+      }
       else { video.pause(); setBuffering(false); }
     }, [isActive, ready, shouldLoad]);
 
