@@ -26,6 +26,7 @@ export default function ChannelDetail() {
   const [videoError, setVideoError] = useState(false);
   const [muted, setMuted]  = useState(false);
   const [pipActive, setPipActive] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   const { liked, likeCount, toggleLike }     = useReactions(id || '', user?.id);
   const { isFavorite, toggleFavorite }       = useFavorites(user?.id);
@@ -33,20 +34,23 @@ export default function ChannelDetail() {
 
   useEffect(() => {
     if (!id) return;
-    fetchAllChannels().then(() => {
-      const ch = getChannelById(id);
-      setChannel(ch || null);
-      setLoading(false);
-    });
+    setLoading(true);
+    setChannel(null);
+    let cancelled = false;
+    fetchAllChannels()
+      .then(() => { if (!cancelled) setChannel(getChannelById(id) || null); })
+      .catch(() => { if (!cancelled) toast.error('Unable to load channel information'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [id]);
 
   useEffect(() => {
     if (channel) {
       fetchComments();
-      initVideo(channel.streamUrl);
+      void initVideo(channel.streamUrl);
     }
     return () => destroyHls();
-  }, [channel]);
+  }, [channel, retryKey]);
 
   const initVideo = async (src: string) => {
     const video = videoRef.current;
@@ -54,7 +58,7 @@ export default function ChannelDetail() {
     setVideoReady(false);
     setVideoError(false);
     const { default: Hls } = await import('hls.js').catch(() => ({ default: null }));
-    if (!Hls) return;
+    if (!Hls) { setVideoError(true); return; }
     if ((Hls as { isSupported: () => boolean }).isSupported()) {
       const hls = new (Hls as new (o: object) => {
         loadSource: (s: string) => void;
@@ -71,7 +75,7 @@ export default function ChannelDetail() {
       video.src = src;
       video.onloadedmetadata = () => { setVideoReady(true); video.play().catch(() => {}); };
       video.onerror = () => setVideoError(true);
-    }
+    } else { setVideoError(true); }
   };
 
   const destroyHls = () => {
@@ -79,7 +83,7 @@ export default function ChannelDetail() {
       (hlsRef.current as { destroy: () => void }).destroy();
       hlsRef.current = null;
     }
-    if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; }
+    if (videoRef.current) { videoRef.current.pause(); videoRef.current.removeAttribute('src'); videoRef.current.load(); }
   };
 
   const handlePiP = async () => {
@@ -96,8 +100,9 @@ export default function ChannelDetail() {
 
   const handleShare = async () => {
     const text = `Watching ${channel?.name} live on TikVTV!`;
-    if (navigator.share) navigator.share({ title: channel?.name, text }).catch(() => {});
-    else { await navigator.clipboard.writeText(text); toast.success('Copied!'); }
+    const url = window.location.href;
+    if (navigator.share) navigator.share({ title: channel?.name, text, url }).catch(() => {});
+    else { try { await navigator.clipboard.writeText(url); toast.success('Channel link copied!'); } catch { toast.error('Unable to copy link'); } }
   };
 
   const handleLike = async () => {
@@ -114,9 +119,11 @@ export default function ChannelDetail() {
     if (!user) { setShowAuth(true); return; }
     if (!commentText.trim() || sending) return;
     setSending(true);
-    await addComment(commentText, user.id);
-    setCommentText('');
-    setSending(false);
+    try {
+      await addComment(commentText, user.id);
+      setCommentText('');
+    } catch { toast.error('Could not send comment'); }
+    finally { setSending(false); }
   };
 
   if (loading) return (
@@ -160,7 +167,7 @@ export default function ChannelDetail() {
           className="w-full h-full object-cover"
           muted={muted}
           playsInline
-          loop
+          controls
         />
         {!videoReady && !videoError && (
           <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-900 to-black">
@@ -179,6 +186,7 @@ export default function ChannelDetail() {
             <div className="flex flex-col items-center gap-2">
               <Wifi className="w-10 h-10 text-white/20" />
               <p className="text-white/40 text-sm">Stream unavailable</p>
+              <button type="button" onClick={() => setRetryKey(key => key + 1)} className="mt-2 rounded-full bg-white px-5 py-2 text-sm font-semibold text-black">Retry stream</button>
             </div>
           </div>
         )}
