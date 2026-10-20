@@ -87,7 +87,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             setBuffering(false);
             onErrorRef.current?.();
           }
-        }, 30_000);
+        }, 18_000);
       }
 
       const markReady = () => {
@@ -148,9 +148,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         clearTimeout(recoveryRef.current);
         recoveryRef.current = setTimeout(() => {
           if (disposed || !activeRef.current || document.visibilityState === 'hidden') return;
-          const hls = hlsRef.current as { startLoad?: () => void; recoverMediaError?: () => void } | null;
+          const hls = hlsRef.current as { startLoad?: () => void } | null;
+          // A network stall is not proof of a decoder fault. Restart loading only;
+          // recoverMediaError() resets the media pipeline and can worsen a healthy stream.
           try { hls?.startLoad?.(); } catch { /* transient reconnect */ }
-          try { hls?.recoverMediaError?.(); } catch { /* browser may not need media recovery */ }
         }, 3500);
       };
       const onPlaying = () => { markReady(); if (!disposed) { setBuffering(false); clearTimeout(recoveryRef.current); clearTimeout(startupTimerRef.current); } };
@@ -176,20 +177,29 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
               autoStartLoad:           false,
               // Prefer a healthy forward buffer over ultra-low latency to reduce stalls.
               lowLatencyMode:         false,
-              maxBufferLength:        30,
-              maxMaxBufferLength:     60,
-              maxBufferSize:          32 * 1000 * 1000,
-              backBufferLength:       15,
+              // Bound memory on Android while keeping a useful forward buffer.
+              maxBufferLength:        18,
+              maxMaxBufferLength:     30,
+              maxBufferSize:          24 * 1000 * 1000,
+              backBufferLength:       8,
               maxBufferHole:          0.5,
               startFragPrefetch:      true,
               startLevel:             -1,
-              abrEwmaDefaultEstimate: 1_000_000,
+              // Start conservatively on variable mobile connections; ABR can ramp up.
+              abrEwmaDefaultEstimate: 650_000,
+              abrBandWidthFactor:     0.8,
+              abrBandWidthUpFactor:   0.6,
               progressive:            true,
-              // Faster segment load retry
-              manifestLoadingMaxRetry: 5,
-              levelLoadingMaxRetry:    5,
-              fragLoadingMaxRetry:     6,
-              fragLoadingMaxRetryTimeout: 64000,
+              // Fail dead manifests/segments faster instead of spending a minute in internal retries.
+              manifestLoadingTimeOut: 8_000,
+              levelLoadingTimeOut:    10_000,
+              fragLoadingTimeOut:     12_000,
+              manifestLoadingMaxRetry: 3,
+              levelLoadingMaxRetry:    3,
+              fragLoadingMaxRetry:     4,
+              manifestLoadingMaxRetryTimeout: 8_000,
+              levelLoadingMaxRetryTimeout:    8_000,
+              fragLoadingMaxRetryTimeout:    12_000,
             });
             hlsRef.current = hls;
 
