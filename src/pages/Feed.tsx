@@ -1,5 +1,5 @@
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Loader2, Wifi } from 'lucide-react';
 import { useChannels } from '@/hooks/useChannels';
@@ -34,14 +34,13 @@ export default function Feed() {
   const { user }     = useAuthStore();
   const { addToHistory } = useWatchHistory();
   const containerRef = useRef<HTMLDivElement>(null);
-  const observerRef  = useRef<IntersectionObserver | null>(null);
 
   // Update category if URL param changes
   useEffect(() => {
     if (catParam && catParam !== category) setCategory(catParam);
   }, [catParam, category]);
 
-  const liveChannels = channels.filter(ch => !deadIds.has(ch.id));
+  const liveChannels = useMemo(() => channels.filter(ch => !deadIds.has(ch.id)), [channels, deadIds]);
   const liveCount    = liveIds.size;
 
   // Determine the channel closest to the feed viewport's center on every scroll.
