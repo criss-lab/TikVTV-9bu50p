@@ -16,6 +16,8 @@ import History from './pages/History';
 import EPG from './pages/EPG';
 import ClipGallery from './pages/ClipGallery';
 import Profile from './pages/Profile';
+import Premium from './pages/Premium';
+import PaymentCallback from './pages/PaymentCallback';
 import NotFound from './pages/NotFound';
 
 const queryClient = new QueryClient({
@@ -62,6 +64,8 @@ const App = () => (
             <Route path="/epg"         element={<EPG />} />
             <Route path="/clips"       element={<ClipGallery />} />
             <Route path="/profile"     element={<Profile />} />
+            <Route path="/premium"     element={<Premium />} />
+            <Route path="/payment-callback" element={<PaymentCallback />} />
             <Route path="/channel/:id" element={<ChannelDetail />} />
             <Route path="*"            element={<NotFound />} />
           </Routes>
