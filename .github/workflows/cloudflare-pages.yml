@@ -1,0 +1,53 @@
+name: Cloudflare Pages preview
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/pesapal-premium-integration]
+    paths: ['src/**', 'public/**', 'package*.json', 'vite.config.ts', '.github/workflows/cloudflare-pages.yml']
+permissions:
+  contents: read
+  deployments: write
+concurrency:
+  group: cloudflare-pages-preview
+  cancel-in-progress: true
+jobs:
+  deploy-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Validate deployment configuration
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CF_PROJECT: ${{ vars.CLOUDFLARE_PROJECT_NAME }}
+          SB_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SB_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          test -n "$CF_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN secret"; exit 1; }
+          test -n "$CF_ACCOUNT" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID variable"; exit 1; }
+          test -n "$CF_PROJECT" || { echo "::error::Missing CLOUDFLARE_PROJECT_NAME variable"; exit 1; }
+          test -n "$SB_URL" || { echo "::error::Missing VITE_SUPABASE_URL secret"; exit 1; }
+          test -n "$SB_KEY" || { echo "::error::Missing VITE_SUPABASE_ANON_KEY secret"; exit 1; }
+      - run: npm ci
+      - run: npx tsc --noEmit -p tsconfig.app.json
+      - name: Build static site
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      - name: Validate SPA fallback
+        run: |
+          test -f dist/index.html
+          grep -Fx '/* /index.html 200' dist/_redirects
+      - name: Deploy preview (no production DNS changes)
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=${{ vars.CLOUDFLARE_PROJECT_NAME }} --branch=feature/pesapal-premium-integration
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
