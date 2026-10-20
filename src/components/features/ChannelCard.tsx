@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { memo, useRef, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { IPTVChannel, AuthUser } from '@/types';
 import VideoPlayer from './VideoPlayer';
@@ -18,7 +18,7 @@ interface Props {
   onChannelReady: (id: string) => void;
 }
 
-export default function ChannelCard({
+function ChannelCard({
   channel, isActive, shouldLoad, index,
   user, onAuthRequired, onChannelDead, onChannelReady,
 }: Props) {
@@ -109,3 +109,7 @@ export default function ChannelCard({
     </div>
   );
 }
+
+// Feed scroll updates the active index frequently. Skip re-rendering every off-screen
+// channel card when its stable props have not changed.
+export default memo(ChannelCard);
