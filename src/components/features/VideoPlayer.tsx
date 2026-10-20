@@ -100,7 +100,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       // Give HLS time to build a forward buffer before starting playback.
       // Some live playlists cannot provide 15 seconds, so fall back after 8s.
       const tryStartPlayback = () => {
-        if (disposed || !activeRef.current || !readyRef.current || !video.paused) return;
+        if (disposed || !activeRef.current || document.visibilityState === 'hidden' || !readyRef.current || !video.paused) return;
         let ahead = 0;
         for (let i = 0; i < video.buffered.length; i++) {
           const start = video.buffered.start(i);
@@ -137,7 +137,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         setBuffering(true);
         clearTimeout(recoveryRef.current);
         recoveryRef.current = setTimeout(() => {
-          if (disposed || !activeRef.current) return;
+          if (disposed || !activeRef.current || document.visibilityState === 'hidden') return;
           const hls = hlsRef.current as { startLoad?: () => void; recoverMediaError?: () => void } | null;
           try { hls?.startLoad?.(); } catch { /* transient reconnect */ }
           try { hls?.recoverMediaError?.(); } catch { /* browser may not need media recovery */ }
@@ -198,7 +198,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
                 })).reverse(),
               ];
               setQualities(lvls);
-              if (activeRef.current) hls.startLoad();
+              if (activeRef.current && document.visibilityState !== 'hidden') hls.startLoad();
               else hls.stopLoad();
               tryStartPlayback();
               // A parsed playlist alone does not mean media segments are playable.
@@ -304,7 +304,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             // If the user returns to this card before a full buffer is ready, keep waiting briefly then use the live-stream fallback.
             clearTimeout(startupTimerRef.current);
             startupTimerRef.current = setTimeout(() => {
-              if (activeRef.current && shouldLoad) {
+              if (activeRef.current && shouldLoad && document.visibilityState !== 'hidden') {
                 startupFallbackRef.current = true;
                 video.play().catch(() => {});
               }
