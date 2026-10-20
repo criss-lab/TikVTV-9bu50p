@@ -68,7 +68,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
 
       retryCount.current = 0;
       timerRef.current = setTimeout(() => {
-        if (!readyRef.current) {
+        if (!readyRef.current && activeRef.current) {
           setError(true);
           setBuffering(false);
           onError?.();
