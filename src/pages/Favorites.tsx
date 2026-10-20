@@ -12,7 +12,8 @@ import AuthModal from '@/components/features/AuthModal';
 import { useT } from '@/lib/i18n';
 import type { IPTVChannel, AuthUser } from '@/types';
 
-const PRELOAD_RADIUS = 2;
+// Match the main feed: active channel plus one neighbour on each side.
+const PRELOAD_RADIUS = 1;
 
 export default function Favorites() {
   const { user }                      = useAuthStore();
