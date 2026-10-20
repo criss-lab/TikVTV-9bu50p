@@ -1,56 +1,66 @@
-const CACHE_NAME = 'tikvtv-v2';
+const CACHE_NAME = 'tikvtv-v3';
 const SHELL_URLS = ['/', '/index.html'];
+const MEDIA_EXTENSIONS = /\.(?:m3u8?|mpd|ts|m4s|mp4|m4v|m4a|aac|mp3|mp2t|webm|mov|flv|key)(?:$|\?)/i;
+const STATIC_DESTINATIONS = new Set(['script', 'style', 'image', 'font', 'manifest']);
 
-// Install: cache app shell
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(SHELL_URLS).catch(() => {});
-    })
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_URLS).catch(() => {}))
   );
   self.skipWaiting();
 });
 
-// Activate: clean old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((key) => key.startsWith('tikvtv-') && key !== CACHE_NAME).map((key) => caches.delete(key)))
     )
   );
   self.clients.claim();
 });
 
-// Fetch: network-first for API/streams, cache-first for shell
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
+  const request = event.request;
+  if (request.method !== 'GET') return;
 
-  // Never cache video streams or external APIs
+  const url = new URL(request.url);
+  // Never cache live streams, segments, encryption keys, or API responses.
+  // This is deliberately broader than .m3u8: providers commonly use .m4s/.mp4/.aac segments.
   if (
+    MEDIA_EXTENSIONS.test(url.pathname) ||
+    /(?:^|\/)api(?:\/|$)/i.test(url.pathname) ||
     url.hostname.includes('iptv-org') ||
     url.hostname.includes('akamaized') ||
     url.hostname.includes('cdninstagram') ||
-    event.request.url.includes('.m3u') ||
-    event.request.url.includes('.m3u8') ||
-    event.request.url.includes('.ts') ||
-    event.request.method !== 'GET'
-  ) {
+    request.destination === 'video' ||
+    request.destination === 'audio'
+  ) return;
+
+  // Keep navigation fresh so deployments are not trapped behind a cached HTML shell.
+  if (request.mode === 'navigate' && url.origin === self.location.origin) {
+    event.respondWith(
+      fetch(request).catch(async () => {
+        const cache = await caches.open(CACHE_NAME);
+        return (await cache.match('/index.html')) || (await cache.match('/')) || Response.error();
+      })
+    );
     return;
   }
 
-  // Cache-first for same-origin assets (JS, CSS, images)
-  if (url.origin === self.location.origin) {
-    event.respondWith(
-      caches.match(event.request).then((cached) => {
-        if (cached) return cached;
-        return fetch(event.request).then((response) => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        });
-      })
-    );
-  }
+  // Cache only same-origin static assets. Do not cache arbitrary fetch() responses,
+  // Supabase/API data, or live playlists under a generic cache-first strategy.
+  if (url.origin !== self.location.origin || !STATIC_DESTINATIONS.has(request.destination)) return;
+
+  event.respondWith(
+    caches.open(CACHE_NAME).then(async (cache) => {
+      const cached = await cache.match(request);
+      if (cached) return cached;
+
+      const response = await fetch(request);
+      if (response.ok && response.type === 'basic') {
+        await cache.put(request, response.clone());
+      }
+      return response;
+    })
+  );
 });
