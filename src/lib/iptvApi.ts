@@ -305,10 +305,14 @@ async function fetchM3U(url: string, tag: string): Promise<IPTVChannel[]> {
 }
 
 async function fetchExtraSources(): Promise<IPTVChannel[]> {
-  // Start every source together and allow each source's own timeout to settle independently.
-  // The primary channel/stream API is sufficient to render the first feed; extras are optional enrichment.
-  const results = await Promise.allSettled(EXTRA_SOURCES.map(([tag, url]) => fetchM3U(url, tag)));
-  return results.flatMap(result => result.status === 'fulfilled' ? result.value : []);
+  // Keep optional playlist traffic bounded so it cannot flood mobile connections or compete with playback.
+  const all: IPTVChannel[] = [];
+  for (let i = 0; i < EXTRA_SOURCES.length; i += 8) {
+    const batch = EXTRA_SOURCES.slice(i, i + 8);
+    const results = await Promise.allSettled(batch.map(([tag, url]) => fetchM3U(url, tag)));
+    for (const result of results) if (result.status === 'fulfilled') all.push(...result.value);
+  }
+  return all;
 }
 
 let extraSourcesPromise: Promise<IPTVChannel[]> | null = null;
