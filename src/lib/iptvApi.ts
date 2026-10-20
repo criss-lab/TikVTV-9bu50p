@@ -350,12 +350,12 @@ function scheduleExtraSourceEnrichment() {
       const onVisible = () => {
         if (document.visibilityState !== 'visible') return;
         document.removeEventListener('visibilitychange', onVisible);
-        scheduleExtraSourceEnrichment();
+        void getExtraSourcesOnce().then(enrichCachedChannels);
       };
       document.addEventListener('visibilitychange', onVisible);
       return;
     }
-    scheduleExtraSourceEnrichment();
+    void getExtraSourcesOnce().then(enrichCachedChannels);
   };
 
   if (typeof window !== 'undefined') {
