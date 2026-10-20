@@ -24,7 +24,6 @@ export default function Favorites() {
   const [showAuth,    setShowAuth]    = useState(false);
   const [deadIds,     setDeadIds]     = useState<Set<string>>(new Set());
   const containerRef                  = useRef<HTMLDivElement>(null);
-  const observerRef                   = useRef<IntersectionObserver | null>(null);
 
   const channels: IPTVChannel[] = favorites
     .map(f => f.channel_data)
