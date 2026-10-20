@@ -229,6 +229,15 @@ function genLogoUrl(name: string): string {
   return `https://ui-avatars.com/api/?name=${initials}&background=${c}&color=f59e0b&size=128&bold=true&font-size=0.4`;
 }
 
+function isValidStreamUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value.trim());
+    return (parsed.protocol === 'https:' || parsed.protocol === 'http:') && Boolean(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function parseM3U(text: string, sourceTag: string): IPTVChannel[] {
   const lines    = text.split('\n');
   const channels: IPTVChannel[] = [];
@@ -238,7 +247,7 @@ function parseM3U(text: string, sourceTag: string): IPTVChannel[] {
     const line = lines[idx].trim();
     if (line.startsWith('#EXTINF:')) {
       const nextLine = (lines[idx + 1] || '').trim();
-      if (nextLine && !nextLine.startsWith('#') && nextLine.startsWith('http')) {
+      if (nextLine && !nextLine.startsWith('#') && isValidStreamUrl(nextLine)) {
         // Skip YouTube / Twitch
         if (nextLine.includes('youtube.com') || nextLine.includes('twitch.tv') || nextLine.includes('youtu.be')) {
           idx += 2;
@@ -398,7 +407,7 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
     console.log(`[IPTV] Primary: ${rawChannels.length} channels, ${rawStreams.length} streams`);
     const streamMap = new Map<string, string>();
     for (const s of rawStreams) {
-      if (s.channel && s.url && !streamMap.has(s.channel)) streamMap.set(s.channel, s.url);
+      if (s.channel && isValidStreamUrl(s.url) && !streamMap.has(s.channel)) streamMap.set(s.channel, s.url.trim());
     }
 
     const primary: IPTVChannel[] = rawChannels
