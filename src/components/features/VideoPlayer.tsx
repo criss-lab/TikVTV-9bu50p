@@ -26,6 +26,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     const timerRef    = useRef<ReturnType<typeof setTimeout>>();
     const readyRef    = useRef(false);
     const retryCount  = useRef(0);
+    const activeRef = useRef(isActive);
+    activeRef.current = isActive;
+    const [retryKey, setRetryKey] = useState(0);
 
     const [muted,       setMuted]       = useState(true);
     const [error,       setError]       = useState(false);
@@ -66,16 +69,19 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       }, 14_000);
 
       const markReady = () => {
+        if (disposed) return;
         clearTimeout(timerRef.current);
         readyRef.current = true;
         setReady(true);
         setBuffering(false);
         retryCount.current = 0;
         onReady?.();
-        if (isActive) video.play().catch(() => {});
+        if (activeRef.current) video.play().catch(() => {});
       };
 
+      let disposed = false;
       const markError = () => {
+        if (disposed) return;
         clearTimeout(timerRef.current);
         setError(true);
         setBuffering(false);
@@ -92,6 +98,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       const init = async () => {
         try {
           const { default: Hls } = await import('hls.js');
+          if (disposed) return;
           destroyHls();
 
           if (Hls.isSupported()) {
@@ -135,7 +142,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
 
             hls.on(Hls.Events.ERROR, (_: unknown, d: { fatal: boolean; type: string }) => {
               if (d.fatal) {
-                if (retryCount.current < 1) {
+                if (retryCount.current < 2 && d.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                  retryCount.current++;
+                  hls.startLoad();
+                } else if (retryCount.current < 2 && d.type === Hls.ErrorTypes.MEDIA_ERROR) {
                   retryCount.current++;
                   hls.recoverMediaError();
                 } else {
@@ -158,14 +168,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       init();
 
       return () => {
+        disposed = true;
         clearTimeout(timerRef.current);
         destroyHls();
-        if (video) { video.pause(); video.src = ''; }
+        if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
         setReady(false);
         readyRef.current = false;
         setBuffering(false);
       };
-    }, [src, shouldLoad, isActive, onError, onReady]); // Added missing dependencies to `useEffect`
+    }, [src, shouldLoad, retryKey, onError, onReady]);
 
     // ── Play / pause ─────────────────────────────────────────────────────────
     useEffect(() => {
@@ -212,7 +223,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       setReady(false);
       readyRef.current = false;
       retryCount.current = 0;
-      // Reinit by briefly triggering a re-render via error→false
+      setRetryKey(key => key + 1);
     };
 
     const currentQualityLabel = qualities.find(q => q.level === currentLvl)?.label || 'Auto';
