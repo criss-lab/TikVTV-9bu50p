@@ -209,7 +209,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
                 retryCount.current++;
                 clearTimeout(recoveryRef.current);
                 recoveryRef.current = setTimeout(() => {
-                  if (!disposed) hls.startLoad();
+                  if (!disposed && activeRef.current) hls.startLoad();
                 }, Math.min(1000 * 2 ** (retryCount.current - 1), 8000));
               } else if (retryCount.current < 4 && d.type === Hls.ErrorTypes.MEDIA_ERROR) {
                 retryCount.current++;
