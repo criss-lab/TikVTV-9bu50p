@@ -1,0 +1,47 @@
+name: Flutter Android APK
+on:
+  push:
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/flutter-apk.yml'
+  pull_request:
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/flutter-apk.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  flutter-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: flutter_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Generate Android runner
+        run: flutter create . --platforms=android --project-name tikvtv
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - name: Configure Android network access
+        run: python3 tool/configure_android.py
+      - name: Build Flutter debug APK
+        run: flutter build apk --debug
+      - name: Verify APK
+        run: test -s build/app/outputs/flutter-apk/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tikvtv-flutter-debug-apk
+          path: flutter_app/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
