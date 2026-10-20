@@ -51,18 +51,16 @@ export default function Feed() {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            const idx = parseInt(entry.target.getAttribute('data-index') || '0', 10);
-            setActiveIndex(idx);
-            // Add to watch history when active
-            if (liveChannels[idx]) addToHistory(liveChannels[idx]);
-            // Trigger load more near end
-            if (idx >= liveChannels.length - 5 && hasMore) loadMore();
-          }
-        });
+        // Pick the most visible card once per observer batch so two partially visible cards never fight for playback.
+        const best = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (best && best.intersectionRatio >= 0.6) {
+          const idx = parseInt(best.target.getAttribute('data-index') || '0', 10);
+          setActiveIndex(idx);
+          if (liveChannels[idx]) addToHistory(liveChannels[idx]);
+          if (idx >= liveChannels.length - 5 && hasMore) loadMore();
+        }
       },
-      { threshold: 0.6, root: container }
+      { threshold: [0.25, 0.6, 0.8], root: container }
     );
 
     container.querySelectorAll('[data-index]').forEach(c => observer.observe(c));
