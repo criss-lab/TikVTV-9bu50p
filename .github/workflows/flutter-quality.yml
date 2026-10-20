@@ -9,6 +9,8 @@ on:
       - 'flutter_app/**'
       - '.github/workflows/flutter-quality.yml'
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   analyze-and-test:
     runs-on: ubuntu-latest
@@ -22,9 +24,10 @@ jobs:
           channel: stable
           cache: true
       - name: Generate platform runners
-        run: flutter create . --platforms=android,web
+        run: flutter create . --platforms=android,web --project-name tikvtv
       - run: flutter pub get
-      - run: dart format lib test
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze
       - run: flutter test
       - run: flutter build apk --debug
