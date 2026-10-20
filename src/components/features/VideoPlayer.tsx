@@ -207,12 +207,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     // ── Play / pause ─────────────────────────────────────────────────────────
     useEffect(() => {
       const video = videoRef.current;
-      if (!video || !ready) return;
+      if (!video) return;
       const hls = hlsRef.current as { startLoad: () => void } | null;
       if (isActive && shouldLoad) {
         clearTimeout(preloadTimerRef.current);
         hls?.startLoad();
-        video.play().catch(() => {});
+        if (ready) video.play().catch(() => {});
       } else { video.pause(); setBuffering(false); }
     }, [isActive, ready, shouldLoad]);
 
