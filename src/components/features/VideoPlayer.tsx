@@ -128,7 +128,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       };
 
       const onWaiting = () => { if (!disposed && activeRef.current && readyRef.current) setBuffering(true); };
-      const onPlaying = () => { markReady(); if (!disposed) { setBuffering(false); clearTimeout(recoveryRef.current); } };
+      const onPlaying = () => { markReady(); if (!disposed) { setBuffering(false); clearTimeout(recoveryRef.current); clearTimeout(startupTimerRef.current); } };
       const onCanPlay = () => { if (!disposed) { setBuffering(false); tryStartPlayback(); } };
       const onProgress = () => tryStartPlayback();
       video.addEventListener('waiting', onWaiting);
@@ -181,7 +181,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
                 })).reverse(),
               ];
               setQualities(lvls);
-              if (activeRef.current) video.play().catch(() => {});
+              tryStartPlayback();
               // A parsed playlist alone does not mean media segments are playable.
             });
 
@@ -241,7 +241,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         // The init effect starts playback once the forward buffer is ready.
         // This effect remains the fast path when the player is already buffered.
         const ahead = video.buffered.length ? video.buffered.end(video.buffered.length - 1) - video.currentTime : 0;
-        if (ahead >= 15) video.play().catch(() => {});
+        if (ahead >= 15 || startupFallbackRef.current) video.play().catch(() => {});
       }
       else { video.pause(); setBuffering(false); }
     }, [isActive, ready, shouldLoad]);
