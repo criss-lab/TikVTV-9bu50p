@@ -75,8 +75,15 @@ export default function ChannelDetail() {
     const startupTimer = window.setTimeout(fail, 18000);
     video.addEventListener('loadeddata', ready, { once: true });
     video.addEventListener('error', fail, { once: true });
+    detailCleanupRef.current = () => {
+      disposed = true;
+      window.clearTimeout(startupTimer);
+      video.removeEventListener('loadeddata', ready);
+      video.removeEventListener('error', fail);
+    };
     try {
       const { default: Hls } = await import('hls.js');
+      if (disposed) return;
       if (Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
@@ -100,13 +107,7 @@ export default function ChannelDetail() {
         video.load();
       } else fail();
     } catch { fail(); }
-    // The effect cleanup invokes destroyHls and invalidates this attempt.
-    detailCleanupRef.current = () => {
-      disposed = true;
-      window.clearTimeout(startupTimer);
-      video.removeEventListener('loadeddata', ready);
-      video.removeEventListener('error', fail);
-    };
+
   };
 
   const destroyHls = () => {
