@@ -305,14 +305,22 @@ async function fetchM3U(url: string, tag: string): Promise<IPTVChannel[]> {
 }
 
 async function fetchExtraSources(): Promise<IPTVChannel[]> {
-  const all: IPTVChannel[] = [];
-  // Fetch in parallel batches of 8
-  for (let i = 0; i < EXTRA_SOURCES.length; i += 8) {
-    const batch = EXTRA_SOURCES.slice(i, i + 8);
-    const results = await Promise.all(batch.map(([tag, url]) => fetchM3U(url, tag)));
-    for (const r of results) all.push(...r);
+  // Start every source together and allow each source's own timeout to settle independently.
+  // The primary channel/stream API is sufficient to render the first feed; extras are optional enrichment.
+  const results = await Promise.allSettled(EXTRA_SOURCES.map(([tag, url]) => fetchM3U(url, tag)));
+  return results.flatMap(result => result.status === 'fulfilled' ? result.value : []);
+}
+
+let extraSourcesPromise: Promise<IPTVChannel[]> | null = null;
+function getExtraSourcesOnce(): Promise<IPTVChannel[]> {
+  if (!extraSourcesPromise) {
+    extraSourcesPromise = fetchExtraSources().catch(error => {
+      extraSourcesPromise = null;
+      console.warn('[IPTV] Optional source enrichment failed:', error);
+      return [];
+    });
   }
-  return all;
+  return extraSourcesPromise;
 }
 
 export async function fetchAllChannels(): Promise<IPTVChannel[]> {
@@ -330,13 +338,13 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
     }
   } catch {}
 
-  console.log('[IPTV] Fetching everything…');
+  console.log('[IPTV] Fetching primary channel data…');
 
   try {
-    const [chanRes, streamRes, extraChannels] = await Promise.all([
-      fetch(CHANNELS_API),
-      fetch(STREAMS_API),
-      fetchExtraSources(),
+    // Do not hold the first screen hostage to dozens of optional M3U feeds.
+    const [chanRes, streamRes] = await Promise.all([
+      fetch(CHANNELS_API, { signal: AbortSignal.timeout(12_000) }),
+      fetch(STREAMS_API, { signal: AbortSignal.timeout(12_000) }),
     ]);
 
     if (!chanRes.ok || !streamRes.ok) throw new Error('Primary API error');
@@ -368,26 +376,33 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
         network:     ch.network,
       }));
 
-    const existingIds  = new Set(primary.map(ch => ch.id));
-    const existingUrls = new Set(primary.map(ch => ch.streamUrl));
-    const deduped = extraChannels.filter(ch =>
-      !existingIds.has(ch.id) &&
-      !existingUrls.has(ch.streamUrl) &&
-      ch.streamUrl && ch.name && ch.name.length > 1
-    );
-
-    const all = shuffle([...primary, ...deduped]);
-    console.log(`[IPTV] Total: ${all.length} (${primary.length} primary + ${deduped.length} extra)`);
-
+    // Render primary IPTV channels immediately. Enrich the in-memory list in the background.
+    const initial = shuffle(primary);
+    memCache = initial;
+    console.log(`[IPTV] Ready: ${initial.length} primary channels; optional feeds loading in background`);
     try {
-      const cacheData: CacheData = { channels: all, timestamp: Date.now() };
-      localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: initial, timestamp: Date.now() } satisfies CacheData));
     } catch (e) {
-      console.warn('[IPTV] Cache write failed:', e);
+      console.warn('[IPTV] Initial cache write failed:', e);
     }
 
-    memCache = all;
-    return memCache;
+    void getExtraSourcesOnce().then(extraChannels => {
+      if (!extraChannels.length || !memCache) return;
+      const existingIds = new Set(memCache.map(ch => ch.id));
+      const existingUrls = new Set(memCache.map(ch => ch.streamUrl));
+      const deduped = extraChannels.filter(ch =>
+        !existingIds.has(ch.id) && !existingUrls.has(ch.streamUrl) && ch.streamUrl && ch.name && ch.name.length > 1
+      );
+      if (!deduped.length) return;
+      memCache = [...memCache, ...shuffle(deduped)];
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: memCache, timestamp: Date.now() } satisfies CacheData));
+      } catch (e) {
+        console.warn('[IPTV] Enriched cache write failed:', e);
+      }
+      console.log(`[IPTV] Background enrichment added ${deduped.length} channels`);
+    });
+    return initial;
   } catch (err) {
     console.error('[IPTV] Primary fetch failed, using fallback:', err);
     memCache = getFallbackChannels();
