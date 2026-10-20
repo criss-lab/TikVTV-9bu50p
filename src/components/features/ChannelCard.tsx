@@ -6,6 +6,7 @@ import ChannelInfo from './ChannelInfo';
 import ReactionBar from './ReactionBar';
 import CommentSheet from './CommentSheet';
 import { useComments } from '@/hooks/useComments';
+import { reportStreamHealth } from '@/lib/streamHealth';
 
 interface Props {
   channel:        IPTVChannel;
@@ -35,10 +36,12 @@ export default function ChannelCard({
   const handleError = useCallback(() => {
     // Keep the card mounted so VideoPlayer can retry transient stream failures.
     setStreamFailed(true);
-  }, []);
+    reportStreamHealth(channel.id, false);
+  }, [channel.id]);
 
   const handleReady = useCallback(() => {
     setStreamFailed(false);
+    reportStreamHealth(channel.id, true);
     if (!sharedOnReady.current) {
       sharedOnReady.current = true;
       onChannelReady(channel.id);
