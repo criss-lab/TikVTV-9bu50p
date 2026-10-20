@@ -307,7 +307,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
               setBuffering(false);
               onErrorRef.current?.();
             }
-          }, 30_000);
+          }, 18_000);
         }
         if (ready) {
           let ahead = 0;
@@ -368,7 +368,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
                 setBuffering(false);
                 onErrorRef.current?.();
               }
-            }, 30_000);
+            }, 18_000);
           }
           clearTimeout(startupTimerRef.current);
           startupFallbackRef.current = false;
