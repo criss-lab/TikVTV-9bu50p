@@ -65,7 +65,9 @@
     display: none;
   }
 
-  scrollbar-width: none;
+  html {
+    scrollbar-width: none;
+  }
 }
 
 @layer utilities {
