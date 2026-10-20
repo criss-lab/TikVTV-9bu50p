@@ -26,7 +26,8 @@ export default function ChannelDetail() {
   const detailCleanupRef   = useRef<(() => void) | null>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [videoError, setVideoError] = useState(false);
-  const [muted, setMuted]  = useState(false);
+  // Start muted so mobile browsers allow autoplay, matching the working vertical feed.
+  const [muted, setMuted]  = useState(true);
   const [pipActive, setPipActive] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const { allowed, active, remainingMs, loading: accessLoading } = useViewingAccess();
