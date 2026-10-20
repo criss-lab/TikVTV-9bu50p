@@ -330,10 +330,19 @@ function getExtraSourcesOnce(): Promise<IPTVChannel[]> {
 function enrichCachedChannels(extraChannels: IPTVChannel[]) {
   if (!extraChannels.length || !memCache) return;
   const existingIds = new Set(memCache.map(ch => ch.id));
-  const existingUrls = new Set(memCache.map(ch => ch.streamUrl));
-  const deduped = extraChannels.filter(ch =>
-    !existingIds.has(ch.id) && !existingUrls.has(ch.streamUrl) && ch.streamUrl && ch.name && ch.name.length > 1
-  );
+  const existingUrls = new Set(memCache.map(ch => ch.streamUrl.trim()));
+  // Update the sets as we filter so duplicates inside the same downloaded playlist batch
+  // are rejected too, not just duplicates against the existing catalogue.
+  const deduped = extraChannels.filter(ch => {
+    if (!ch || typeof ch.id !== 'string' || typeof ch.name !== 'string'
+      || typeof ch.streamUrl !== 'string' || ch.name.trim().length < 2) return false;
+    const id = ch.id.trim();
+    const url = ch.streamUrl.trim();
+    if (!id || !url || existingIds.has(id) || existingUrls.has(url)) return false;
+    existingIds.add(id);
+    existingUrls.add(url);
+    return true;
+  });
   if (!deduped.length) return;
   memCache = [...memCache, ...shuffle(deduped)];
   try {
@@ -352,7 +361,17 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
     const raw = localStorage.getItem(CACHE_KEY);
     if (raw) {
       const data: CacheData = JSON.parse(raw);
-      if (Date.now() - data.timestamp < CACHE_TTL && data.channels.length > 100) {
+      const now = Date.now();
+      const cacheIsValid = Number.isFinite(data?.timestamp)
+        && data.timestamp <= now
+        && now - data.timestamp < CACHE_TTL
+        && Array.isArray(data.channels)
+        && data.channels.length > 100
+        && data.channels.every(ch =>
+          ch && typeof ch.id === 'string' && typeof ch.name === 'string'
+          && typeof ch.streamUrl === 'string' && Array.isArray(ch.categories)
+        );
+      if (cacheIsValid) {
         console.log('[IPTV] Cache hit:', data.channels.length, 'channels');
         memCache = data.channels;
         // Reuse the instant cache, then enrich it without delaying first paint.
