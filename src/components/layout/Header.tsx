@@ -33,22 +33,22 @@ export default function Header({ liveCount, totalChannels }: Props) {
 
   return (
     <>
-      <header className="relative z-30 flex items-center justify-between px-4 py-2.5 bg-black/90 backdrop-blur-xl border-b border-white/8">
+      <header className="relative z-30 flex items-center justify-between px-3 sm:px-5 py-3 glass-panel border-b border-white/10">
         {/* Logo */}
         <button
           onClick={() => navigate('/')}
-          className="flex items-center gap-1.5 group"
+          className="flex items-center gap-1.5 group shrink-0" aria-label="TikVTV home"
         >
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary via-red-500 to-secondary flex items-center justify-center shadow-lg">
             <Tv className="w-3.5 h-3.5 text-white" />
           </div>
           <span className="text-white font-black text-lg tracking-tight leading-none">
-            Tik<span className="text-primary">V</span>TV
+            Tik<span className="text-primary">V</span>TV<span className="text-[10px] align-top text-white/50 ml-0.5">z</span>
           </span>
         </button>
 
         {/* Live badge + channel count */}
-        <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-full px-3 py-1">
+        <div className="hidden min-[390px]:flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-full px-2.5 py-1">
           {liveCount > 0 && (
             <>
               <div className="w-1.5 h-1.5 rounded-full bg-green-400 live-dot flex-shrink-0" />
@@ -61,7 +61,7 @@ export default function Header({ liveCount, totalChannels }: Props) {
         </div>
 
         {/* Right controls */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
           {/* Search */}
           <IconBtn onClick={() => navigate('/search')} label="Search">
             <Search className="w-4.5 h-4.5 text-white/70" />
@@ -185,7 +185,7 @@ function IconBtn({ children, onClick, label }: { children: React.ReactNode; onCl
     <button
       onClick={onClick}
       aria-label={label}
-      className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors"
+      className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-primary transition-colors"
     >
       {children}
     </button>
