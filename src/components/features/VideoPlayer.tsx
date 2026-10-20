@@ -97,8 +97,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
 
       let disposed = false;
 
-      // Give HLS time to build a forward buffer before starting playback.
-      // Some live playlists cannot provide 15 seconds, so fall back after 8s.
+      // Start as soon as a small safety buffer is available; continue filling toward 15s while playing.
+      // Live playlists may have short segments or limited DVR windows, so use a brief fallback.
       const tryStartPlayback = () => {
         if (disposed || !activeRef.current || document.visibilityState === 'hidden' || !readyRef.current || !video.paused) return;
         let ahead = 0;
@@ -110,7 +110,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             break;
           }
         }
-        if (ahead >= 15 || startupFallbackRef.current) video.play().catch(() => {});
+        // Start quickly once a small safety buffer exists; keep filling toward the larger target during playback.
+        if (ahead >= 3 || startupFallbackRef.current) video.play().catch(() => {});
       };
 
       // Do not let an inactive neighbour's timer bypass the forward-buffer target when it is selected later.
@@ -118,7 +119,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         startupTimerRef.current = setTimeout(() => {
           startupFallbackRef.current = true;
           tryStartPlayback();
-        }, 8000);
+        }, 4000);
       }
       const markError = () => {
         if (disposed) return;
