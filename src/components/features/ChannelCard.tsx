@@ -49,7 +49,7 @@ export default function ChannelCard({
     <div
       data-index={index}
       className="relative w-full bg-black"
-      style={{ height: '100dvh', scrollSnapAlign: 'start' }}
+      style={{ height: '100%', minHeight: '100%', flex: '0 0 100%', scrollSnapAlign: 'start' }}
     >
       {/* Mount a player only for the focused card. Unmounting off-focus cards runs
           VideoPlayer cleanup immediately, destroying HLS and releasing the media source. */}
