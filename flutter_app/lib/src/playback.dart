@@ -18,6 +18,7 @@ class SharedPlayback extends ChangeNotifier {
   int _generation = 0;
   Future<void> _disposals = Future<void>.value();
   VideoPlayerController? _candidate;
+  bool _timedOut = false;
 
   Future<void> _release(VideoPlayerController? player) {
     if (player == null) return _disposals;
@@ -53,15 +54,17 @@ class SharedPlayback extends ChangeNotifier {
     await _release(previous);
     // An initialization that is still in flight owns its candidate until it
     // settles; don't dispose it concurrently with initialize().
-    if (pending == null && token == _generation) await _trySources(next, token, 0);
-    else if (pending != null && token == _generation) {
-      // The stale attempt will observe its generation and release itself.
-      await _disposals;
-      if (token == _generation) await _trySources(next, token, 0);
+    // Do not start a second decoder while the previous initialize is in flight.
+    if (pending != null) {
+      while (identical(_candidate, pending) && token == _generation) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
     }
+    if (token == _generation) await _trySources(next, token, 0);
   }
 
   Future<void> _trySources(Channel selected, int token, int start) async {
+    _timedOut = false;
     for (var i = start; i < selected.urls.length; i++) {
       if (token != _generation) return;
       sourceIndex = i;
@@ -77,12 +80,15 @@ class SharedPlayback extends ChangeNotifier {
         try {
           await initialization.timeout(const Duration(seconds: 15));
         } on TimeoutException {
-          unawaited(initialization.then((_) => _release(candidate),
-              onError: (Object _) => _release(candidate)));
-          if (identical(_candidate, candidate)) _candidate = null;
-          if (token != _generation) return;
-          error = 'Source ${i + 1} initialization timed out';
+          _timedOut = true;
+          error = 'Source ${i + 1} timed out. Waiting for native player cleanup before retry.';
           notifyListeners();
+          // Keep ownership until initialization settles; a timeout is not cancellation.
+          try { await initialization; } catch (_) { /* release below */ }
+          if (identical(_candidate, candidate)) _candidate = null;
+          await _release(candidate);
+          if (token != _generation) return;
+          _timedOut = false;
           continue;
         }
         if (token != _generation) {
