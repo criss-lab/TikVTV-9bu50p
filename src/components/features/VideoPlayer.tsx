@@ -84,7 +84,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         clearTimeout(timerRef.current);
         readyRef.current = true;
         setReady(true);
-        setBuffering(false);
         retryCount.current = 0;
         onReady?.();
         tryStartPlayback();
@@ -129,7 +128,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
 
       const onWaiting = () => { if (!disposed && activeRef.current && readyRef.current) setBuffering(true); };
       const onPlaying = () => { markReady(); if (!disposed) { setBuffering(false); clearTimeout(recoveryRef.current); clearTimeout(startupTimerRef.current); } };
-      const onCanPlay = () => { if (!disposed) { setBuffering(false); tryStartPlayback(); } };
+      const onCanPlay = () => { if (!disposed) tryStartPlayback(); };
       const onProgress = () => tryStartPlayback();
       video.addEventListener('waiting', onWaiting);
       video.addEventListener('stalled', onWaiting);
