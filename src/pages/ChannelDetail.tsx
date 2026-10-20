@@ -18,6 +18,7 @@ export default function ChannelDetail() {
   const navigate           = useNavigate();
   const { user }           = useAuthStore();
   const [channel, setChannel] = useState<IPTVChannel | null>(null);
+  const [streamIndex, setStreamIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showAuth, setShowAuth] = useState(false);
   const [commentText, setCommentText] = useState('');
@@ -32,6 +33,7 @@ export default function ChannelDetail() {
     if (!id) return;
     setLoading(true);
     setChannel(null);
+    setStreamIndex(0);
     let cancelled = false;
     fetchAllChannels()
       .then(() => { if (!cancelled) setChannel(getChannelById(id) || null); })
@@ -108,11 +110,13 @@ export default function ChannelDetail() {
         style={{ height: '56vw', maxHeight: 380, minHeight: 200 }}
       >
         <VideoPlayer
-          src={channel.streamUrl}
+          key={`${channel.id}:${streamIndex}`}
+          src={([channel.streamUrl, ...(channel.alternativeStreamUrls || [])])[streamIndex]}
           isActive={true}
           shouldLoad={allowed && !accessLoading}
           channelName={channel.name}
           channelLogo={channel.logo}
+          onError={() => setStreamIndex(index => Math.min(index + 1, (channel.alternativeStreamUrls || []).length))}
         />
         {!accessLoading && !allowed && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/95 px-6 text-center text-white">
