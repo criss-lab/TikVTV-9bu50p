@@ -342,7 +342,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         {/* Buffering spinner */}
         {buffering && !error && isActive && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div role="status" aria-label={ready ? 'Reconnecting stream' : 'Loading live stream'} className="flex flex-col items-center gap-3 rounded-2xl bg-black/60 px-6 py-5 backdrop-blur-sm"><div className="w-10 h-10 rounded-full border-white/20 border-t-white animate-spin" style={{ borderWidth: 3 }} /><span className="text-xs font-semibold text-white/80">{ready ? 'Reconnecting live stream…' : 'Preparing live stream…'}</span></div>
+            <div role="status" aria-label={ready ? 'Buffering for smooth playback' : 'Loading live stream'} className="flex flex-col items-center gap-3 rounded-2xl bg-black/60 px-6 py-5 backdrop-blur-sm"><div className="w-10 h-10 rounded-full border-white/20 border-t-white animate-spin" style={{ borderWidth: 3 }} /><span className="text-xs font-semibold text-white/80">{ready ? 'Buffering for smooth playback…' : 'Preparing live stream…'}</span></div>
           </div>
         )}
 
