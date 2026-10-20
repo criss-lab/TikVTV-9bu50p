@@ -39,6 +39,13 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install dependencies
         run: npm ci
+      - name: Validate public build configuration
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          test -n "$VITE_SUPABASE_URL" || { echo 'Missing VITE_SUPABASE_URL Actions secret'; exit 1; }
+          test -n "$VITE_SUPABASE_ANON_KEY" || { echo 'Missing VITE_SUPABASE_ANON_KEY Actions secret'; exit 1; }
       - name: Build web app
         run: npm run build
         env:
