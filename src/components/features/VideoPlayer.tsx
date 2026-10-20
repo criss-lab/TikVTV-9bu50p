@@ -61,7 +61,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
 
     // ── HLS init ────────────────────────────────────────────────────────────
     useEffect(() => {
-      if (!shouldLoad || !src) {
+      // A mounted neighbouring card must never create another HLS instance or
+      // attach a native stream: only the visible owner acquires network media.
+      if (!shouldLoad || !isActive || !src) {
         setReady(false);
         setBuffering(false);
         return;
@@ -292,7 +294,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
         readyRef.current = false;
       };
-    }, [src, shouldLoad, retryKey]);
+    }, [src, shouldLoad, isActive, retryKey]);
 
     // ── Play / pause ─────────────────────────────────────────────────────────
     useEffect(() => {
