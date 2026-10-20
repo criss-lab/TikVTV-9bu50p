@@ -358,14 +358,16 @@ function scheduleExtraSourceEnrichment() {
     scheduleExtraSourceEnrichment();
   };
 
-  const idleWindow = window as Window & {
-    requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
-  };
-  if (typeof window !== 'undefined' && idleWindow.requestIdleCallback) {
-    idleWindow.requestIdleCallback(startWhenVisible, { timeout: 15_000 });
-  } else {
-    setTimeout(startWhenVisible, 10_000);
+  if (typeof window !== 'undefined') {
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+    };
+    if (idleWindow.requestIdleCallback) {
+      idleWindow.requestIdleCallback(startWhenVisible, { timeout: 15_000 });
+      return;
+    }
   }
+  setTimeout(startWhenVisible, 10_000);
 }
 
 function enrichCachedChannels(extraChannels: IPTVChannel[]) {
