@@ -27,7 +27,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     const readyRef    = useRef(false);
     const retryCount  = useRef(0);
     const activeRef = useRef(isActive);
-    const recoveryRef = useRef<ReturnType<typeof setTimeout>>();
+
     activeRef.current = isActive;
     const [retryKey, setRetryKey] = useState(0);
 
@@ -72,7 +72,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           setBuffering(false);
           onError?.();
         }
-      }, isActive ? 18_000 : 25_000);
+      }, 18_000);
 
       const markReady = () => {
         if (disposed) return;
@@ -91,6 +91,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         if (disposed) return;
         clearTimeout(timerRef.current);
         setError(true);
+        setReady(false);
         setBuffering(false);
         onError?.();
       };
@@ -103,8 +104,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       };
 
       const onWaiting = () => { if (!disposed && activeRef.current && readyRef.current) setBuffering(true); };
-      const onPlaying = () => { markReady(); if (!disposed) { setBuffering(false); clearTimeout(recoveryRef.current); } };
-      const onCanPlay = () => { if (!disposed) setBuffering(false); };
+      const onPlaying = () => { markReady(); if (!disposed) setBuffering(false); };
+      const onCanPlay = () => { if (!disposed) { markReady(); setBuffering(false); if (activeRef.current) video.play().catch(() => {}); } };
       video.addEventListener('waiting', onWaiting);
       video.addEventListener('stalled', onWaiting);
       video.addEventListener('playing', onPlaying);
@@ -120,7 +121,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           if (Hls.isSupported()) {
             const hls = new Hls({
               enableWorker:           true,
-              lowLatencyMode:         true,
+              lowLatencyMode:         false,
               maxBufferLength:        20,
               maxMaxBufferLength:     35,
               maxBufferSize:          32 * 1000 * 1000,
@@ -149,8 +150,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
                 })).reverse(),
               ];
               setQualities(lvls);
-              if (activeRef.current) video.play().catch(() => {});
-              // A parsed playlist alone does not mean media segments are playable.
+              // Wait for loadeddata/canplay: a manifest alone is not playable media.
             });
 
             hls.on(Hls.Events.LEVEL_SWITCHED, (_: unknown, data: { level: number }) => {
@@ -186,7 +186,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       return () => {
         disposed = true;
         clearTimeout(timerRef.current);
-        clearTimeout(recoveryRef.current);
         video.removeEventListener('waiting', onWaiting);
         video.removeEventListener('stalled', onWaiting);
         video.removeEventListener('canplay', onCanPlay);
