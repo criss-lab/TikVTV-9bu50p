@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Heart, MessageCircle, Share2, Bookmark, Globe, PictureInPicture2, Loader2, Wifi } from 'lucide-react';
 import { fetchAllChannels, getChannelById } from '@/lib/iptvApi';
 import { getCountryFlag, categoryColor, cn, formatCount, timeAgo } from '@/lib/utils';
@@ -15,9 +15,11 @@ import { useViewingAccess } from '@/hooks/useViewingAccess';
 export default function ChannelDetail() {
   const { id }             = useParams<{ id: string }>();
   const navigate           = useNavigate();
+  const location           = useLocation();
+  const routeChannel        = (location.state as { channel?: IPTVChannel } | null)?.channel;
   const { user }           = useAuthStore();
-  const [channel, setChannel] = useState<IPTVChannel | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [channel, setChannel] = useState<IPTVChannel | null>(() => routeChannel?.id === id ? routeChannel : null);
+  const [loading, setLoading] = useState(() => routeChannel?.id !== id);
   const [showAuth, setShowAuth] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [sending, setSending] = useState(false);
@@ -38,6 +40,11 @@ export default function ChannelDetail() {
 
   useEffect(() => {
     if (!id) return;
+    if (routeChannel?.id === id) {
+      setChannel(routeChannel);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setChannel(null);
     let cancelled = false;
@@ -46,7 +53,7 @@ export default function ChannelDetail() {
       .catch(() => { if (!cancelled) toast.error('Unable to load channel information'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, routeChannel]);
 
   useEffect(() => {
     if (channel) fetchComments();
@@ -89,10 +96,17 @@ export default function ChannelDetail() {
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
-          maxBufferLength: 20,
-          maxMaxBufferLength: 35,
+          // Keep a healthier forward buffer to reduce stalls on variable mobile networks.
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+          maxBufferSize: 60 * 1000 * 1000,
+          maxBufferHole: 0.5,
+          startFragPrefetch: true,
           startLevel: -1,
-          abrEwmaDefaultEstimate: 1000000,
+          abrEwmaDefaultEstimate: 2000000,
+          manifestLoadingMaxRetry: 3,
+          levelLoadingMaxRetry: 4,
+          fragLoadingMaxRetry: 4,
         });
         hlsRef.current = hls;
         hls.on(Hls.Events.ERROR, (_event, data) => {
@@ -103,6 +117,8 @@ export default function ChannelDetail() {
         });
         hls.attachMedia(video);
         hls.loadSource(src);
+        // Muted autoplay can begin buffering while HLS resolves the first segment.
+        void video.play().catch(() => {});
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = src;
         video.load();
@@ -205,7 +221,9 @@ export default function ChannelDetail() {
           ref={videoRef}
           className="w-full h-full object-cover"
           muted={muted}
+          autoPlay
           playsInline
+          preload="auto"
           controls
         />
         {!accessLoading && !allowed && (
