@@ -121,7 +121,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           }
         }
         // Start quickly once a small safety buffer exists; keep filling toward the larger target during playback.
-        if (ahead >= 0.25 || startupFallbackRef.current || video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) video.play().catch(e => { if (e?.name !== 'AbortError' && e?.name !== 'NotAllowedError') console.warn('[IPTV] play rejected', channelName, e); });
+        if (ahead >= 1.5 || startupFallbackRef.current || video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) video.play().catch(e => { if (e?.name !== 'AbortError' && e?.name !== 'NotAllowedError') console.warn('[IPTV] play rejected', channelName, e); });
       };
 
       // The selected stream may start after a short buffer target or the bounded startup fallback.
@@ -182,15 +182,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
               // Prefer a healthy forward buffer over ultra-low latency to reduce stalls.
               lowLatencyMode:         false,
               // Bound memory on Android while keeping a useful forward buffer.
-              maxBufferLength:        18,
-              maxMaxBufferLength:     30,
-              maxBufferSize:          24 * 1000 * 1000,
-              backBufferLength:       8,
+              maxBufferLength:        30,
+              maxMaxBufferLength:     45,
+              maxBufferSize:          32 * 1000 * 1000,
+              backBufferLength:       6,
               maxBufferHole:          0.5,
               startFragPrefetch:      true,
               startLevel:             -1,
               // Start conservatively on variable mobile connections; ABR can ramp up.
-              abrEwmaDefaultEstimate: 650_000,
+              abrEwmaDefaultEstimate: 500_000,
               abrBandWidthFactor:     0.8,
               abrBandWidthUpFactor:   0.6,
               progressive:            true,
@@ -327,7 +327,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
               break;
             }
           }
-          if (ahead >= 0.25 || video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA || startupFallbackRef.current) {
+          if (ahead >= 1.5 || video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA || startupFallbackRef.current) {
             clearTimeout(startupTimerRef.current);
             video.play().catch(() => {});
           } else {
