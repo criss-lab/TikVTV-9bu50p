@@ -43,9 +43,9 @@ export default function Feed() {
   const liveChannels = useMemo(() => channels.filter(ch => !deadIds.has(ch.id)), [channels, deadIds]);
   const liveCount    = liveIds.size;
 
-  // Determine the channel closest to the feed viewport's center on every scroll.
-  // IntersectionObserver batches can omit the card that just left view, leaving an old
-  // active index stuck. Center-based selection always hands playback to the focused card.
+  // Cards have a fixed 100dvh snap height. Derive focus from the scroller's own
+  // scroll offset instead of visibility batches/viewport geometry, which can drift
+  // on mobile when the category/header/nav consume part of the screen.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -57,25 +57,11 @@ export default function Feed() {
       frame = requestAnimationFrame(() => {
         const cards = Array.from(container.querySelectorAll<HTMLElement>('[data-index]'));
         if (cards.length === 0) return;
-        const viewport = container.getBoundingClientRect();
-        const center = viewport.top + viewport.height / 2;
-        let best: HTMLElement | null = null;
-        let bestDistance = Number.POSITIVE_INFINITY;
+        const cardHeight = cards[0].getBoundingClientRect().height;
+        if (!Number.isFinite(cardHeight) || cardHeight <= 0) return;
 
-        for (const card of cards) {
-          const rect = card.getBoundingClientRect();
-          const visibleHeight = Math.max(0, Math.min(rect.bottom, viewport.bottom) - Math.max(rect.top, viewport.top));
-          if (visibleHeight <= 0) continue;
-          const distance = Math.abs((rect.top + rect.bottom) / 2 - center);
-          if (distance < bestDistance) {
-            best = card;
-            bestDistance = distance;
-          }
-        }
-
-        if (!best) return;
-        const idx = Number.parseInt(best.dataset.index || '0', 10);
-        if (!Number.isFinite(idx)) return;
+        const rawIndex = Math.round(container.scrollTop / cardHeight);
+        const idx = Math.max(0, Math.min(rawIndex, liveChannels.length - 1));
         setActiveIndex(previous => previous === idx ? previous : idx);
 
         const channel = liveChannels[idx];
@@ -88,9 +74,11 @@ export default function Feed() {
     };
 
     container.addEventListener('scroll', updateFocusedChannel, { passive: true });
+    window.addEventListener('resize', updateFocusedChannel);
     updateFocusedChannel();
     return () => {
       container.removeEventListener('scroll', updateFocusedChannel);
+      window.removeEventListener('resize', updateFocusedChannel);
       cancelAnimationFrame(frame);
     };
   }, [liveChannels, hasMore, loadMore, addToHistory]);
