@@ -27,10 +27,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     const readyRef    = useRef(false);
     const retryCount  = useRef(0);
     const activeRef = useRef(isActive);
+    const shouldLoadRef = useRef(shouldLoad);
+    const nativeHlsRef = useRef(false);
     const recoveryRef = useRef<ReturnType<typeof setTimeout>>();
     const startupTimerRef = useRef<ReturnType<typeof setTimeout>>();
     const startupFallbackRef = useRef(false);
     activeRef.current = isActive;
+    shouldLoadRef.current = shouldLoad;
     const [retryKey, setRetryKey] = useState(0);
 
     const [muted,       setMuted]       = useState(true);
@@ -70,13 +73,16 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       readyRef.current = false;
 
       retryCount.current = 0;
-      timerRef.current = setTimeout(() => {
-        if (!readyRef.current) {
-          setError(true);
-          setBuffering(false);
-          onError?.();
-        }
-      }, isActive ? 18_000 : 25_000);
+      // Only the active stream gets a startup deadline; a preloaded neighbour must not be marked dead before selection.
+      if (activeRef.current && document.visibilityState !== 'hidden') {
+        timerRef.current = setTimeout(() => {
+          if (!readyRef.current && activeRef.current) {
+            setError(true);
+            setBuffering(false);
+            onError?.();
+          }
+        }, 18_000);
+      }
 
       const markReady = () => {
         if (disposed) return;
@@ -203,7 +209,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             });
 
             hls.on(Hls.Events.ERROR, (_: unknown, d: { fatal: boolean; type: string }) => {
-              if (!d.fatal || disposed) return;
+              if (!d.fatal || disposed || !activeRef.current || document.visibilityState === 'hidden') return;
               // Retry transient CDN/network failures with backoff before giving up.
               if (retryCount.current < 4 && d.type === Hls.ErrorTypes.NETWORK_ERROR) {
                 retryCount.current++;
@@ -218,15 +224,20 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
                 retryCount.current++;
                 clearTimeout(recoveryRef.current);
                 recoveryRef.current = setTimeout(() => {
-                  if (!disposed) hls.startLoad();
+                  if (!disposed && activeRef.current && document.visibilityState !== 'hidden') hls.startLoad();
                 }, Math.min(1000 * 2 ** (retryCount.current - 1), 8000));
               } else {
                 markError();
               }
             });
           } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            video.src = src;
-            video.onerror = markError;
+            // Native HLS can eagerly fetch on src assignment, so attach it only when this player is selected.
+            nativeHlsRef.current = true;
+            if (activeRef.current && document.visibilityState !== 'hidden') {
+              video.src = src;
+              video.onerror = markError;
+              video.load();
+            }
           } else {
             markError();
           }
@@ -250,6 +261,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         video.removeEventListener('loadeddata', markReady);
         video.onerror = null;
         destroyHls();
+        nativeHlsRef.current = false;
         if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
         readyRef.current = false;
       };
@@ -260,9 +272,23 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       const video = videoRef.current;
       if (!video) return;
       const hls = hlsRef.current as { startLoad?: () => void; stopLoad?: () => void } | null;
-      if (isActive && shouldLoad) {
-        // Only the visible card downloads segments and plays. Neighbours stay lightweight until selected.
+      if (isActive && shouldLoad && document.visibilityState !== 'hidden') {
+        // Only the selected card downloads media segments. Neighbours may fetch a manifest but not media segments.
         try { hls?.startLoad?.(); } catch { /* player may still be initializing */ }
+        if (nativeHlsRef.current && video.getAttribute('src') !== src) {
+          video.src = src;
+          video.load();
+        }
+        if (!readyRef.current) {
+          clearTimeout(timerRef.current);
+          timerRef.current = setTimeout(() => {
+            if (!readyRef.current && activeRef.current && document.visibilityState !== 'hidden') {
+              setError(true);
+              setBuffering(false);
+              onError?.();
+            }
+          }, 18_000);
+        }
         if (ready) {
           let ahead = 0;
           for (let i = 0; i < video.buffered.length; i++) {
@@ -286,13 +312,48 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           }
         }
       } else {
-        // Stop playback immediately on vertical scroll and release the inactive stream's network load.
+        // Stop playback immediately on scroll, route changes, and hidden documents.
         video.pause();
         try { hls?.stopLoad?.(); } catch { /* HLS may already be destroyed */ }
         setBuffering(false);
         clearTimeout(recoveryRef.current);
       }
-    }, [isActive, ready, shouldLoad]);
+    }, [isActive, ready, shouldLoad, src, onError]);
+
+    // Pause and release network activity when the app is backgrounded; resume only the selected player.
+    useEffect(() => {
+      const video = videoRef.current;
+      if (!video) return;
+      const onVisibilityChange = () => {
+        const hls = hlsRef.current as { startLoad?: () => void; stopLoad?: () => void } | null;
+        if (document.visibilityState === 'hidden') {
+          video.pause();
+          try { hls?.stopLoad?.(); } catch { /* stream may already be stopped */ }
+          clearTimeout(recoveryRef.current);
+          clearTimeout(startupTimerRef.current);
+          return;
+        }
+        if (activeRef.current && shouldLoadRef.current) {
+          try { hls?.startLoad?.(); } catch { /* player may still be initializing */ }
+          // Native HLS is lazy-attached for inactive cards to avoid competing downloads.
+          if (nativeHlsRef.current && video.getAttribute('src') !== src) {
+            video.src = src;
+            video.load();
+          }
+        }
+      };
+      const onPageHide = () => {
+        video.pause();
+        const hls = hlsRef.current as { stopLoad?: () => void } | null;
+        try { hls?.stopLoad?.(); } catch { /* ignored during page teardown */ }
+      };
+      document.addEventListener('visibilitychange', onVisibilityChange);
+      window.addEventListener('pagehide', onPageHide);
+      return () => {
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        window.removeEventListener('pagehide', onPageHide);
+      };
+    }, [src]);
 
     // ── PiP events ───────────────────────────────────────────────────────────
     useEffect(() => {
@@ -348,7 +409,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           muted={muted}
           playsInline
           loop={false}
-          preload="auto"
+          preload="none"
         />
 
         {/* Placeholder while loading */}
