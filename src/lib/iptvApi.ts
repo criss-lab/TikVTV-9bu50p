@@ -147,14 +147,21 @@ const EXTRA_SOURCES: Array<[string, string]> = [
   ['pe',           'https://iptv-org.github.io/iptv/countries/pe.m3u'],
 ];
 
-const CACHE_KEY = 'tikvtv_iptv_v9';
-const CACHE_TTL = 20 * 60 * 60 * 1000; // 20 hours
+const CACHE_KEY = 'tikvtv_iptv_v10_browser_hls';
+const CACHE_TTL = 60 * 60 * 1000; // Refresh unreliable public streams hourly
 
 interface RawChannel { id: string; name: string; logo: string; country: string; languages: string[]; categories: string[]; is_nsfw: boolean; website?: string; network?: string; alt_names?: string[]; }
 interface RawStream  { channel: string; url: string; }
 interface CacheData  { channels: IPTVChannel[]; timestamp: number; }
 
 let memCache: IPTVChannel[] | null = null;
+// Only send browser-playable HLS playlists to the HLS video player.
+function browserHls(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' && /\\.m3u8?(?:$|[?#])/i.test(parsed.pathname + parsed.search);
+  } catch { return false; }
+}
 const deadIds = new Set<string>();
 
 export function markChannelDead(id: string) {
@@ -238,7 +245,7 @@ function parseM3U(text: string, sourceTag: string): IPTVChannel[] {
     const line = lines[idx].trim();
     if (line.startsWith('#EXTINF:')) {
       const nextLine = (lines[idx + 1] || '').trim();
-      if (nextLine && !nextLine.startsWith('#') && nextLine.startsWith('http')) {
+      if (nextLine && !nextLine.startsWith('#') && browserHls(nextLine)) {
         // Skip YouTube / Twitch
         if (nextLine.includes('youtube.com') || nextLine.includes('twitch.tv') || nextLine.includes('youtu.be')) {
           idx += 2;
@@ -349,7 +356,7 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
 
     const streamMap = new Map<string, string>();
     for (const s of rawStreams) {
-      if (s.channel && s.url && !streamMap.has(s.channel)) streamMap.set(s.channel, s.url);
+      if (s.channel && s.url && browserHls(s.url) && !streamMap.has(s.channel)) streamMap.set(s.channel, s.url);
     }
 
     const primary: IPTVChannel[] = rawChannels
@@ -373,7 +380,7 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
     const deduped = extraChannels.filter(ch =>
       !existingIds.has(ch.id) &&
       !existingUrls.has(ch.streamUrl) &&
-      ch.streamUrl && ch.name && ch.name.length > 1
+      browserHls(ch.streamUrl) && ch.name && ch.name.length > 1
     );
 
     const all = shuffle([...primary, ...deduped]);
