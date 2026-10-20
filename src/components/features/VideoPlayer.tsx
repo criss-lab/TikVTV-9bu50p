@@ -60,6 +60,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       setCurrentLvl(-1);
       readyRef.current = false;
 
+      retryCount.current = 0;
       timerRef.current = setTimeout(() => {
         if (!readyRef.current) {
           setError(true);
@@ -70,6 +71,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
 
       const markReady = () => {
         if (disposed) return;
+        if (readyRef.current) return;
         clearTimeout(timerRef.current);
         readyRef.current = true;
         setReady(true);
@@ -94,6 +96,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           hlsRef.current = null;
         }
       };
+
+      video.addEventListener('playing', markReady);
+      video.addEventListener('loadeddata', markReady);
 
       const init = async () => {
         try {
@@ -133,7 +138,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
                 })).reverse(),
               ];
               setQualities(lvls);
-              markReady();
+              // A parsed playlist alone does not mean media segments are playable.
             });
 
             hls.on(Hls.Events.LEVEL_SWITCHED, (_: unknown, data: { level: number }) => {
@@ -155,7 +160,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             });
           } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = src;
-            video.onloadedmetadata = markReady;
             video.onerror = markError;
           } else {
             markError();
@@ -170,11 +174,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       return () => {
         disposed = true;
         clearTimeout(timerRef.current);
+        video.removeEventListener('playing', markReady);
+        video.removeEventListener('loadeddata', markReady);
+        video.onerror = null;
         destroyHls();
         if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
-        setReady(false);
         readyRef.current = false;
-        setBuffering(false);
       };
     }, [src, shouldLoad, retryKey, onError, onReady]);
 
