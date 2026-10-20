@@ -214,14 +214,17 @@ function FavCard({
       className="relative w-full bg-black"
       style={{ height: '100dvh', scrollSnapAlign: 'start' }}
     >
-      <VideoPlayer
-        src={channel.streamUrl}
-        isActive={isActive}
-        shouldLoad={shouldLoad}
-        channelName={channel.name}
-        channelLogo={channel.logo}
-        onError={() => onDead(channel.id)}
-      />
+      {/* Do not keep hidden media players mounted while scrolling saved channels. */}
+      {shouldLoad && isActive && (
+        <VideoPlayer
+          src={channel.streamUrl}
+          isActive={isActive}
+          shouldLoad={shouldLoad}
+          channelName={channel.name}
+          channelLogo={channel.logo}
+          onError={() => onDead(channel.id)}
+        />
+      )}
       <div className="absolute inset-0 pointer-events-none gradient-overlay" />
       <div className="absolute top-0 left-0 right-0 h-32 pointer-events-none gradient-top" />
 
