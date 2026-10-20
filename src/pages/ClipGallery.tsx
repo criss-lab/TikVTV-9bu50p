@@ -31,6 +31,27 @@ export default function ClipGallery() {
 
   useEffect(() => {
     loadClips();
+    // Clips are independent of IPTV streams, but must never continue audio/network work off-page.
+    const pauseAll = () => {
+      Object.values(videoRefs.current).forEach(el => el?.pause());
+      setPlaying(null);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') pauseAll();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', pauseAll);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', pauseAll);
+      Object.values(videoRefs.current).forEach(el => {
+        if (!el) return;
+        el.pause();
+        el.removeAttribute('src');
+        el.load();
+      });
+      videoRefs.current = {};
+    };
   }, []);
 
   async function loadClips() {
@@ -79,7 +100,12 @@ export default function ClipGallery() {
     const el = videoRefs.current[clipId];
     if (!el) return;
     if (playing === clipId) { el.pause(); setPlaying(null); }
-    else { el.play().catch(() => {}); setPlaying(clipId); }
+    else {
+      el.play().then(() => setPlaying(clipId)).catch(() => {
+        setPlaying(null);
+        toast.error('Could not play this clip. Try again.');
+      });
+    }
   }
 
   function expiresIn(expiresAt: string): string {
@@ -147,6 +173,9 @@ export default function ClipGallery() {
                     playsInline
                     loop
                     muted
+                    preload="none"
+                    onPlay={() => setPlaying(clip.id)}
+                    onPause={() => setPlaying(current => current === clip.id ? null : current)}
                     onEnded={() => setPlaying(null)}
                   />
 
