@@ -13,7 +13,8 @@ import AuthModal from '@/components/features/AuthModal';
 import { useT } from '@/lib/i18n';
 import { useViewingAccess } from '@/hooks/useViewingAccess';
 
-const PRELOAD_RADIUS = 2;
+// Keep the active stream and immediate neighbours warm without opening five HLS connections.
+const PRELOAD_RADIUS = 1;
 
 export default function Feed() {
   const [searchParams]               = useSearchParams();
@@ -145,7 +146,7 @@ export default function Feed() {
             key={`${channel.id}-${category}-${index}`}
             channel={channel}
             isActive={index === activeIndex}
-            shouldLoad={allowed && Math.abs(index - activeIndex) <= PRELOAD_RADIUS}
+            shouldLoad={allowed && !accessLoading && Math.abs(index - activeIndex) <= PRELOAD_RADIUS}
             index={index}
             user={user}
             onAuthRequired={() => setShowAuth(true)}
