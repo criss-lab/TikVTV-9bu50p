@@ -155,6 +155,9 @@ interface RawStream  { channel: string; url: string; }
 interface CacheData  { channels: IPTVChannel[]; timestamp: number; }
 
 let memCache: IPTVChannel[] | null = null;
+// Coalesce concurrent cold starts so multiple pages/components never download and parse
+// the large primary catalogue independently.
+let channelLoadPromise: Promise<IPTVChannel[]> | null = null;
 const deadIds = new Set<string>();
 
 export function markChannelDead(id: string) {
@@ -325,6 +328,7 @@ async function fetchExtraSources(): Promise<IPTVChannel[]> {
 }
 
 let extraSourcesPromise: Promise<IPTVChannel[]> | null = null;
+let extraSourcesScheduled = false;
 function getExtraSourcesOnce(): Promise<IPTVChannel[]> {
   if (!extraSourcesPromise) {
     extraSourcesPromise = fetchExtraSources().catch(error => {
@@ -334,6 +338,34 @@ function getExtraSourcesOnce(): Promise<IPTVChannel[]> {
     });
   }
   return extraSourcesPromise;
+}
+
+// Optional playlist imports are large and numerous. Let the primary catalogue render and
+// give the selected TV stream first use of the network before background enrichment starts.
+function scheduleExtraSourceEnrichment() {
+  if (extraSourcesScheduled) return;
+  extraSourcesScheduled = true;
+  const startWhenVisible = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      const onVisible = () => {
+        if (document.visibilityState !== 'visible') return;
+        document.removeEventListener('visibilitychange', onVisible);
+        scheduleExtraSourceEnrichment();
+      };
+      document.addEventListener('visibilitychange', onVisible);
+      return;
+    }
+    scheduleExtraSourceEnrichment();
+  };
+
+  const idleWindow = window as Window & {
+    requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+  };
+  if (typeof window !== 'undefined' && idleWindow.requestIdleCallback) {
+    idleWindow.requestIdleCallback(startWhenVisible, { timeout: 15_000 });
+  } else {
+    setTimeout(startWhenVisible, 10_000);
+  }
 }
 
 function enrichCachedChannels(extraChannels: IPTVChannel[]) {
@@ -363,7 +395,7 @@ function enrichCachedChannels(extraChannels: IPTVChannel[]) {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('iptv-channels-updated'));
 }
 
-export async function fetchAllChannels(): Promise<IPTVChannel[]> {
+async function loadAllChannels(): Promise<IPTVChannel[]> {
   if (memCache && memCache.length > 0) return memCache;
 
   try {
@@ -384,7 +416,7 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
         console.log('[IPTV] Cache hit:', data.channels.length, 'channels');
         memCache = data.channels;
         // Reuse the instant cache, then enrich it without delaying first paint.
-        void getExtraSourcesOnce().then(enrichCachedChannels);
+        scheduleExtraSourceEnrichment();
         return memCache;
       }
     }
@@ -436,13 +468,25 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
       console.warn('[IPTV] Initial cache write failed:', e);
     }
 
-    void getExtraSourcesOnce().then(enrichCachedChannels);
+    scheduleExtraSourceEnrichment();
     return initial;
   } catch (err) {
     console.error('[IPTV] Primary fetch failed, using fallback:', err);
     memCache = getFallbackChannels();
     return memCache;
   }
+}
+
+
+/** Shared promise prevents duplicate primary API downloads during simultaneous page mounts. */
+export function fetchAllChannels(): Promise<IPTVChannel[]> {
+  if (memCache && memCache.length > 0) return Promise.resolve(memCache);
+  if (!channelLoadPromise) {
+    channelLoadPromise = loadAllChannels().finally(() => {
+      channelLoadPromise = null;
+    });
+  }
+  return channelLoadPromise;
 }
 
 export function getChannelPage(channels: IPTVChannel[], category: string, page: number, countryCode = ''): ChannelPage {
