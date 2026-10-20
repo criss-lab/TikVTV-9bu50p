@@ -13,8 +13,9 @@ import AuthModal from '@/components/features/AuthModal';
 import { useT } from '@/lib/i18n';
 import { useViewingAccess } from '@/hooks/useViewingAccess';
 
-// Keep the active stream and immediate neighbours warm without opening five HLS connections.
-const PRELOAD_RADIUS = 1;
+// Only the user-selected card may initialise a stream. This avoids hidden neighbours
+// competing for manifests, media requests, decoders, and mobile network capacity.
+const PRELOAD_RADIUS = 0;
 
 export default function Feed() {
   const [searchParams]               = useSearchParams();
@@ -144,7 +145,7 @@ export default function Feed() {
             key={`${channel.id}-${category}-${index}`}
             channel={channel}
             isActive={index === activeIndex}
-            shouldLoad={allowed && !accessLoading && Math.abs(index - activeIndex) <= PRELOAD_RADIUS}
+            shouldLoad={allowed && !accessLoading && index === activeIndex && Math.abs(index - activeIndex) <= PRELOAD_RADIUS}
             index={index}
             user={user}
             onAuthRequired={() => setShowAuth(true)}
