@@ -12,7 +12,9 @@ export default function Premium() {
     if (!user) { toast.info('Sign in from Profile before subscribing'); navigate('/profile'); return; }
     setPaying(true);
     try { const data = await invokePesapal('initiate');
-      if (typeof data?.redirect_url !== 'string' || !/^https:\/\//.test(data.redirect_url)) throw new Error('Secure checkout URL unavailable');
+      if (typeof data?.redirect_url !== 'string') throw new Error('Secure checkout URL unavailable');
+      const checkoutUrl = new URL(data.redirect_url);
+      if (checkoutUrl.protocol !== 'https:' || !/(^|\\.)pesapal\\.com$/.test(checkoutUrl.hostname)) throw new Error('Unexpected checkout destination');
       window.location.assign(data.redirect_url);
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Checkout unavailable'); setPaying(false); }
   }
