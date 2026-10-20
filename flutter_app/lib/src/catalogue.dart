@@ -72,7 +72,9 @@ class ChannelCatalogue extends ChangeNotifier {
         final uri = Uri.tryParse(url.trim());
         if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http') || uri.host.isEmpty) continue;
         final list = sources.putIfAbsent(id, () => []);
-        if (!list.contains(url.trim())) list.add(url.trim());
+        if (!list.contains(url.trim())) {
+          list.add(url.trim());
+        }
       }
       final parsed = <Channel>[];
       for (final item in metadata) {
