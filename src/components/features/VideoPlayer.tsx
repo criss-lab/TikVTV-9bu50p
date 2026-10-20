@@ -73,7 +73,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       readyRef.current = false;
 
       retryCount.current = 0;
-      // Only the active stream gets a startup deadline; a preloaded neighbour must not be marked dead before selection.
+      // Only the selected stream gets a startup deadline. Give slower providers a fair chance.
       if (activeRef.current && document.visibilityState !== 'hidden') {
         timerRef.current = setTimeout(() => {
           if (!readyRef.current && activeRef.current) {
@@ -81,7 +81,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             setBuffering(false);
             onError?.();
           }
-        }, 18_000);
+        }, 30_000);
       }
 
       const markReady = () => {
@@ -114,7 +114,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         if (ahead >= 3 || startupFallbackRef.current) video.play().catch(() => {});
       };
 
-      // Do not let an inactive neighbour's timer bypass the forward-buffer target when it is selected later.
+      // The selected stream may start after a short buffer target or the bounded startup fallback.
       if (activeRef.current && document.visibilityState !== 'hidden') {
         startupTimerRef.current = setTimeout(() => {
           startupFallbackRef.current = true;
@@ -277,7 +277,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       if (!video) return;
       const hls = hlsRef.current as { startLoad?: () => void; stopLoad?: () => void } | null;
       if (isActive && shouldLoad && document.visibilityState !== 'hidden') {
-        // Only the selected card downloads media segments. Neighbours may fetch a manifest but not media segments.
+        // Only the selected card may download media segments; inactive cards are not initialised.
         try { hls?.startLoad?.(); } catch { /* player may still be initializing */ }
         if (nativeHlsRef.current && video.getAttribute('src') !== src) {
           video.src = src;
@@ -291,7 +291,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
               setBuffering(false);
               onError?.();
             }
-          }, 18_000);
+          }, 30_000);
         }
         if (ready) {
           let ahead = 0;
@@ -352,7 +352,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
                 setBuffering(false);
                 onError?.();
               }
-            }, 18_000);
+            }, 30_000);
           }
           clearTimeout(startupTimerRef.current);
           startupFallbackRef.current = false;
