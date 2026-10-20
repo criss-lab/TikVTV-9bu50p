@@ -271,7 +271,19 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
               break;
             }
           }
-          if (ahead >= 15 || startupFallbackRef.current) video.play().catch(() => {});
+          if (ahead >= 15 || startupFallbackRef.current) {
+            clearTimeout(startupTimerRef.current);
+            video.play().catch(() => {});
+          } else {
+            // If the user returns to this card before a full buffer is ready, keep waiting briefly then use the live-stream fallback.
+            clearTimeout(startupTimerRef.current);
+            startupTimerRef.current = setTimeout(() => {
+              if (activeRef.current && shouldLoad) {
+                startupFallbackRef.current = true;
+                video.play().catch(() => {});
+              }
+            }, 8000);
+          }
         }
       } else {
         // Stop playback immediately on vertical scroll and release the inactive stream's network load.
