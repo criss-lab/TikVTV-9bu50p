@@ -25,6 +25,16 @@ class SharedPlayback extends ChangeNotifier {
   int recoveryCount = 0;
   int _lastReportedSecond = -1;
   bool _lastReportedBuffering = false;
+  Timer? _watchdog;
+  DateTime? _stalledAt;
+  Duration? _previousPosition;
+  int stallCount = 0;
+  void _cancelWatchdog() {
+    _watchdog?.cancel();
+    _watchdog = null;
+    _stalledAt = null;
+    _previousPosition = null;
+  }
 
   /// A route owns only its lease; an older route cannot stop a newer player.
   int get lease => _lease;
@@ -52,6 +62,7 @@ class SharedPlayback extends ChangeNotifier {
   Future<void> open(Channel next) async {
     final token = ++_generation;
     _lease = token;
+    _cancelWatchdog();
     _lastReportedSecond = -1;
     bufferedAhead = Duration.zero;
     buffering = false;
@@ -120,9 +131,40 @@ class SharedPlayback extends ChangeNotifier {
         loading = false;
         error = null;
         final fallbackIndex = i + 1;
+        _cancelWatchdog();
+        _watchdog = Timer.periodic(const Duration(seconds: 2), (_) {
+          if (token != _generation || !identical(controller, candidate)) {
+            _cancelWatchdog();
+            return;
+          }
+          final state = candidate.value;
+          if (_backgrounded || !state.isInitialized || state.hasError) {
+            _stalledAt = null;
+            _previousPosition = state.position;
+            return;
+          }
+          if (_previousPosition != state.position) {
+            _previousPosition = state.position;
+            _stalledAt = null;
+            return;
+          }
+          _stalledAt ??= DateTime.now();
+          if (loading || DateTime.now().difference(_stalledAt!) < const Duration(seconds: 25)) return;
+          _cancelWatchdog();
+          stallCount++;
+          recoveryCount++;
+          loading = true;
+          error = 'Source stalled; trying another feed';
+          controller = null;
+          notifyListeners();
+          unawaited(_release(candidate).then((_) {
+            if (token == _generation) return _trySources(selected, token, fallbackIndex);
+          }));
+        });
         candidate.addListener(() {
           if (token != _generation || !identical(controller, candidate)) return;
           if (candidate.value.hasError && !loading) {
+            _cancelWatchdog();
             recoveryCount++;
             error = candidate.value.errorDescription ?? 'Stream playback failed';
             loading = true;
@@ -171,6 +213,7 @@ class SharedPlayback extends ChangeNotifier {
   void stopIfCurrent(String id, {int? lease}) {
     if (channel?.id != id || (lease != null && lease != _lease)) return;
     ++_generation;
+    _cancelWatchdog();
     bufferedAhead = Duration.zero;
     buffering = false;
     final old = controller;
