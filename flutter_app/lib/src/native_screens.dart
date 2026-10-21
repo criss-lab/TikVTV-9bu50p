@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -133,21 +134,24 @@ class NativePremiumScreen extends StatefulWidget {
 }
 class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsBindingObserver {
   final backend = NativeBackend.instance;
+  Timer? _paymentTimer;
+  Timer? _entitlementTimer;
+  bool checking = false;
   bool loading = true, paying = false;
   bool active = false;
   String? endsAt, trackingId, message;
   @override
-  void initState() { super.initState(); WidgetsBinding.instance.addObserver(this); refresh(); }
+  void initState() { super.initState(); WidgetsBinding.instance.addObserver(this); refresh(); _entitlementTimer = Timer.periodic(const Duration(seconds: 3), (_) { if (mounted && backend.signedIn && !loading) refresh(silent: true); }); }
   @override
-  void dispose() { WidgetsBinding.instance.removeObserver(this); super.dispose(); }
+  void dispose() { _paymentTimer?.cancel(); _entitlementTimer?.cancel(); WidgetsBinding.instance.removeObserver(this); super.dispose(); }
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && trackingId != null) verifyPayment();
     else if (state == AppLifecycleState.resumed) refresh();
   }
-  Future<void> refresh() async {
+  Future<void> refresh({bool silent = false}) async {
     if (!mounted) return;
-    setState(() { loading = true; message = null; });
+    if (!silent) setState(() { loading = true; message = null; });
     try {
       if (!backend.signedIn) { setState(() { loading = false; active = false; }); return; }
       final status = await backend.premiumStatus();
@@ -171,6 +175,8 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
         throw StateError('Secure PesaPal checkout destination was invalid.');
       }
       trackingId = order['order_tracking_id'] as String?;
+      _paymentTimer?.cancel();
+      _paymentTimer = Timer.periodic(const Duration(seconds: 2), (_) { if (mounted && !checking && trackingId != null) verifyPayment(silent: true); });
       if (kIsWeb) {
         final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
         if (!opened) throw StateError('Could not open PesaPal checkout.');
@@ -181,15 +187,19 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       if (mounted) setState(() { message = 'PesaPal status checked securely. Premium is enabled only after the server confirms payment.'; paying = false; });
     } catch (e) { if (mounted) setState(() { message = e.toString().replaceFirst('Bad state: ', ''); paying = false; }); }
   }
-  Future<void> verifyPayment() async {
+  Future<void> verifyPayment({bool silent = false}) async {
     final id = trackingId;
-    if (id == null) { await refresh(); return; }
-    setState(() { paying = true; message = null; });
+    if (id == null || checking) return;
+    checking = true;
+    if (!silent) setState(() { paying = true; message = null; });
     try {
       final result = await backend.checkPayment(id);
-      if (mounted) setState(() { message = 'Payment status checked with the server: ${result['status'] ?? result['payment_status'] ?? 'pending'}. Entitlement is only granted after verified payment.'; paying = false; });
-      await refresh();
-    } catch (e) { if (mounted) setState(() { message = e.toString().replaceFirst('Bad state: ', ''); paying = false; }); }
+      final status = (result['payment_status_description'] ?? 'pending').toString();
+      if (mounted && !silent) setState(() { message = 'PesaPal reports: $status. Access requires a verified server entitlement.'; paying = false; });
+      await refresh(silent: silent);
+      if (active || ['failed', 'invalid', 'reversed'].contains(status.toLowerCase())) { _paymentTimer?.cancel(); trackingId = null; }
+    } catch (e) { if (mounted && !silent) setState(() { message = e.toString().replaceFirst('Bad state: ', ''); paying = false; }); }
+    finally { checking = false; }
   }
   @override
   Widget build(BuildContext context) => Scaffold(
