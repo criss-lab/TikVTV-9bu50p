@@ -1,6 +1,8 @@
 name: Flutter Android APK
 on:
   push:
+    tags:
+      - 'v*'
     paths:
       - 'flutter_app/**'
       - '.github/workflows/flutter-apk.yml'
@@ -10,7 +12,7 @@ on:
       - '.github/workflows/flutter-apk.yml'
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   flutter-android:
     runs-on: ubuntu-latest
@@ -37,11 +39,28 @@ jobs:
         run: python3 tool/configure_android.py
       - name: Build Flutter debug APK
         run: flutter build apk --debug
-      - name: Verify APK
-        run: test -s build/app/outputs/flutter-apk/app-debug.apk
+      - name: Verify and label preview APK
+        run: |
+          test -s build/app/outputs/flutter-apk/app-debug.apk
+          cp build/app/outputs/flutter-apk/app-debug.apk build/app/outputs/flutter-apk/TikVTV-preview.apk
+          cd build/app/outputs/flutter-apk
+          sha256sum TikVTV-preview.apk > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: tikvtv-flutter-debug-apk
-          path: flutter_app/build/app/outputs/flutter-apk/app-debug.apk
+          name: TikVTV-preview-${{ github.run_number }}
+          path: |
+            flutter_app/build/app/outputs/flutter-apk/TikVTV-preview.apk
+            flutter_app/build/app/outputs/flutter-apk/SHA256SUMS.txt
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
+      - name: Publish tagged preview download
+        if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            build/app/outputs/flutter-apk/TikVTV-preview.apk \
+            build/app/outputs/flutter-apk/SHA256SUMS.txt \
+            --title "TikVTV $GITHUB_REF_NAME (preview)" \
+            --notes "Preview APK signed with a temporary Android debug key. Test build only: signatures can change between runs, requiring uninstall before reinstall. Verify the checksum. This is not a production release." \
+            --prerelease
