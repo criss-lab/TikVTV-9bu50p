@@ -22,6 +22,7 @@ class SharedPlayback extends ChangeNotifier {
   int _lease = 0;
   Duration bufferedAhead = Duration.zero;
   bool buffering = false;
+  int recoveryCount = 0;
 
   /// A route owns only its lease; an older route cannot stop a newer player.
   int get lease => _lease;
@@ -89,6 +90,7 @@ class SharedPlayback extends ChangeNotifier {
         try {
           await initialization.timeout(const Duration(seconds: 15));
         } on TimeoutException {
+          recoveryCount++;
           if (token == _generation) {
             error = 'Source ${i + 1} timed out. Waiting for native player cleanup before retry.';
             notifyListeners();
@@ -118,6 +120,7 @@ class SharedPlayback extends ChangeNotifier {
         candidate.addListener(() {
           if (token != _generation || !identical(controller, candidate)) return;
           if (candidate.value.hasError && !loading) {
+            recoveryCount++;
             error = candidate.value.errorDescription ?? 'Stream playback failed';
             loading = true;
             controller = null;
