@@ -199,7 +199,10 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       const SizedBox(height: 12), const Center(child: Text('Premium subscription', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold))),
       const SizedBox(height: 8), const Text('Secure payment verification is handled by the TikVTV server. Your access is not unlocked by a redirect or client-side claim.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white60)),
       const SizedBox(height: 22),
-      if (!backend.signedIn) const Card(color: _panel, child: Padding(padding: EdgeInsets.all(16), child: Text('Sign in to your TikVTV account to check or purchase Premium.'))),
+      if (!backend.signedIn) ...[
+        const Card(color: _panel, child: Padding(padding: EdgeInsets.all(16), child: Text('Sign in to your TikVTV account to check or purchase Premium.'))),
+        FilledButton.icon(onPressed: () async { await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => const NativeAccountScreen())); if (mounted) await refresh(); }, icon: const Icon(Icons.login), label: const Text('Sign in to TikVTV')),
+      ],
       if (loading) const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator())),
       if (!loading && active) Card(color: _panel, child: ListTile(leading: const Icon(Icons.verified, color: Colors.greenAccent), title: const Text('Premium active'), subtitle: Text(endsAt == null ? 'Subscription verified' : 'Access until ${DateTime.tryParse(endsAt!)?.toLocal() ?? endsAt}'))),
       if (!loading && !active && backend.signedIn) FilledButton.icon(onPressed: paying ? null : checkout, icon: const Icon(Icons.lock), label: Text(paying ? 'Connecting to PesaPal…' : 'Subscribe with PesaPal')),
