@@ -39,7 +39,7 @@ async function authenticate(req) {
   if (!response.ok) throw Object.assign(new Error('Session is invalid or expired'), { status: 401 });
   const user = await response.json(); if (!user?.id) throw Object.assign(new Error('Session is invalid'), { status: 401 }); return user;
 }
-async function initOrder(user, body, origin) {
+async function initOrder(user, body) {
   requireDb();
   const planCode = body.plan_code || 'month'; const plan = plans[planCode];
   if (!plan) throw Object.assign(new Error('Choose a valid subscription plan'), { status: 400 });
@@ -47,7 +47,7 @@ async function initOrder(user, body, origin) {
   const insert = await pool.query("INSERT INTO payment_orders (merchant_reference,user_id,plan_code,amount_kes,currency,status) VALUES ($1,$2,$3,$4,'KES','pending') RETURNING id,merchant_reference,plan_code,amount_kes", [merchantReference, user.id, planCode, plan.amount]);
   const order = insert.rows[0];
   try {
-    const appUrl = (process.env.APP_URL || origin || 'https://streamora.co.ke').replace(/\/$/, '');
+    const appUrl = (process.env.APP_URL || 'https://streamora.co.ke').replace(/\/$/, '');
     if (!appUrl.startsWith('https://')) throw new Error('Secure callback URL must use HTTPS');
     const result = await pesapal('/api/Transactions/SubmitOrderRequest', 'POST', {
       id: merchantReference, currency: 'KES', amount: plan.amount, description: 'TikVTV ' + plan.label,
@@ -107,7 +107,7 @@ async function route(req, res) {
     catch (error) { console.error('Pesapal IPN verification failed:', error.message); return json(res, 503, { error: 'Transaction verification failed; retry callback' }); }
   }
   if (req.method === 'POST' && url.pathname === '/v1/checkout') {
-    try { const user = await authenticate(req); const body = await readBody(req); return json(res, 201, await initOrder(user, body, req.headers.origin)); }
+    try { const user = await authenticate(req); const body = await readBody(req); return json(res, 201, await initOrder(user, body)); }
     catch (e) { console.error('Checkout failed:', e.message); return json(res, e.status || 502, { error: e.message || 'Checkout failed' }); }
   }
   if (req.method === 'POST' && url.pathname === '/v1/payment/status') {
