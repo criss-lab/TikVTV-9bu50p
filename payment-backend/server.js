@@ -98,8 +98,20 @@ async function route(req, res) {
   if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: 'ok', service: 'tikvtv-payment-backend', database_configured: Boolean(pool), auth_validation_configured: authConfigured(), pesapal_credentials_present: configured(), environment: live ? 'live' : 'sandbox' });
   if (req.method === 'GET' && url.pathname === '/pesapal/readiness') {
     if (!pool || !configured() || !authConfigured()) return json(res, 503, { ready: false, reason: !pool ? 'database_missing' : !configured() ? 'pesapal_configuration_missing' : 'account_validation_configuration_missing' });
-    try { await pool.query('SELECT 1'); await token(); return json(res, 200, { ready: true, database: true, pesapal: true, account_validation: true, premium_activation_enabled: true, environment: live ? 'live' : 'sandbox' }); }
-    catch { return json(res, 503, { ready: false, reason: 'dependency_check_failed' }); }
+    try {
+      await pool.query('SELECT 1');
+      const schema = await pool.query(`
+        SELECT
+          to_regclass('public.payment_orders') IS NOT NULL AS payment_orders,
+          to_regclass('public.subscriptions') IS NOT NULL AS subscriptions,
+          to_regclass('public.pesapal_ipn_events') IS NOT NULL AS pesapal_ipn_events
+      `);
+      if (!schema.rows[0]?.payment_orders || !schema.rows[0]?.subscriptions || !schema.rows[0]?.pesapal_ipn_events) {
+        return json(res, 503, { ready: false, reason: 'payment_schema_missing' });
+      }
+      await token();
+      return json(res, 200, { ready: true, database: true, payment_schema: true, pesapal: true, account_validation: true, premium_activation_enabled: true, environment: live ? 'live' : 'sandbox' });
+    } catch { return json(res, 503, { ready: false, reason: 'dependency_check_failed' }); }
   }
   if (req.method === 'GET' && url.pathname === '/pesapal/ipn') {
     const tracking = url.searchParams.get('OrderTrackingId'); if (!tracking || !configured() || !pool) return json(res, 503, { error: 'Callback not ready' });
