@@ -29,6 +29,8 @@ class SharedPlayback extends ChangeNotifier {
   DateTime? _stalledAt;
   Duration? _previousPosition;
   int stallCount = 0;
+  int _sameSourceRetries = 0;
+  static const int maxSameSourceRetries = 1;
   void _cancelWatchdog() {
     _watchdog?.cancel();
     _watchdog = null;
@@ -63,6 +65,7 @@ class SharedPlayback extends ChangeNotifier {
     final token = ++_generation;
     _lease = token;
     _cancelWatchdog();
+    _sameSourceRetries = 0;
     _lastReportedSecond = -1;
     bufferedAhead = Duration.zero;
     buffering = false;
@@ -93,7 +96,13 @@ class SharedPlayback extends ChangeNotifier {
       error = null;
       loading = true;
       notifyListeners();
-      final candidate = VideoPlayerController.networkUrl(Uri.parse(selected.urls[i]));
+      final uri = Uri.tryParse(selected.urls[i]);
+      if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http') || uri.host.isEmpty) {
+        error = 'Source ${i + 1} has an invalid URL';
+        notifyListeners();
+        continue;
+      }
+      final candidate = VideoPlayerController.networkUrl(uri);
       _candidate = candidate;
       final settled = Completer<void>();
       _candidateSettled = settled;
@@ -158,8 +167,10 @@ class SharedPlayback extends ChangeNotifier {
           error = 'Source stalled; trying another feed';
           controller = null;
           notifyListeners();
+          final retryIndex = _sameSourceRetries < maxSameSourceRetries ? i : fallbackIndex;
+          if (retryIndex == i) _sameSourceRetries++;
           unawaited(_release(candidate).then((_) {
-            if (token == _generation) return _trySources(selected, token, fallbackIndex);
+            if (token == _generation) return _trySources(selected, token, retryIndex);
           }));
         });
         candidate.addListener(() {
@@ -171,6 +182,7 @@ class SharedPlayback extends ChangeNotifier {
             loading = true;
             controller = null;
             notifyListeners();
+            _sameSourceRetries = 0;
             unawaited(_release(candidate).then((_) {
               if (token == _generation) return _trySources(selected, token, fallbackIndex);
             }));
