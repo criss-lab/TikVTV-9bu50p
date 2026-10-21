@@ -14,7 +14,6 @@ class SharedPlayback extends ChangeNotifier {
   String? error;
   int sourceIndex = 0;
   bool loading = false;
-  bool _backgrounded = false;
   int _generation = 0;
   Future<void> _disposals = Future<void>.value();
   VideoPlayerController? _candidate;
@@ -55,7 +54,6 @@ class SharedPlayback extends ChangeNotifier {
   }
 
   void setBackgrounded(bool value) {
-    _backgrounded = value;
     final current = controller;
     if (current == null) { return; }
     if (value) {
