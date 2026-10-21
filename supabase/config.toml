@@ -1,0 +1,5 @@
+[functions.pesapal-payment]
+verify_jwt = true
+
+[functions.pesapal-ipn]
+verify_jwt = false
