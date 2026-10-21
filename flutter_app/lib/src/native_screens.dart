@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'catalogue.dart';
 import 'native_backend.dart';
@@ -180,13 +178,10 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       trackingId = order['order_tracking_id'] as String?;
       _paymentTimer?.cancel();
       _paymentTimer = Timer.periodic(const Duration(seconds: 2), (_) { if (mounted && !checking && trackingId != null) verifyPayment(silent: true); });
-      if (kIsWeb) {
-        final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
-        if (!opened) throw StateError('Could not open PesaPal checkout.');
-      } else {
-        await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => NativeCheckoutScreen(url: url)));
-        if (mounted) await verifyPayment();
-      }
+      // Keep every TikVTV screen Flutter-native. Hosted PesaPal checkout opens in
+      // the device's trusted browser; entitlement is granted only after server verification.
+      final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (!opened) throw StateError('Could not open PesaPal checkout.');
       if (mounted) setState(() { message = 'Checkout returned. Payment verification continues until the server records your entitlement.'; paying = false; });
     } catch (e) { if (mounted) setState(() { message = e.toString().replaceFirst('Bad state: ', ''); paying = false; }); }
   }
@@ -224,7 +219,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
           initialValue: selectedPlan,
           decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Subscription duration'),
           items: const [
-            DropdownMenuItem(value: 'half_day', child: Text('12 hours — KSh 5')),
+            DropdownMenuItem(value: 'half_day', child: Text('13 hours — KSh 5')),
             DropdownMenuItem(value: 'day', child: Text('1 day — KSh 10')),
             DropdownMenuItem(value: 'week', child: Text('1 week — KSh 40')),
             DropdownMenuItem(value: 'month', child: Text('1 month — KSh 130')),
@@ -237,49 +232,6 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       const SizedBox(height: 12),
       if (trackingId != null) OutlinedButton.icon(onPressed: paying ? null : verifyPayment, icon: const Icon(Icons.verified_user), label: const Text('Verify payment status')),
       OutlinedButton.icon(onPressed: loading ? null : refresh, icon: const Icon(Icons.refresh), label: const Text('Refresh subscription')),
-    ]),
-  );
-}
-
-
-class NativeCheckoutScreen extends StatefulWidget {
-  final Uri url;
-  const NativeCheckoutScreen({super.key, required this.url});
-  @override
-  State<NativeCheckoutScreen> createState() => _NativeCheckoutScreenState();
-}
-class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
-  late final WebViewController controller;
-  int progress = 0;
-  @override
-  void initState() {
-    super.initState();
-    controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(NavigationDelegate(
-        onProgress: (value) { if (mounted) setState(() => progress = value); },
-        onNavigationRequest: (request) {
-          final uri = Uri.tryParse(request.url);
-          if (uri == null || uri.scheme != 'https') return NavigationDecision.prevent;
-          if ((uri.host == 'streamora.co.ke' || uri.host == 'www.streamora.co.ke') &&
-              uri.path.startsWith('/payment-callback')) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) Navigator.pop(context, true);
-            });
-            return NavigationDecision.prevent;
-          }
-          return NavigationDecision.navigate;
-        },
-      ))
-      ..loadRequest(widget.url);
-  }
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Secure PesaPal checkout'), leading: IconButton(
-      tooltip: 'Return to TikVTV', icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context, false))),
-    body: Column(children: [
-      if (progress < 100) LinearProgressIndicator(value: progress / 100, minHeight: 2),
-      Expanded(child: WebViewWidget(controller: controller)),
     ]),
   );
 }
