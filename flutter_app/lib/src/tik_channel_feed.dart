@@ -54,6 +54,7 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
     _preloadBatch(index);
     _ownedId = channel.id;
     _lease = null;
+    unawaited(_library.recordWatch(channel.id));
     unawaited(_player.open(channel).then((_) {
       if (!mounted || request != _request) return;
       _lease = _player.lease;
