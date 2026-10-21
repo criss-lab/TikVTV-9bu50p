@@ -5,6 +5,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'catalogue.dart';
 import 'native_backend.dart';
+import 'playback_gate.dart';
 
 const _accent = Color(0xFFFF315F);
 const _panel = Color(0xFF191A20);
@@ -157,6 +158,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       final status = await backend.premiumStatus();
       if (!mounted) return;
       setState(() { active = status['active'] == true; endsAt = status['ends_at'] as String?; loading = false; });
+      if (active) await PlaybackGate.instance.refresh();
     } catch (e) { if (mounted) setState(() { message = e.toString().replaceFirst('Bad state: ', ''); loading = false; }); }
   }
   Future<void> checkout() async {
