@@ -12,6 +12,11 @@ class Channel {
 }
 
 class ChannelCatalogue extends ChangeNotifier {
+  // Additional sources are discovered but only explicitly approved channel IDs
+  // may enter a subscription-backed catalogue. Review distribution rights first.
+  static const approvedFreeTvIds = <String>{};
+  int discoveredFreeTv = 0;
+
   static final ChannelCatalogue _instance = ChannelCatalogue._();
   factory ChannelCatalogue() => _instance;
   ChannelCatalogue._();
@@ -67,6 +72,8 @@ class ChannelCatalogue extends ChangeNotifier {
           .timeout(const Duration(seconds: 20)),
         http.get(Uri.parse('https://iptv-org.github.io/api/blocklist.json'))
           .timeout(const Duration(seconds: 20)),
+        http.get(Uri.parse('https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8'))
+          .timeout(const Duration(seconds: 20)),
       ]);
       if (results[0].statusCode != 200 || results[1].statusCode != 200) {
         throw StateError('Catalogue HTTP failure');
@@ -110,6 +117,32 @@ class ChannelCatalogue extends ChangeNotifier {
         parsed.add(Channel(id, name, logos[id] ?? '',
           item['country'] is String ? item['country'] : 'INT',
           List.unmodifiable(sources[id]!), categories: List<String>.from(item['categories'] as List? ?? const []), languages: List<String>.from(item['languages'] as List? ?? const [])));
+      }
+      // Discover Free-TV updates on every refresh. Never auto-monetize a third-party
+      // stream: only attach a reviewed channel when its ID has been approved.
+      discoveredFreeTv = 0;
+      if (results[4].statusCode == 200 && results[4].body.startsWith('#EXTM3U')) {
+        String? pendingId;
+        for (final line in const LineSplitter().convert(results[4].body)) {
+          if (line.startsWith('#EXTINF:')) {
+            final match = RegExp(r'tvg-id="([^"]+)"').firstMatch(line);
+            pendingId = match?.group(1);
+          } else if (line.isNotEmpty && !line.startsWith('#')) {
+            final uri = Uri.tryParse(line.trim());
+            if (pendingId != null && uri != null && (uri.scheme == 'https' || uri.scheme == 'http') && uri.host.isNotEmpty) {
+              discoveredFreeTv++;
+              if (approvedFreeTvIds.contains(pendingId) && !blocked.contains(pendingId)) {
+                final index = parsed.indexWhere((c) => c.id == pendingId);
+                if (index >= 0 && !parsed[index].urls.contains(line.trim())) {
+                  final ch = parsed[index];
+                  parsed[index] = Channel(ch.id, ch.name, ch.logo, ch.country,
+                    List.unmodifiable([...ch.urls, line.trim()]), categories: ch.categories, languages: ch.languages);
+                }
+              }
+            }
+            pendingId = null;
+          }
+        }
       }
       channels = List.unmodifiable(parsed);
       _loadedAt = DateTime.now();
