@@ -38,13 +38,20 @@ export function useViewingAccess() {
       setNow(Date.now());
       setGateLoading(false);
     };
+    const failClosed = () => {
+      if (cancelled) return;
+      // Lock for this session without overwriting the last known-good local deadline.
+      setDeadline(Date.now());
+      setNow(Date.now());
+      setGateLoading(false);
+    };
 
     if (userId) {
       void getViewingAccess(userId)
         .then(result => applyDeadline(result.preview_ends_at))
         .catch(error => {
           console.error('Server viewing access unavailable; playback remains locked', error);
-          applyDeadline(Date.now());
+          failClosed();
         });
     } else {
       const current = Date.now();
@@ -66,7 +73,7 @@ export function useViewingAccess() {
     const tick = () => setNow(Date.now());
     const onResume = () => {
       tick();
-      if (userId) void getViewingAccess(userId).then(result => applyDeadline(result.preview_ends_at)).catch(() => applyDeadline(Date.now()));
+      if (userId) void getViewingAccess(userId).then(result => applyDeadline(result.preview_ends_at)).catch(() => failClosed());
       void refresh();
     };
     const clock = window.setInterval(tick, 1000);
