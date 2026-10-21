@@ -10,7 +10,8 @@ import 'library.dart';
 /// decoder; initializing three live videos simultaneously exhausts many phones.
 class TikChannelFeed extends StatefulWidget {
   final List<Channel> channels;
-  const TikChannelFeed({super.key, required this.channels});
+  final VoidCallback onUnlockPremium;
+  const TikChannelFeed({super.key, required this.channels, required this.onUnlockPremium});
   @override
   State<TikChannelFeed> createState() => _TikChannelFeedState();
 }
@@ -244,10 +245,24 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                   child: FilledButton.icon(onPressed: () => _focus(index),
                     icon: const Icon(Icons.refresh), label: const Text('Retry stream')))),
               if (selected && _gate.locked)
-                const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.lock, size: 42), SizedBox(height: 8),
-                  Text('Subscription required to play live TV'),
-                ])),
+                Center(child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 28),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.lock_rounded, size: 48, color: Color(0xFFFF315F)),
+                    const SizedBox(height: 12),
+                    const Text('Your free preview has ended', textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    const Text('Unlock Premium once to watch every channel during your subscription.',
+                      textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: widget.onUnlockPremium,
+                      icon: const Icon(Icons.workspace_premium),
+                      label: const Text('Unlock all channels'),
+                    ),
+                  ]),
+                )),
               Positioned(top: 14, left: 14, child: DecoratedBox(
                 decoration: BoxDecoration(color: const Color(0xFFFF315F), borderRadius: BorderRadius.circular(6)),
                 child: const Padding(padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
