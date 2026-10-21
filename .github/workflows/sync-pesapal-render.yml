@@ -1,6 +1,11 @@
 name: Sync payment secrets to Render
 on:
   workflow_dispatch:
+  push:
+    branches: [feature/pesapal-premium-integration]
+    paths:
+      - 'payment-backend/**'
+      - '.github/workflows/sync-pesapal-render.yml'
 permissions:
   contents: read
 jobs:
