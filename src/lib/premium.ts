@@ -10,14 +10,13 @@ async function paymentRequest<T>(path: string, init: RequestInit = {}): Promise<
   if (error) throw new Error('Could not restore your sign-in session. Please sign in again.');
   const accessToken = data.session?.access_token;
   if (!accessToken) throw new Error('Sign in to continue.');
+  const headers = new Headers(init.headers);
+  headers.set('Accept', 'application/json');
+  headers.set('Authorization', `Bearer ${accessToken}`);
+  if (init.body) headers.set('Content-Type', 'application/json');
   const response = await fetch(`${PAYMENT_API_URL}${path}`, {
     ...init,
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init.headers,
-    },
+    headers,
     cache: 'no-store',
   });
   const payload = await response.json().catch(() => ({}));
