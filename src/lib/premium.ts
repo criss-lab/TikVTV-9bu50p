@@ -9,8 +9,8 @@ export async function getPremiumAccess(userId: string) {
   return { active: !!data?.length, endsAt: data?.[0]?.ends_at ?? null };
 }
 export function notifyPremiumChanged() { window.dispatchEvent(new Event(PREMIUM_CHANGED)); }
-export async function invokePesapal(action: 'initiate' | 'check_status', orderTrackingId?: string) {
-  const { data, error } = await supabase.functions.invoke('pesapal-payment', { body: { action, ...(orderTrackingId ? { orderTrackingId } : {}), ...(action === 'initiate' ? { appUrl: window.location.origin } : {}) } });
+export async function invokePesapal(action: 'initiate' | 'check_status', orderTrackingId?: string, planId?: 'half_day' | 'daily' | 'weekly' | 'monthly') {
+  const { data, error } = await supabase.functions.invoke('pesapal-payment', { body: { action, ...(orderTrackingId ? { orderTrackingId } : {}), ...(action === 'initiate' ? { appUrl: window.location.origin, planId } : {}) } });
   if (error) throw error;
   return data;
 }
