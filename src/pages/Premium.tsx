@@ -29,7 +29,6 @@ export default function Premium() {
       window.location.assign(data.redirect_url);
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Checkout unavailable'); setPaying(null); }
   }
-  const remaining = endsAt ? Math.max(0, Date.parse(endsAt) - Date.now()) : 0;
   return <main className="min-h-screen bg-black text-white px-6 pt-16 pb-28"><div className="max-w-md mx-auto space-y-6">
     <Crown className="w-12 h-12 text-primary" /><h1 className="text-3xl font-bold">TikVTVz Premium</h1>
     <p className="text-white/60">Every plan unlocks all channels for its paid period. Activation requires verified payment and a recorded subscription.</p>
