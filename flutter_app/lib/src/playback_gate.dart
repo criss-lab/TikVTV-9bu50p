@@ -81,7 +81,10 @@ class PlaybackGate extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> refresh() => start();
+  Future<void> refresh() async {
+    if (_inflight != null) await _inflight;
+    await start();
+  }
 
   void disposeTimer() {
     _timer?.cancel();
