@@ -104,9 +104,10 @@ async function route(req, res) {
         SELECT
           to_regclass('public.payment_orders') IS NOT NULL AS payment_orders,
           to_regclass('public.subscriptions') IS NOT NULL AS subscriptions,
-          to_regclass('public.pesapal_ipn_events') IS NOT NULL AS pesapal_ipn_events
+          to_regclass('public.pesapal_ipn_events') IS NOT NULL AS pesapal_ipn_events,
+          to_regclass('public.free_preview_sessions') IS NOT NULL AS free_preview_sessions
       `);
-      if (!schema.rows[0]?.payment_orders || !schema.rows[0]?.subscriptions || !schema.rows[0]?.pesapal_ipn_events) {
+      if (!schema.rows[0]?.payment_orders || !schema.rows[0]?.subscriptions || !schema.rows[0]?.pesapal_ipn_events || !schema.rows[0]?.free_preview_sessions) {
         return json(res, 503, { ready: false, reason: 'payment_schema_missing' });
       }
       await token();
@@ -127,6 +128,30 @@ async function route(req, res) {
       requireDb(); const owned = await pool.query('SELECT 1 FROM payment_orders WHERE order_tracking_id=$1 AND user_id=$2', [body.order_tracking_id, user.id]); if (!owned.rowCount) return json(res, 404, { error: 'Payment order not found' });
       return json(res, 200, await verifyAndActivate(body.order_tracking_id));
     } catch (e) { console.error('Payment status check failed:', e.message); return json(res, e.status || 502, { error: e.message || 'Status check failed' }); }
+  }
+  if (req.method === 'GET' && url.pathname === '/v1/viewing-access') {
+    try {
+      const user = await authenticate(req);
+      requireDb();
+      // Insert-once: channel changes, app reinstalls, and second devices cannot reset the timer.
+      await pool.query(
+        "INSERT INTO free_preview_sessions (user_id, started_at, expires_at) VALUES ($1, NOW(), NOW() + INTERVAL '15 minutes') ON CONFLICT (user_id) DO NOTHING",
+        [user.id],
+      );
+      const result = await pool.query(
+        "SELECT p.expires_at AS preview_ends_at, s.expires_at AS subscription_ends_at, (s.user_id IS NOT NULL) AS active FROM free_preview_sessions p LEFT JOIN subscriptions s ON s.user_id = p.user_id AND s.expires_at > NOW() WHERE p.user_id = $1",
+        [user.id],
+      );
+      const row = result.rows[0];
+      if (!row) throw new Error('Could not initialize preview access');
+      const active = row.active === true;
+      const previewEndsAt = row.preview_ends_at;
+      const allowed = active || new Date(previewEndsAt).getTime() > Date.now();
+      return json(res, 200, { active, ends_at: row.subscription_ends_at || null, preview_ends_at: previewEndsAt, allowed });
+    } catch (e) {
+      console.error('Viewing access lookup failed:', e.message);
+      return json(res, e.status || 503, { error: e.message || 'Viewing access lookup failed' });
+    }
   }
   if (req.method === 'GET' && url.pathname === '/v1/subscription') {
     try { const user = await authenticate(req); requireDb(); const result = await pool.query('SELECT plan_code,starts_at,expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW()', [user.id]); const row = result.rows[0]; return json(res, 200, { active: Boolean(row), plan_code: row?.plan_code || null, starts_at: row?.starts_at || null, ends_at: row?.expires_at || null }); }
