@@ -1,0 +1,29 @@
+name: Flutter playback checks
+on:
+  push:
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/flutter-playback.yml'
+  pull_request:
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/flutter-playback.yml'
+  workflow_dispatch:
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter --version
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build web --release
+      - run: flutter build apk --debug
