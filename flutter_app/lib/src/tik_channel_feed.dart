@@ -264,19 +264,21 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                 Center(child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 28),
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    const Icon(Icons.lock_rounded, size: 48, color: Color(0xFFFF315F)),
+                    const CircleAvatar(radius: 28, backgroundColor: Color(0x33FF315F), child: Icon(Icons.lock_open_rounded, size: 29, color: Color(0xFFFF315F))),
                     const SizedBox(height: 12),
-                    const Text('Your free preview has ended', textAlign: TextAlign.center,
+                    const Text('Unlock live TV', textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    const Text('Unlock Premium once to watch every channel during your subscription.',
+                    const Text('One subscription opens every channel. Already paid? Check your access without paying again.',
                       textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
                     const SizedBox(height: 16),
                     FilledButton.icon(
                       onPressed: widget.onUnlockPremium,
                       icon: const Icon(Icons.workspace_premium),
-                      label: const Text('Unlock all channels'),
+                      label: const Text('View Premium / pay securely'),
                     ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(onPressed: () => unawaited(_gate.refresh()), icon: const Icon(Icons.refresh), label: const Text('Already paid? Check access')),
                   ]),
                 )),
               Positioned(top: 14, left: 14, child: DecoratedBox(
