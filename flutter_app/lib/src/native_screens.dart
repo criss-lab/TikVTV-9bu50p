@@ -129,13 +129,20 @@ class NativePremiumScreen extends StatefulWidget {
   @override
   State<NativePremiumScreen> createState() => _NativePremiumScreenState();
 }
-class _NativePremiumScreenState extends State<NativePremiumScreen> {
+class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsBindingObserver {
   final backend = NativeBackend.instance;
   bool loading = true, paying = false;
   bool active = false;
   String? endsAt, trackingId, message;
   @override
-  void initState() { super.initState(); refresh(); }
+  void initState() { super.initState(); WidgetsBinding.instance.addObserver(this); refresh(); }
+  @override
+  void dispose() { WidgetsBinding.instance.removeObserver(this); super.dispose(); }
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && trackingId != null) verifyPayment();
+    else if (state == AppLifecycleState.resumed) refresh();
+  }
   Future<void> refresh() async {
     if (!mounted) return;
     setState(() { loading = true; message = null; });
