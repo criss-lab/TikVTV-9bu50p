@@ -172,7 +172,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       if (!mounted) return;
       final url = Uri.tryParse(order['redirect_url'] as String? ?? '');
       final host = url?.host;
-      if (url == null || url.scheme != 'https' || !['pay.pesapal.com', 'cybqa.pesapal.com'].contains(host)) {
+      if (url == null || url.scheme != 'https' || url.port != 443 || url.userInfo.isNotEmpty || !['pay.pesapal.com', 'cybqa.pesapal.com'].contains(host)) {
         throw StateError('Secure PesaPal checkout destination was invalid.');
       }
       trackingId = order['order_tracking_id'] as String?;
