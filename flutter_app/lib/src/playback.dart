@@ -42,7 +42,7 @@ class SharedPlayback extends ChangeNotifier {
   int get lease => _lease;
 
   Future<void> _release(VideoPlayerController? player) {
-    if (player == null) return _disposals;
+    if (player == null) { return _disposals; }
     _disposals = _disposals.then((_) async {
       try { await player.dispose(); }
       catch (e) { debugPrint('Player dispose failed: $e'); }
@@ -53,7 +53,7 @@ class SharedPlayback extends ChangeNotifier {
   void setBackgrounded(bool value) {
     _backgrounded = value;
     final current = controller;
-    if (current == null) return;
+    if (current == null) { return; }
     if (value) {
       unawaited(current.pause().catchError((Object e) => debugPrint('$e')));
     } else if (channel != null && !current.value.hasError) {
@@ -86,12 +86,12 @@ class SharedPlayback extends ChangeNotifier {
       await pending;
     }
     await _disposals;
-    if (token == _generation) await _trySources(next, token, 0);
+    if (token == _generation) { await _trySources(next, token, 0); }
   }
 
   Future<void> _trySources(Channel selected, int token, int start) async {
     for (var i = start; i < selected.urls.length; i++) {
-      if (token != _generation) return;
+      if (token != _generation) { return; }
       sourceIndex = i;
       error = null;
       loading = true;
@@ -121,8 +121,8 @@ class SharedPlayback extends ChangeNotifier {
           // Keep ownership until initialization settles; a timeout is not cancellation.
           try { await initialization; } catch (_) { /* release below */ }
           await _release(candidate);
-          if (identical(_candidate, candidate)) _candidate = null;
-          if (token != _generation) return;
+          if (identical(_candidate, candidate)) { _candidate = null; }
+          if (token != _generation) { return; }
           continue;
         }
         if (token != _generation) {
@@ -130,7 +130,7 @@ class SharedPlayback extends ChangeNotifier {
           return;
         }
         await candidate.setLooping(false);
-        if (!_backgrounded) await candidate.play().timeout(const Duration(seconds: 8));
+        if (!_backgrounded) { await candidate.play().timeout(const Duration(seconds: 8)); }
         if (token != _generation) {
           await _release(candidate);
           return;
@@ -159,7 +159,7 @@ class SharedPlayback extends ChangeNotifier {
             return;
           }
           _stalledAt ??= DateTime.now();
-          if (loading || DateTime.now().difference(_stalledAt!) < const Duration(seconds: 25)) return;
+          if (loading || DateTime.now().difference(_stalledAt!) < const Duration(seconds: 25)) { return; }
           _cancelWatchdog();
           stallCount++;
           recoveryCount++;
@@ -168,9 +168,9 @@ class SharedPlayback extends ChangeNotifier {
           controller = null;
           notifyListeners();
           final retryIndex = _sameSourceRetries < maxSameSourceRetries ? i : fallbackIndex;
-          if (retryIndex == i) _sameSourceRetries++;
+          if (retryIndex == i) { _sameSourceRetries++; }
           unawaited(_release(candidate).then((_) {
-            if (token == _generation) return _trySources(selected, token, retryIndex);
+            if (token == _generation) { return _trySources(selected, token, retryIndex); }
           }));
         });
         candidate.addListener(() {
@@ -184,7 +184,7 @@ class SharedPlayback extends ChangeNotifier {
             notifyListeners();
             _sameSourceRetries = 0;
             unawaited(_release(candidate).then((_) {
-              if (token == _generation) return _trySources(selected, token, fallbackIndex);
+              if (token == _generation) { return _trySources(selected, token, fallbackIndex); }
             }));
             return;
           }
@@ -206,25 +206,25 @@ class SharedPlayback extends ChangeNotifier {
         notifyListeners();
         return;
       } catch (e) {
-        if (identical(_candidate, candidate)) _candidate = null;
+        if (identical(_candidate, candidate)) { _candidate = null; }
         await _release(candidate);
-        if (token != _generation) return;
+        if (token != _generation) { return; }
         error = 'Source ${i + 1} failed: $e';
         notifyListeners();
       } finally {
-        if (identical(_candidate, candidate)) _candidate = null;
-        if (identical(_candidateSettled, settled)) _candidateSettled = null;
-        if (!settled.isCompleted) settled.complete();
+        if (identical(_candidate, candidate)) { _candidate = null; }
+        if (identical(_candidateSettled, settled)) { _candidateSettled = null; }
+        if (!settled.isCompleted) { settled.complete(); }
       }
     }
-    if (token != _generation) return;
+    if (token != _generation) { return; }
     loading = false;
     error = 'All listed sources failed or are unavailable for this device.';
     notifyListeners();
   }
 
   void stopIfCurrent(String id, {int? lease}) {
-    if (channel?.id != id || (lease != null && lease != _lease)) return;
+    if (channel?.id != id || (lease != null && lease != _lease)) { return; }
     ++_generation;
     _cancelWatchdog();
     bufferedAhead = Duration.zero;
