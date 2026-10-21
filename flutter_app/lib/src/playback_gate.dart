@@ -13,6 +13,7 @@ class PlaybackGate extends ChangeNotifier {
   DateTime? _started;
   Timer? _timer;
   Timer? _entitlementTimer;
+  DateTime? _verifiedPaidExpiry;
   bool active = false;
   bool locked = true;
   bool checking = false;
@@ -39,12 +40,20 @@ class PlaybackGate extends ChangeNotifier {
       }
 
       final backend = NativeBackend.instance;
-      active = backend.signedIn && await backend.hasPlaybackEntitlement();
+      if (!backend.signedIn) {
+        active = false;
+        _verifiedPaidExpiry = null;
+      } else {
+        final status = await backend.premiumStatus();
+        final expiry = DateTime.tryParse(status['ends_at']?.toString() ?? '')?.toUtc();
+        _verifiedPaidExpiry = status['active'] == true ? expiry : null;
+        active = _verifiedPaidExpiry != null && _verifiedPaidExpiry!.isAfter(DateTime.now().toUtc());
+      }
       _tick();
     } catch (e) {
       debugPrint('Playback entitlement unavailable: $e');
       // Fail closed for paid access; only the already-started preview can apply.
-      active = false;
+      active = NativeBackend.instance.signedIn && _verifiedPaidExpiry != null && _verifiedPaidExpiry!.isAfter(DateTime.now().toUtc());
       _tick();
     } finally {
       checking = false;
@@ -66,6 +75,7 @@ class PlaybackGate extends ChangeNotifier {
         : DateTime.now().toUtc().difference(_started!);
     remaining = allowance - (elapsed.isNegative ? Duration.zero : elapsed);
     if (remaining.isNegative) remaining = Duration.zero;
+    if (active && (_verifiedPaidExpiry == null || !_verifiedPaidExpiry!.isAfter(DateTime.now().toUtc()))) active = false;
     locked = !active && remaining == Duration.zero;
     if (locked && !previous) unawaited(onLock?.call() ?? Future<void>.value());
     notifyListeners();
