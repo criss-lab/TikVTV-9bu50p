@@ -3,15 +3,16 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'native_backend.dart';
 
-/// Native playback allowance. Entitlements are always read from the existing
-/// server-verified PesaPal subscription; the device cannot grant premium.
+/// Native playback allowance. Paid access is always revalidated by the server.
 class PlaybackGate extends ChangeNotifier {
   PlaybackGate._();
   static final instance = PlaybackGate._();
   static const allowance = Duration(minutes: 15);
   static const _startedKey = 'tikvtv_native_trial_started_at_v1';
+  static const _entitlementRefreshInterval = Duration(seconds: 15);
   DateTime? _started;
   Timer? _timer;
+  Timer? _entitlementTimer;
   bool active = false;
   bool locked = true;
   bool checking = false;
@@ -27,31 +28,42 @@ class PlaybackGate extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final stored = prefs.getString(_startedKey);
-      _started = stored == null ? null : DateTime.tryParse(stored)?.toUtc();
-      final backend = NativeBackend.instance;
-      // Anonymous viewing uses the same persistent allowance on this device.
-      active = backend.signedIn && await backend.hasPlaybackEntitlement();
-      if (!active && _started == null) {
-        _started = DateTime.now().toUtc();
+      final parsed = stored == null ? null : DateTime.tryParse(stored)?.toUtc();
+
+      // Start the one-time preview clock on first gate use even when Premium is
+      // currently active. Otherwise a paid subscription expiring later would
+      // accidentally create a fresh 15-minute preview.
+      _started = parsed ?? DateTime.now().toUtc();
+      if (parsed == null) {
         await prefs.setString(_startedKey, _started!.toIso8601String());
       }
+
+      final backend = NativeBackend.instance;
+      active = backend.signedIn && await backend.hasPlaybackEntitlement();
       _tick();
-      _timer ??= Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     } catch (e) {
       debugPrint('Playback entitlement unavailable: $e');
-      // Never grant paid access on a failed entitlement request.
+      // Fail closed for paid access; only the already-started preview can apply.
       active = false;
       _tick();
-      _timer ??= Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     } finally {
       checking = false;
+      _timer ??= Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+      // Re-check server entitlement while a channel remains focused. Without
+      // this, an expired subscription could keep playing indefinitely until
+      // the user swiped to another channel or reopened Premium.
+      _entitlementTimer ??= Timer.periodic(_entitlementRefreshInterval, (_) {
+        if (!checking) unawaited(start());
+      });
       notifyListeners();
     }
   }
 
   void _tick() {
     final previous = locked;
-    final elapsed = _started == null ? allowance : DateTime.now().toUtc().difference(_started!);
+    final elapsed = _started == null
+        ? allowance
+        : DateTime.now().toUtc().difference(_started!);
     remaining = allowance - (elapsed.isNegative ? Duration.zero : elapsed);
     if (remaining.isNegative) remaining = Duration.zero;
     locked = !active && remaining == Duration.zero;
@@ -60,5 +72,11 @@ class PlaybackGate extends ChangeNotifier {
   }
 
   Future<void> refresh() => start();
-  void disposeTimer() { _timer?.cancel(); _timer = null; }
+
+  void disposeTimer() {
+    _timer?.cancel();
+    _timer = null;
+    _entitlementTimer?.cancel();
+    _entitlementTimer = null;
+  }
 }
