@@ -7,6 +7,7 @@ const port = Number(process.env.PORT || 10000);
 const live = process.env.PESAPAL_ENVIRONMENT === 'live';
 const base = live ? 'https://pay.pesapal.com/v3' : 'https://cybqa.pesapal.com/pesapalv3';
 const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: true }, max: 5, idleTimeoutMillis: 10000, connectionTimeoutMillis: 10000 }) : null;
+const allowedOrigins = new Set((process.env.CORS_ORIGINS || 'https://streamora.co.ke,https://www.streamora.co.ke').split(',').map(x => x.trim()).filter(Boolean));
 const plans = {
   half_day: { amount: 5, durationMs: 12 * 60 * 60 * 1000, label: '12-hour access' },
   day: { amount: 10, durationMs: 24 * 60 * 60 * 1000, label: 'Daily access' },
@@ -15,9 +16,10 @@ const plans = {
 };
 const json = (res, status, data) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); res.end(JSON.stringify(data)); };
 const configured = () => Boolean(process.env.PESAPAL_CONSUMER_KEY && process.env.PESAPAL_CONSUMER_SECRET && process.env.PESAPAL_IPN_ID);
+const authConfigured = () => Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY);
 function requireDb() { if (!pool) throw Object.assign(new Error('Database is not configured'), { status: 503 }); }
 async function readBody(req) {
-  let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 32_000) throw Object.assign(new Error('Request too large'), { status: 413 }); }
+  let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 32000) throw Object.assign(new Error('Request too large'), { status: 413 }); }
   if (!raw) return {}; try { return JSON.parse(raw); } catch { throw Object.assign(new Error('Invalid JSON'), { status: 400 }); }
 }
 async function token() {
@@ -29,10 +31,10 @@ async function pesapal(path, method = 'GET', body) {
   const auth = await token(); const response = await fetch(base + path, { method, headers: { authorization: 'Bearer ' + auth, accept: 'application/json', ...(body ? { 'content-type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(20000) });
   const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error('Pesapal API request failed'); return data;
 }
-// Validate the caller's existing account session with the auth issuer; client-supplied user IDs are never trusted.
+// Validate the existing session with the identity provider; client-supplied user IDs are never trusted.
 async function authenticate(req) {
   const authorization = req.headers.authorization || '';
-  if (!authorization.startsWith('Bearer ') || !process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) throw Object.assign(new Error('Sign in required'), { status: 401 });
+  if (!authorization.startsWith('Bearer ') || !authConfigured()) throw Object.assign(new Error('Sign in required or account validation is not configured'), { status: 401 });
   const response = await fetch(process.env.SUPABASE_URL.replace(/\/$/, '') + '/auth/v1/user', { headers: { apikey: process.env.SUPABASE_ANON_KEY, authorization }, signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw Object.assign(new Error('Session is invalid or expired'), { status: 401 });
   const user = await response.json(); if (!user?.id) throw Object.assign(new Error('Session is invalid'), { status: 401 }); return user;
@@ -46,12 +48,13 @@ async function initOrder(user, body, origin) {
   const order = insert.rows[0];
   try {
     const appUrl = (process.env.APP_URL || origin || 'https://streamora.co.ke').replace(/\/$/, '');
+    if (!appUrl.startsWith('https://')) throw new Error('Secure callback URL must use HTTPS');
     const result = await pesapal('/api/Transactions/SubmitOrderRequest', 'POST', {
       id: merchantReference, currency: 'KES', amount: plan.amount, description: 'TikVTV ' + plan.label,
       callback_url: appUrl + '/payment-callback', notification_id: process.env.PESAPAL_IPN_ID,
       billing_address: { email_address: user.email || '', first_name: user.user_metadata?.first_name || user.email?.split('@')[0] || 'TikVTV', last_name: user.user_metadata?.last_name || 'Customer' }
     });
-    if (!result.order_tracking_id || !result.redirect_url) throw new Error('Pesapal did not return a valid checkout order');
+    if (!result.order_tracking_id || !result.redirect_url || !['pay.pesapal.com', 'cybqa.pesapal.com'].includes(new URL(result.redirect_url).hostname) || new URL(result.redirect_url).protocol !== 'https:') throw new Error('Pesapal did not return a valid secure checkout order');
     await pool.query('UPDATE payment_orders SET order_tracking_id=$1,pesapal_redirect_url=$2 WHERE id=$3', [result.order_tracking_id, result.redirect_url, order.id]);
     return { order_tracking_id: result.order_tracking_id, merchant_reference: merchantReference, redirect_url: result.redirect_url, amount_kes: plan.amount, plan_code: planCode };
   } catch (error) {
@@ -61,12 +64,12 @@ async function initOrder(user, body, origin) {
 }
 async function verifyAndActivate(tracking, suppliedReference = '') {
   requireDb();
-  const orderResult = await pool.query('SELECT * FROM payment_orders WHERE order_tracking_id=$1 OR ($2 <> \'\' AND merchant_reference=$2) ORDER BY created_at DESC LIMIT 1', [tracking || '', suppliedReference || '']);
+  const orderResult = await pool.query("SELECT * FROM payment_orders WHERE order_tracking_id=$1 OR ($2 <> '' AND merchant_reference=$2) ORDER BY created_at DESC LIMIT 1", [tracking || '', suppliedReference || '']);
   const order = orderResult.rows[0]; if (!order) throw Object.assign(new Error('Payment order not found'), { status: 404 });
   const verified = await pesapal('/api/Transactions/GetTransactionStatus?orderTrackingId=' + encodeURIComponent(order.order_tracking_id));
   const status = String(verified.payment_status_description || '').toLowerCase();
   const amount = Number(verified.amount); const currency = String(verified.currency || '').toUpperCase();
-  const complete = status === 'completed' && amount === Number(order.amount_kes) && currency === 'KES' && String(verified.merchant_reference || order.merchant_reference) === order.merchant_reference;
+  const complete = status === 'completed' && amount === Number(order.amount_kes) && currency === 'KES' && (!verified.merchant_reference || String(verified.merchant_reference) === order.merchant_reference);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -75,6 +78,7 @@ async function verifyAndActivate(tracking, suppliedReference = '') {
     const current = locked.rows[0];
     if (complete && current.status !== 'completed') {
       const plan = plans[current.plan_code]; if (!plan) throw new Error('Stored plan is invalid');
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [current.user_id]);
       const now = new Date();
       const sub = await client.query('SELECT starts_at,expires_at FROM subscriptions WHERE user_id=$1 FOR UPDATE', [current.user_id]);
       const existing = sub.rows[0]; const start = existing && new Date(existing.expires_at) > now ? new Date(existing.expires_at) : now;
@@ -91,33 +95,41 @@ async function verifyAndActivate(tracking, suppliedReference = '') {
 }
 async function route(req, res) {
   const url = new URL(req.url, 'http://localhost');
-  if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: 'ok', service: 'tikvtv-payment-backend', database_configured: Boolean(pool), pesapal_credentials_present: configured(), environment: live ? 'live' : 'sandbox' });
+  if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: 'ok', service: 'tikvtv-payment-backend', database_configured: Boolean(pool), auth_validation_configured: authConfigured(), pesapal_credentials_present: configured(), environment: live ? 'live' : 'sandbox' });
   if (req.method === 'GET' && url.pathname === '/pesapal/readiness') {
-    if (!pool || !configured()) return json(res, 503, { ready: false, reason: !pool ? 'database_missing' : 'pesapal_configuration_missing' });
-    try { await pool.query('SELECT 1'); await token(); return json(res, 200, { ready: true, database: true, pesapal: true, premium_activation_enabled: true, environment: live ? 'live' : 'sandbox' }); }
+    if (!pool || !configured() || !authConfigured()) return json(res, 503, { ready: false, reason: !pool ? 'database_missing' : !configured() ? 'pesapal_configuration_missing' : 'account_validation_configuration_missing' });
+    try { await pool.query('SELECT 1'); await token(); return json(res, 200, { ready: true, database: true, pesapal: true, account_validation: true, premium_activation_enabled: true, environment: live ? 'live' : 'sandbox' }); }
     catch { return json(res, 503, { ready: false, reason: 'dependency_check_failed' }); }
   }
   if (req.method === 'GET' && url.pathname === '/pesapal/ipn') {
     const tracking = url.searchParams.get('OrderTrackingId'); if (!tracking || !configured() || !pool) return json(res, 503, { error: 'Callback not ready' });
     try { const result = await verifyAndActivate(tracking, url.searchParams.get('OrderMerchantReference') || ''); return json(res, 200, { orderNotificationType: url.searchParams.get('OrderNotificationType') || 'IPNCHANGE', orderTrackingId: tracking, orderMerchantReference: url.searchParams.get('OrderMerchantReference') || '', status: 200, payment_status_description: result.payment_status_description }); }
-    catch { return json(res, 503, { error: 'Transaction verification failed; retry callback' }); }
+    catch (error) { console.error('Pesapal IPN verification failed:', error.message); return json(res, 503, { error: 'Transaction verification failed; retry callback' }); }
   }
   if (req.method === 'POST' && url.pathname === '/v1/checkout') {
-    try { const user = await authenticate(req); const body = await readBody(req); const origin = req.headers.origin; return json(res, 201, await initOrder(user, body, origin)); }
-    catch (e) { return json(res, e.status || 502, { error: e.message || 'Checkout failed' }); }
+    try { const user = await authenticate(req); const body = await readBody(req); return json(res, 201, await initOrder(user, body, req.headers.origin)); }
+    catch (e) { console.error('Checkout failed:', e.message); return json(res, e.status || 502, { error: e.message || 'Checkout failed' }); }
   }
   if (req.method === 'POST' && url.pathname === '/v1/payment/status') {
     try { const user = await authenticate(req); const body = await readBody(req); if (typeof body.order_tracking_id !== 'string' || !body.order_tracking_id) return json(res, 400, { error: 'order_tracking_id is required' });
-      const owned = await pool.query('SELECT 1 FROM payment_orders WHERE order_tracking_id=$1 AND user_id=$2', [body.order_tracking_id, user.id]); if (!owned.rowCount) return json(res, 404, { error: 'Payment order not found' });
+      requireDb(); const owned = await pool.query('SELECT 1 FROM payment_orders WHERE order_tracking_id=$1 AND user_id=$2', [body.order_tracking_id, user.id]); if (!owned.rowCount) return json(res, 404, { error: 'Payment order not found' });
       return json(res, 200, await verifyAndActivate(body.order_tracking_id));
-    } catch (e) { return json(res, e.status || 502, { error: e.message || 'Status check failed' }); }
+    } catch (e) { console.error('Payment status check failed:', e.message); return json(res, e.status || 502, { error: e.message || 'Status check failed' }); }
   }
   if (req.method === 'GET' && url.pathname === '/v1/subscription') {
     try { const user = await authenticate(req); requireDb(); const result = await pool.query('SELECT plan_code,starts_at,expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW()', [user.id]); const row = result.rows[0]; return json(res, 200, { active: Boolean(row), plan_code: row?.plan_code || null, starts_at: row?.starts_at || null, ends_at: row?.expires_at || null }); }
-    catch (e) { return json(res, e.status || 503, { error: e.message || 'Subscription lookup failed' }); }
+    catch (e) { console.error('Subscription lookup failed:', e.message); return json(res, e.status || 503, { error: e.message || 'Subscription lookup failed' }); }
   }
   return json(res, 404, { error: 'Not found' });
 }
-const server = http.createServer((req, res) => { route(req, res).catch(() => { if (!res.headersSent) json(res, 500, { error: 'Internal server error' }); }); });
+const server = http.createServer((req, res) => {
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type'); res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  } else if (origin && !allowedOrigins.has(origin)) return json(res, 403, { error: 'Origin not allowed' });
+  if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+  route(req, res).catch(error => { console.error('Unhandled payment API error:', error.message); if (!res.headersSent) json(res, 500, { error: 'Internal server error' }); });
+});
 server.listen(port, '0.0.0.0');
 process.on('SIGTERM', async () => { server.close(); if (pool) await pool.end(); });
