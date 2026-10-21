@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'catalogue.dart';
 import 'native_backend.dart';
@@ -168,9 +170,14 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
         throw StateError('Secure PesaPal checkout destination was invalid.');
       }
       trackingId = order['order_tracking_id'] as String?;
-      final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
-      if (!opened) throw StateError('Could not open PesaPal checkout.');
-      if (mounted) setState(() { message = 'Complete payment with PesaPal, then return here and verify the order.'; paying = false; });
+      if (kIsWeb) {
+        final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+        if (!opened) throw StateError('Could not open PesaPal checkout.');
+      } else {
+        await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => NativeCheckoutScreen(url: url)));
+        if (mounted) await verifyPayment();
+      }
+      if (mounted) setState(() { message = 'PesaPal status checked securely. Premium is enabled only after the server confirms payment.'; paying = false; });
     } catch (e) { if (mounted) setState(() { message = e.toString().replaceFirst('Bad state: ', ''); paying = false; }); }
   }
   Future<void> verifyPayment() async {
@@ -199,6 +206,50 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       const SizedBox(height: 12),
       if (trackingId != null) OutlinedButton.icon(onPressed: paying ? null : verifyPayment, icon: const Icon(Icons.verified_user), label: const Text('Verify payment status')),
       OutlinedButton.icon(onPressed: loading ? null : refresh, icon: const Icon(Icons.refresh), label: const Text('Refresh subscription')),
+    ]),
+  );
+}
+
+
+class NativeCheckoutScreen extends StatefulWidget {
+  final Uri url;
+  const NativeCheckoutScreen({super.key, required this.url});
+  @override
+  State<NativeCheckoutScreen> createState() => _NativeCheckoutScreenState();
+}
+class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
+  late final WebViewController controller;
+  int progress = 0;
+  @override
+  void initState() {
+    super.initState();
+    controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(NavigationDelegate(
+        onProgress: (value) { if (mounted) setState(() => progress = value); },
+        onNavigationRequest: (request) {
+          final uri = Uri.tryParse(request.url);
+          if (uri == null || uri.scheme != 'https') return NavigationDecision.prevent;
+          if ((uri.host == 'streamora.co.ke' || uri.host == 'www.streamora.co.ke') &&
+              uri.path.startsWith('/payment-callback')) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) Navigator.pop(context, true);
+            });
+            return NavigationDecision.prevent;
+          }
+          return NavigationDecision.navigate;
+        },
+      ))
+      ..loadRequest(widget.url);
+  }
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Secure PesaPal checkout'), leading: IconButton(
+      tooltip: 'Return to TikVTV', icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context, false))),
+    body: Column(children: [
+      if (progress < 100) LinearProgressIndicator(value: progress / 100, minHeight: 2),
+      const Expanded(child: SizedBox.shrink()),
+      Expanded(flex: 12, child: WebViewWidget(controller: controller)),
     ]),
   );
 }
