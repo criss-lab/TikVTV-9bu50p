@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'src/catalogue.dart';
 import 'src/playback.dart';
@@ -131,6 +132,12 @@ class _ChannelScreenState extends State<ChannelScreen> {
     final selected = playback.channel?.id == widget.channel.id;
     return Scaffold(
       appBar: AppBar(title: Text(widget.channel.name), actions: [
+        IconButton(tooltip: 'Share channel link', icon: const Icon(Icons.share), onPressed: () async {
+          final link = 'https://www.streamora.co.ke/channel/${Uri.encodeComponent(widget.channel.id)}';
+          await Clipboard.setData(ClipboardData(text: link));
+          if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Channel link copied for sharing')));
+        }),
         IconButton(tooltip: 'Favorite', onPressed: () => library.toggleFavorite(widget.channel.id),
           icon: Icon(library.isFavorite(widget.channel.id) ? Icons.favorite : Icons.favorite_border)),
       ]),
