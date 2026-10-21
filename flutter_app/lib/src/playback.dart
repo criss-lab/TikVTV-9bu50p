@@ -20,6 +20,8 @@ class SharedPlayback extends ChangeNotifier {
   VideoPlayerController? _candidate;
   Completer<void>? _candidateSettled;
   int _lease = 0;
+  Duration bufferedAhead = Duration.zero;
+  bool buffering = false;
 
   /// A route owns only its lease; an older route cannot stop a newer player.
   int get lease => _lease;
@@ -47,6 +49,8 @@ class SharedPlayback extends ChangeNotifier {
   Future<void> open(Channel next) async {
     final token = ++_generation;
     _lease = token;
+    bufferedAhead = Duration.zero;
+    buffering = false;
     final previous = controller;
     final pending = _candidateSettled?.future;
     controller = null;
@@ -123,6 +127,14 @@ class SharedPlayback extends ChangeNotifier {
             }));
             return;
           }
+          buffering = candidate.value.isBuffering;
+          bufferedAhead = Duration.zero;
+          for (final range in candidate.value.buffered) {
+            if (range.start <= candidate.value.position && range.end > candidate.value.position) {
+              bufferedAhead = range.end - candidate.value.position;
+              break;
+            }
+          }
           notifyListeners();
         });
         notifyListeners();
@@ -148,6 +160,8 @@ class SharedPlayback extends ChangeNotifier {
   void stopIfCurrent(String id, {int? lease}) {
     if (channel?.id != id || (lease != null && lease != _lease)) return;
     ++_generation;
+    bufferedAhead = Duration.zero;
+    buffering = false;
     final old = controller;
     controller = null;
     channel = null;
