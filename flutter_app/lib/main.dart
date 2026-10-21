@@ -46,7 +46,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     if (value == 0 || value == 2 || value == 5) { category = '🔥'; libraryTab = 0; }
     if (value == 3) { category = '🔥'; libraryTab = 0; }
     if (value == 4) { category = 'Entertainment'; libraryTab = 0; }
-    if (value == 6) { libraryTab = 1; category = '🔥'; }
+    if (value == 6) { libraryTab = 0; category = '🔥'; }
   });
   @override
   void initState() {
@@ -96,13 +96,13 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
           IconButton(tooltip:'Search channels',onPressed:()=>setState(()=>searchOpen=!searchOpen),icon: const Icon(Icons.search)),
           IconButton(tooltip:'Refresh channels',onPressed:()=>catalogue.load(force:true),icon:const Icon(Icons.refresh)),
           PopupMenuButton<String>(tooltip:'Language',initialValue:language,itemBuilder:(_)=>['All',...languages].map((v)=>PopupMenuItem(value:v,child:Text(v))).toList(),onSelected:(v)=>setState(()=>language=v),child: const Padding(padding:EdgeInsets.symmetric(horizontal:8),child:Center(child:Text('EN⌄',style:TextStyle(fontSize:12))))),
-          IconButton(tooltip:'Open profile',onPressed:()=>selectTab(6),icon:const CircleAvatar(radius:17,backgroundColor:Color(0xFFDB4773),child:Icon(Icons.person,color:Colors.white,size:19))),
+          IconButton(tooltip:'Open profile',onPressed:_showProfile,icon:const CircleAvatar(radius:17,backgroundColor:Color(0xFFDB4773),child:Icon(Icons.person,color:Colors.white,size:19))),
         ],
       ),
       bottomNavigationBar: SafeArea(top:false,child:Container(
         decoration:const BoxDecoration(color:Color(0xFF11131D),border:Border(top:BorderSide(color:Colors.white10))),
         child:NavigationBar(height:66,backgroundColor:const Color(0xFF11131D),indicatorColor:const Color(0xFF4B162A),selectedIndex:tab,labelBehavior:NavigationDestinationLabelBehavior.alwaysShow,
-          onDestinationSelected:selectTab,
+          onDestinationSelected:(v) { if (v == 6) { _showProfile(); } else { selectTab(v); } },
           destinations:const [
             NavigationDestination(icon:Icon(Icons.home_outlined),selectedIcon:Icon(Icons.home,color:Color(0xFFFF315F)),label:'Home'),
             NavigationDestination(icon:Icon(Icons.search),label:'Search'),
@@ -113,7 +113,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
             NavigationDestination(icon:Icon(Icons.person_outline),label:'Profile'),
           ]),
       )),
-      body: tab == 6 ? _profile(all.length) : Column(children:[
+      body: Column(children:[
         if(searchOpen || tab==1) Padding(padding:const EdgeInsets.fromLTRB(12,10,12,6),child:TextField(autofocus:tab==1,decoration:InputDecoration(hintText:'Search channels',prefixIcon:const Icon(Icons.search),filled:true,fillColor:const Color(0xFF1B1C24),border:OutlineInputBorder(borderRadius:BorderRadius.circular(18),borderSide:BorderSide.none)),onChanged:(v)=>setState(()=>query=v))),
         SizedBox(height:64,child:ListView(scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:10,vertical:7),children:rail.map((entry){
           final selected=category==entry.$1 || category==entry.$2;
@@ -153,17 +153,19 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     );
   }
 
-  Widget _profile(int total) => ListView(padding:const EdgeInsets.all(20),children:[
-    const CircleAvatar(radius:38,backgroundColor:Color(0xFFDB4773),child:Icon(Icons.person,size:42,color:Colors.white)),
-    const SizedBox(height:12),const Center(child:Text('My TikVTV',style:TextStyle(fontSize:23,fontWeight:FontWeight.bold))),
-    const SizedBox(height:8),const Center(child:Text('Your local viewing library',style:TextStyle(color:Colors.white60))),
-    const SizedBox(height:24),
-    ListTile(leading:const Icon(Icons.live_tv),title:const Text('All channels'),subtitle:Text('$total available'),trailing:const Icon(Icons.chevron_right),onTap:()=>selectTab(0)),
-    ListTile(leading:const Icon(Icons.favorite),title:const Text('Favorites'),subtitle:Text('${catalogue.channels.where((c)=>library.isFavorite(c.id)).length} saved channels'),trailing:const Icon(Icons.chevron_right),onTap:()=>setState(() {tab=0;libraryTab=1;category='🔥';})),
-    ListTile(leading:const Icon(Icons.history),title:const Text('Watch history'),subtitle:Text('${catalogue.channels.where((c)=>library.wasWatched(c.id)).length} watched channels'),trailing:const Icon(Icons.chevron_right),onTap:()=>setState(() {tab=0;libraryTab=2;category='🔥';})),
-    ListTile(leading:const Icon(Icons.language),title:const Text('Explore countries'),trailing:const Icon(Icons.chevron_right),onTap:()=>selectTab(2)),
-    const SizedBox(height:12),const Text('Favorites and watch history are stored on this device.',style:TextStyle(color:Colors.white54,fontSize:12)),
-  ]);
+  void _showProfile() {
+    showModalBottomSheet<void>(context:context,showDragHandle:true,isScrollControlled:true,
+      builder:(sheetContext)=>SafeArea(child:Padding(padding:const EdgeInsets.fromLTRB(16,0,16,20),child:Column(mainAxisSize:MainAxisSize.min,children:[
+        const CircleAvatar(radius:30,backgroundColor:Color(0xFFDB4773),child:Icon(Icons.person,color:Colors.white,size:30)),
+        const SizedBox(height:8),const Text('My TikVTV',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold)),
+        const Text('Your viewing library',style:TextStyle(color:Colors.white60)),
+        ListTile(leading:const Icon(Icons.live_tv),title:const Text('All channels'),onTap:(){Navigator.pop(sheetContext);selectTab(0);}),
+        ListTile(leading:const Icon(Icons.favorite),title:const Text('Favorites'),onTap:(){Navigator.pop(sheetContext);setState(() {tab=0;libraryTab=1;category='🔥';});}),
+        ListTile(leading:const Icon(Icons.history),title:const Text('Watch history'),onTap:(){Navigator.pop(sheetContext);setState(() {tab=0;libraryTab=2;category='🔥';});}),
+        ListTile(leading:const Icon(Icons.public),title:const Text('Explore countries'),onTap:(){Navigator.pop(sheetContext);selectTab(2);}),
+      ]))));
+  }
+
 }
 
 class ChannelScreen extends StatefulWidget {
