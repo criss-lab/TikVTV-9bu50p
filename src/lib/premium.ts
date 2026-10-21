@@ -73,3 +73,20 @@ export async function invokePesapal(
     { method: 'POST', body: JSON.stringify({ order_tracking_id: orderTrackingId }) },
   );
 }
+
+export type ViewingAccessResponse = {
+  active: boolean;
+  ends_at: string | null;
+  preview_ends_at: string;
+  allowed: boolean;
+};
+
+/** Server-owned preview deadline shared by the web app and its Capacitor APK. */
+export async function getViewingAccess(userId: string): Promise<ViewingAccessResponse> {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw new Error('Could not restore your sign-in session. Please sign in again.');
+  if (!data.session?.access_token || data.session.user.id !== userId) {
+    throw new Error('Your account session has changed. Please sign in again.');
+  }
+  return paymentRequest<ViewingAccessResponse>('/v1/viewing-access');
+}
