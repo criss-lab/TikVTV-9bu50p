@@ -37,7 +37,6 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   String category = '🔥';
   String country = 'All';
   String language = 'All';
-  static const featured = ['🔥', 'All', 'News', 'Sports', 'Movies', 'Music', 'Entertainment', 'Kids', 'Documentary', 'Lifestyle', 'Education', 'Religious', 'Business', 'Culture', 'Cooking', 'Travel', 'Weather', 'General'];
   bool matchesCategory(Channel c) => category == '🔥' || category == 'All' || c.categories.any((v) => v.toLowerCase() == category.toLowerCase());
   int get libraryTab => tab == 6 ? 1 : tab == 5 ? 2 : 0;
   @override
@@ -66,7 +65,6 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     final all = catalogue.channels;
     final countries = (all.map((c) => c.country).where((v) => v.isNotEmpty).toSet().toList()..sort());
     final languages = (all.expand((c) => c.languages).where((v) => v.isNotEmpty).toSet().toList()..sort());
-    final categories = [...featured, ...all.expand((c) => c.categories).where((v) => v.isNotEmpty && !featured.any((f) => f.toLowerCase() == v.toLowerCase())).toSet().toList()..sort()];
     final q = query.trim().toLowerCase();
     final channels = all.where((c) =>
       (libraryTab == 0 || (libraryTab == 1 ? library.isFavorite(c.id) : library.wasWatched(c.id))) &&
