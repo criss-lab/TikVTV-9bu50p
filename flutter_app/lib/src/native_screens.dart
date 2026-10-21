@@ -70,15 +70,21 @@ class _NativeAccountScreenState extends State<NativeAccountScreen> {
   final email = TextEditingController();
   final password = TextEditingController();
   final username = TextEditingController();
-  bool creating = false, busy = false, obscure = true;
+  final otp = TextEditingController();
+  bool creating = false, awaitingOtp = false, busy = false, obscure = true;
   String? message;
   @override
-  void dispose() { email.dispose(); password.dispose(); username.dispose(); super.dispose(); }
+  void dispose() { email.dispose(); password.dispose(); username.dispose(); otp.dispose(); super.dispose(); }
   Future<void> submit() async {
     FocusScope.of(context).unfocus();
     setState(() { busy = true; message = null; });
     try {
-      if (creating) { await backend.signUp(email.text, password.text, username.text); }
+      if (creating && !awaitingOtp) {
+        await backend.requestSignupOtp(email.text);
+        if (mounted) setState(() { awaitingOtp = true; busy = false; message = 'Verification code sent. Enter the code from your email to finish creating your account.'; });
+        return;
+      }
+      if (creating) { await backend.verifySignupOtp(email.text, otp.text, password.text, username.text); }
       else { await backend.signIn(email.text, password.text); }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(creating ? 'Account created' : 'Signed in successfully')));
@@ -103,15 +109,16 @@ class _NativeAccountScreenState extends State<NativeAccountScreen> {
         FilledButton.icon(onPressed: () async { await backend.signOut(); if (mounted) setState(() {}); }, icon: const Icon(Icons.logout), label: const Text('Sign out')),
       ] else ...[
         const SizedBox(height: 22),
-        if (creating) TextField(controller: username, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'Username', prefixIcon: Icon(Icons.person_outline), filled: true)),
+        if (creating && !awaitingOtp) TextField(controller: username, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'Username', prefixIcon: Icon(Icons.person_outline), filled: true)),
         const SizedBox(height: 12),
         TextField(controller: email, keyboardType: TextInputType.emailAddress, autocorrect: false, decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.email_outlined), filled: true)),
         const SizedBox(height: 12),
         TextField(controller: password, obscureText: obscure, decoration: InputDecoration(labelText: 'Password', prefixIcon: const Icon(Icons.lock_outline), filled: true, suffixIcon: IconButton(onPressed: () => setState(() => obscure = !obscure), icon: Icon(obscure ? Icons.visibility : Icons.visibility_off)))),
+        if (creating && awaitingOtp) ...[const SizedBox(height: 12), TextField(controller: otp, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Email verification code', prefixIcon: Icon(Icons.mark_email_read_outlined), filled: true))],
         if (message != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(message!, style: const TextStyle(color: Colors.orangeAccent))),
         const SizedBox(height: 18),
-        FilledButton(onPressed: busy || !backend.configured ? null : submit, child: Text(busy ? 'Please wait…' : creating ? 'Create account' : 'Sign in')),
-        TextButton(onPressed: busy ? null : () => setState(() { creating = !creating; message = null; }), child: Text(creating ? 'Already registered? Sign in' : 'New here? Create account')),
+        FilledButton(onPressed: busy || !backend.configured ? null : submit, child: Text(busy ? 'Please wait…' : creating ? (awaitingOtp ? 'Verify and create account' : 'Send verification code') : 'Sign in')),
+        TextButton(onPressed: busy ? null : () => setState(() { creating = !creating; awaitingOtp = false; message = null; }), child: Text(creating ? 'Already registered? Sign in' : 'New here? Create account')),
       ],
     ]),
   );
