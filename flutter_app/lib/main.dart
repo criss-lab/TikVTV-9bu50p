@@ -40,7 +40,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   String category = '🔥';
   String country = 'All';
   String language = 'All';
-  bool matchesCategory(Channel c) => category == '🔥' || category == 'All' || category == 'General' || c.categories.any((v) => v.toLowerCase() == category.toLowerCase());
+  bool matchesCategory(Channel c) => category == '🔥' || category == 'All' || c.categories.any((v) => v.toLowerCase() == category.toLowerCase());
   void clearFilters() { searchController.clear(); setState(() { query=''; category='🔥'; country='All'; language='All'; libraryTab=0; }); }
   int libraryTab = 0; // 0 channels, 1 favourites, 2 history
   String guideCategory = 'all';
@@ -185,8 +185,8 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
       Expanded(child:Card(color:const Color(0xFF191A20),child:Padding(padding:const EdgeInsets.all(14),child:Column(children:[const Icon(Icons.history,color:Color(0xFFFF315F)),Text(library.history.length.toString(),style:const TextStyle(fontSize:21,fontWeight:FontWeight.bold)),const Text('History',style:TextStyle(color:Colors.white54,fontSize:12))])))),
     ]),
     const SizedBox(height:10),
-    ListTile(leading:const Icon(Icons.favorite),title:const Text('Favorites'),subtitle:const Text('Your saved channels on this device'),trailing:const Icon(Icons.chevron_right),onTap:()=>setState(() {tab=0;libraryTab=1;query='';searchController.clear();category='🔥';country='All';})),
-    ListTile(leading:const Icon(Icons.history),title:const Text('Watch history'),subtitle:const Text('Channels watched on this device'),trailing:const Icon(Icons.chevron_right),onTap:()=>setState(() {tab=0;libraryTab=2;query='';searchController.clear();category='🔥';country='All';})),
+    ListTile(leading:const Icon(Icons.favorite),title:const Text('Favorites'),subtitle:const Text('Your saved channels on this device'),trailing:const Icon(Icons.chevron_right),onTap:()=>setState(() {tab=0;libraryTab=1;query='';searchController.clear();searchOpen=false;category='🔥';country='All';})),
+    ListTile(leading:const Icon(Icons.history),title:const Text('Watch history'),subtitle:const Text('Channels watched on this device'),trailing:const Icon(Icons.chevron_right),onTap:()=>setState(() {tab=0;libraryTab=2;query='';searchController.clear();searchOpen=false;category='🔥';country='All';})),
     ListTile(leading:const Icon(Icons.public),title:const Text('Explore countries'),trailing:const Icon(Icons.chevron_right),onTap:()=>selectTab(2)),
     ListTile(leading:const Icon(Icons.translate),title:const Text('Stream language'),subtitle:Text(language=='All'?'All languages':language),trailing:const Icon(Icons.chevron_right),onTap:_chooseLanguage),
     ListTile(leading:const Icon(Icons.workspace_premium),title:const Text('Premium / subscription'),trailing:const Icon(Icons.open_in_new),onTap:()=>openWebFeature('premium')),
