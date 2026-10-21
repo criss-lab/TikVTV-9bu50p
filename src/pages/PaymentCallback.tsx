@@ -23,7 +23,7 @@ export default function PaymentCallback() {
         setMessage(result?.payment_status_description === 'Completed' ? 'Payment received; waiting for subscription activation…' : 'Waiting for payment confirmation…');
       } catch (error) { if (!cancelled) { console.error('Payment verification pending', error); setMessage('Still synchronizing. Please do not pay twice.'); } }
       if (cancelled) return;
-      if (attempts < 24) timer = setTimeout(check, 5000);
+      if (attempts < 60) timer = setTimeout(check, 2000);
       else setMessage('Activation is delayed. Reopen Premium to check your status; do not pay twice.');
     };
     timer = setTimeout(check, 500);
