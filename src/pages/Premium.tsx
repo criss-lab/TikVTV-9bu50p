@@ -7,7 +7,7 @@ import { usePremiumAccess } from '@/hooks/usePremiumAccess';
 import { invokePesapal } from '@/lib/premium';
 
 const plans = [
-  { id: 'half_day', name: '12 hours', amount: 5, duration: '12 hours' },
+  { id: 'half_day', name: '13 hours', amount: 5, duration: '13 hours' },
   { id: 'day', name: 'Daily', amount: 10, duration: '24 hours' },
   { id: 'week', name: 'Weekly', amount: 40, duration: '7 days' },
   { id: 'month', name: 'Monthly', amount: 130, duration: '30 days' },
