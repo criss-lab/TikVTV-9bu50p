@@ -1,16 +1,16 @@
 name: Sync payment secrets to Render
-
 on:
   workflow_dispatch:
-
-# Avoid overlapping environment replacement/deploy operations against the same Render service.
-concurrency:
-  group: render-payment-secret-sync
-  cancel-in-progress: false
-
+  push:
+    branches: [feature/pesapal-premium-integration]
+    paths:
+      - 'payment-backend/**'
+      - '.github/workflows/sync-pesapal-render.yml'
 permissions:
   contents: read
-
+concurrency:
+  group: payment-secret-sync
+  cancel-in-progress: false
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -21,13 +21,26 @@ jobs:
           PESAPAL_CONSUMER_KEY: ${{ secrets.PESAPAL_CONSUMER_KEY }}
           PESAPAL_CONSUMER_SECRET: ${{ secrets.PESAPAL_CONSUMER_SECRET }}
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           set -euo pipefail
           test -n "$RENDER_API_KEY" || { echo 'Missing Render_api_secret'; exit 1; }
           test -n "$PESAPAL_CONSUMER_KEY" || { echo 'Missing PESAPAL_CONSUMER_KEY'; exit 1; }
           test -n "$PESAPAL_CONSUMER_SECRET" || { echo 'Missing PESAPAL_CONSUMER_SECRET'; exit 1; }
           test -n "$NEON_DATABASE_URL" || { echo 'Missing NEON_DATABASE_URL'; exit 1; }
-
+          test -n "$SUPABASE_URL" || { echo 'Missing VITE_SUPABASE_URL for bearer-token validation'; exit 1; }
+          test -n "$SUPABASE_ANON_KEY" || { echo 'Missing VITE_SUPABASE_ANON_KEY for bearer-token validation'; exit 1; }
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Apply and verify Neon payment schema
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          cd payment-backend
+          npm install --no-package-lock --no-audit --no-fund
+          DATABASE_URL="$NEON_DATABASE_URL" npm run migrate
       - name: Merge environment variables into Render without printing secrets
         env:
           RENDER_API_KEY: ${{ secrets.Render_api_secret }}
@@ -68,27 +81,28 @@ jobs:
             'PESAPAL_CONSUMER_SECRET':os.environ['PESAPAL_CONSUMER_SECRET'],
             'PESAPAL_IPN_ID':'14314610-0182-4a20-858a-d9c21fd81890',
             'DATABASE_URL':os.environ['NEON_DATABASE_URL'],
-            'APP_URL':'https://streamora.co.ke'
+            'PESAPAL_ENVIRONMENT':'live',
+            'APP_URL':'https://streamora.co.ke',
+            'CORS_ORIGINS':'https://streamora.co.ke,https://www.streamora.co.ke'
           })
           if os.environ.get('SUPABASE_URL'): values['SUPABASE_URL']=os.environ['SUPABASE_URL']
           if os.environ.get('SUPABASE_ANON_KEY'): values['SUPABASE_ANON_KEY']=os.environ['SUPABASE_ANON_KEY']
           request('PUT',base,[{'key':k,'value':v} for k,v in values.items()])
           print('Render payment environment synchronized; values withheld.')
           PY
-
       - name: Trigger Render deployment
         env:
           RENDER_API_KEY: ${{ secrets.Render_api_secret }}
         run: |
           set -euo pipefail
           curl --fail --silent --show-error -X POST "https://api.render.com/v1/services/srv-dbc9m8g473hc73fi9vl0/deploys" -H "Authorization: Bearer $RENDER_API_KEY" -H "Content-Type: application/json" -d '{}'
-
       - name: Verify live payment API readiness
         run: |
           set -euo pipefail
           for attempt in $(seq 1 36); do
             if body=$(curl --fail --silent --show-error --max-time 10 https://tikvtv-payment-api.onrender.com/pesapal/readiness); then
-              if echo "$body" | grep -q '"ready":true' && echo "$body" | grep -q '"premium_activation_enabled":true'; then
+              echo "$body"
+              if echo "$body" | grep -q '"ready":true' && echo "$body" | grep -q '"premium_activation_enabled":true' && echo "$body" | grep -q '"environment":"live"' && echo "$body" | grep -q '"payment_schema":true'; then
                 echo 'Payment API readiness verified.'
                 exit 0
               fi
