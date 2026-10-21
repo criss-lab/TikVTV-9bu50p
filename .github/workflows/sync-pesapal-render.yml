@@ -1,8 +1,16 @@
 name: Sync payment secrets to Render
+
 on:
   workflow_dispatch:
+
+# Avoid overlapping environment replacement/deploy operations against the same Render service.
+concurrency:
+  group: render-payment-secret-sync
+  cancel-in-progress: false
+
 permissions:
   contents: read
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -19,6 +27,7 @@ jobs:
           test -n "$PESAPAL_CONSUMER_KEY" || { echo 'Missing PESAPAL_CONSUMER_KEY'; exit 1; }
           test -n "$PESAPAL_CONSUMER_SECRET" || { echo 'Missing PESAPAL_CONSUMER_SECRET'; exit 1; }
           test -n "$NEON_DATABASE_URL" || { echo 'Missing NEON_DATABASE_URL'; exit 1; }
+
       - name: Merge environment variables into Render without printing secrets
         env:
           RENDER_API_KEY: ${{ secrets.Render_api_secret }}
@@ -66,18 +75,19 @@ jobs:
           request('PUT',base,[{'key':k,'value':v} for k,v in values.items()])
           print('Render payment environment synchronized; values withheld.')
           PY
+
       - name: Trigger Render deployment
         env:
           RENDER_API_KEY: ${{ secrets.Render_api_secret }}
         run: |
           set -euo pipefail
           curl --fail --silent --show-error -X POST "https://api.render.com/v1/services/srv-dbc9m8g473hc73fi9vl0/deploys" -H "Authorization: Bearer $RENDER_API_KEY" -H "Content-Type: application/json" -d '{}'
+
       - name: Verify live payment API readiness
         run: |
           set -euo pipefail
           for attempt in $(seq 1 36); do
             if body=$(curl --fail --silent --show-error --max-time 10 https://tikvtv-payment-api.onrender.com/pesapal/readiness); then
-              echo "$body"
               if echo "$body" | grep -q '"ready":true' && echo "$body" | grep -q '"premium_activation_enabled":true'; then
                 echo 'Payment API readiness verified.'
                 exit 0
