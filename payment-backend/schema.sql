@@ -19,6 +19,12 @@ CREATE TABLE IF NOT EXISTS payment_orders (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Checkout must persist the local order before calling Pesapal. Pesapal only
+-- returns order_tracking_id after SubmitOrderRequest, so it must be nullable
+-- until that response is saved. CREATE TABLE IF NOT EXISTS does not repair
+-- existing databases; this ALTER is intentionally safe to rerun.
+ALTER TABLE payment_orders ALTER COLUMN order_tracking_id DROP NOT NULL;
+
 CREATE INDEX IF NOT EXISTS payment_orders_user_created_idx
   ON payment_orders (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS payment_orders_pending_created_idx
