@@ -41,6 +41,16 @@ class ChannelLibrary extends ChangeNotifier {
     } catch (e) { debugPrint('Favorite save failed: $e'); }
   }
 
+  Future<void> clearHistory() async {
+    await load();
+    _history.clear();
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('history_v1', jsonEncode(_history));
+    } catch (e) { debugPrint('History clear failed: $e'); }
+  }
+
   Future<void> recordWatch(String id) async {
     await load();
     _history.remove(id);
