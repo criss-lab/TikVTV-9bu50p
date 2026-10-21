@@ -47,7 +47,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     library.addListener(refresh);
     catalogue.addListener(refresh);
   }
-  void refresh() { if (mounted) setState(() {}); }
+  void refresh() { if (mounted) { setState(() {}); } }
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     playback.setBackgrounded(state != AppLifecycleState.resumed);
@@ -136,7 +136,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
     playback.open(widget.channel);
     _playbackLease = playback.lease;
   }
-  void refresh() { if (mounted) setState(() {}); }
+  void refresh() { if (mounted) { setState(() {}); } }
   @override
   void dispose() {
     playback.removeListener(refresh);
@@ -153,8 +153,10 @@ class _ChannelScreenState extends State<ChannelScreen> {
         IconButton(tooltip: 'Share channel link', icon: const Icon(Icons.share), onPressed: () async {
           final link = 'https://www.streamora.co.ke/channel/${Uri.encodeComponent(widget.channel.id)}';
           await Clipboard.setData(ClipboardData(text: link));
-          if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Channel link copied for sharing')));
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Channel link copied for sharing')));
+          }
         }),
         IconButton(tooltip: 'Favorite', onPressed: () => library.toggleFavorite(widget.channel.id),
           icon: Icon(library.isFavorite(widget.channel.id) ? Icons.favorite : Icons.favorite_border)),
