@@ -49,7 +49,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     if (!opened && mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not open $route')));
   }
   void selectTab(int value) {
-    if (value == 4) { openWebFeature('clips'); return; }
+    if (value == 4) { setState(() => tab = value); return; }
     if (value == 5) { openWebFeature('epg'); return; }
     setState(() {
     tab = value;
@@ -88,11 +88,16 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     final countries = (all.map((c) => c.country).where((v) => v.isNotEmpty).toSet().toList()..sort());
     final languages = (all.expand((c) => c.languages).where((v) => v.isNotEmpty).toSet().toList()..sort());
     final q = query.trim().toLowerCase();
-    final channels = all.where((c) =>
+    final filteredChannels = all.where((c) =>
       (libraryTab == 0 || (libraryTab == 1 ? library.isFavorite(c.id) : library.wasWatched(c.id))) &&
       matchesCategory(c) && (country == 'All' || c.country == country) &&
       (language == 'All' || c.languages.contains(language)) &&
       (q.isEmpty || [c.name, c.country, ...c.categories, ...c.languages].any((v) => v.toLowerCase().contains(q)))).toList();
+    final channels = tab == 3 ? (List<Channel>.from(filteredChannels)..sort((a,b) {
+      final ai = library.history.indexOf(a.id), bi = library.history.indexOf(b.id);
+      if (ai < 0 && bi < 0) return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      if (ai < 0) return 1; if (bi < 0) return -1; return ai.compareTo(bi);
+    })) : filteredChannels;
     const rail = <(String, String)>[('🔥','Hot'),('📰','News'),('⚽','Sports'),('🎬','Movies'),('🎵','Music'),('🎥','Entertainment'),('🧸','Kids'),('🌍','Travel'),('👨‍🍳','Cooking'),('✈️','Lifestyle')];
     final screenWidth = MediaQuery.of(context).size.width;
     return Scaffold(
@@ -109,13 +114,13 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
           IconButton(tooltip:'Search channels',onPressed:()=>setState(()=>searchOpen=!searchOpen),icon: const Icon(Icons.search)),
           IconButton(tooltip:'Refresh channels',onPressed:()=>catalogue.load(force:true),icon:const Icon(Icons.refresh)),
           PopupMenuButton<String>(tooltip:'Language',initialValue:language,itemBuilder:(_)=>['All',...languages].map((v)=>PopupMenuItem(value:v,child:Text(v))).toList(),onSelected:(v)=>setState(()=>language=v),child: Padding(padding:const EdgeInsets.symmetric(horizontal:8),child:Center(child:Text(language=='All'?'All⌄':'${language.toUpperCase()}⌄',style:const TextStyle(fontSize:12))))),
-          IconButton(tooltip:'Open profile',onPressed:()=>openWebFeature('profile'),icon:const CircleAvatar(radius:17,backgroundColor:Color(0xFFDB4773),child:Icon(Icons.person,color:Colors.white,size:19))),
+          IconButton(tooltip:'Open profile',onPressed:_showProfile,icon:const CircleAvatar(radius:17,backgroundColor:Color(0xFFDB4773),child:Icon(Icons.person,color:Colors.white,size:19))),
         ],
       ),
       bottomNavigationBar: SafeArea(top:false,child:Container(
         decoration:const BoxDecoration(color:Color(0xFF11131D),border:Border(top:BorderSide(color:Colors.white10))),
         child:NavigationBar(height:66,backgroundColor:const Color(0xFF11131D),indicatorColor:const Color(0xFF4B162A),selectedIndex:tab,labelBehavior:NavigationDestinationLabelBehavior.alwaysShow,
-          onDestinationSelected:(v) { if (v == 6) { openWebFeature('profile'); } else { selectTab(v); } },
+          onDestinationSelected:(v) { if (v == 6) { _showProfile(); } else { selectTab(v); } },
           destinations:const [
             NavigationDestination(icon:Icon(Icons.home_outlined),selectedIcon:Icon(Icons.home,color:Color(0xFFFF315F)),label:'Home'),
             NavigationDestination(icon:Icon(Icons.search),label:'Search'),
@@ -134,8 +139,8 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
         }).toList())),
         if(catalogue.loading) const LinearProgressIndicator(minHeight:2),
         if(catalogue.error!=null) Padding(padding:const EdgeInsets.all(10),child:Text('Catalogue: ${catalogue.error}',style:const TextStyle(color:Colors.orange))),
-        if(tab==2 || tab==5) SizedBox(height:46,child:Row(children:[
-          Padding(padding:const EdgeInsets.only(left:14),child:Text(tab==5?'Channel guide · browse by country':'Discover channels',style:const TextStyle(fontWeight:FontWeight.bold))),
+        if(tab==2) SizedBox(height:46,child:Row(children:[
+          Padding(padding:const EdgeInsets.only(left:14),child:Text('Discover channels',style:const TextStyle(fontWeight:FontWeight.bold))),
           const Spacer(),DropdownButton<String>(value:countries.contains(country)?country:'All',items:['All',...countries].map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(),onChanged:(v)=>setState(()=>country=v??'All')),
           const SizedBox(width:12),
         ])),
@@ -169,7 +174,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   Widget _clipsNotice() => Center(child:Padding(padding:const EdgeInsets.all(24),child:Column(mainAxisSize:MainAxisSize.min,children:[
     const Icon(Icons.movie_outlined,size:56,color:Colors.white54),
     const SizedBox(height:16),const Text('Clips',style:TextStyle(fontSize:22,fontWeight:FontWeight.bold)),
-    const SizedBox(height:8),const Text('Clip storage is disabled. Live TV playback does not record or upload your streams.',textAlign:TextAlign.center,style:TextStyle(color:Colors.white60)),
+    const SizedBox(height:8),const Text('Clip storage is disabled as requested. Live TV playback does not record or upload your streams.',textAlign:TextAlign.center,style:TextStyle(color:Colors.white60)),
     const SizedBox(height:18),FilledButton.icon(onPressed:()=>selectTab(0),icon:const Icon(Icons.live_tv),label:const Text('Watch live TV')),
   ])));
 
@@ -183,10 +188,13 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
         ListTile(leading:const Icon(Icons.favorite),title:const Text('Favorites'),onTap:(){Navigator.pop(sheetContext);clearFilters();setState(() {tab=0;libraryTab=1;});}),
         ListTile(leading:const Icon(Icons.history),title:const Text('Watch history'),onTap:(){Navigator.pop(sheetContext);clearFilters();setState(() {tab=0;libraryTab=2;});}),
         ListTile(leading:const Icon(Icons.public),title:const Text('Explore countries'),onTap:(){Navigator.pop(sheetContext);selectTab(2);}),
+        ListTile(leading:const Icon(Icons.translate),title:const Text('Stream language'),subtitle:Text(language=='All'?'All languages':language),onTap:(){Navigator.pop(sheetContext);showModalBottomSheet<void>(context:context,showDragHandle:true,builder:(ctx)=>SafeArea(child:ListView(shrinkWrap:true,children:[for(final lang in ['All',...catalogue.channels.expand((c)=>c.languages).where((v)=>v.isNotEmpty).toSet().toList()..sort()]) ListTile(title:Text(lang=='All'?'All languages':lang),trailing:language==lang?const Icon(Icons.check,color:Color(0xFFFF315F)):null,onTap:(){setState(()=>language=lang);Navigator.pop(ctx);})])));}),
+        ListTile(leading:const Icon(Icons.workspace_premium),title:const Text('Premium / subscription'),subtitle:const Text('Manage your Streamora subscription'),onTap:(){Navigator.pop(sheetContext);openWebFeature('premium');}),
+        ListTile(leading:const Icon(Icons.account_circle_outlined),title:const Text('Account and sign in'),subtitle:const Text('Open account services'),onTap:(){Navigator.pop(sheetContext);openWebFeature('profile');}),
         ListTile(leading:const Icon(Icons.delete_outline),title:const Text('Clear watch history'),onTap:() async {
           Navigator.pop(sheetContext);
           final confirmed = await showDialog<bool>(context:context,builder:(dialogContext)=>AlertDialog(title:const Text('Clear watch history?'),content:const Text('This removes the watch history saved on this device. Favorites will be kept.'),actions:[TextButton(onPressed:()=>Navigator.pop(dialogContext,false),child:const Text('Cancel')),TextButton(onPressed:()=>Navigator.pop(dialogContext,true),child:const Text('Clear'))]));
-          if(confirmed==true) { await library.clearHistory(); }
+          if(confirmed==true) { await library.clearHistory(); if(mounted) setState(() {}); }
         }),
       ]))));
   }
