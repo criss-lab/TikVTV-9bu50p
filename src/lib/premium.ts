@@ -41,20 +41,34 @@ export function notifyPremiumChanged() {
   window.dispatchEvent(new Event(PREMIUM_CHANGED));
 }
 
+export type CheckoutResponse = {
+  redirect_url: string;
+  order_tracking_id: string;
+  amount_kes: number;
+  plan_code: PlanCode;
+};
+export type PaymentStatusResponse = {
+  payment_status_description: string;
+  active: boolean;
+  ends_at: string | null;
+};
+
+export function invokePesapal(action: 'initiate', orderTrackingId?: undefined, planId?: PlanCode): Promise<CheckoutResponse>;
+export function invokePesapal(action: 'check_status', orderTrackingId: string, planId?: undefined): Promise<PaymentStatusResponse>;
 export async function invokePesapal(
   action: 'initiate' | 'check_status',
   orderTrackingId?: string,
   planId?: PlanCode,
-) {
+): Promise<CheckoutResponse | PaymentStatusResponse> {
   if (action === 'initiate') {
     if (!planId) throw new Error('Choose a subscription plan.');
-    return paymentRequest<{ redirect_url: string; order_tracking_id: string; amount_kes: number; plan_code: PlanCode }>(
+    return paymentRequest<CheckoutResponse>(
       '/v1/checkout',
       { method: 'POST', body: JSON.stringify({ plan_code: planId }) },
     );
   }
   if (!orderTrackingId) throw new Error('Missing payment reference.');
-  return paymentRequest<{ payment_status_description: string; active: boolean; ends_at: string | null }>(
+  return paymentRequest<PaymentStatusResponse>(
     '/v1/payment/status',
     { method: 'POST', body: JSON.stringify({ order_tracking_id: orderTrackingId }) },
   );
