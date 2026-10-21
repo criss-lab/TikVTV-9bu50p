@@ -1,4 +1,11 @@
-# TikVTV cross-platform Flutter migration
+# TikVTV for Android and Web 📺
+
+**Discover live channels, keep favorites, and help shape a more reliable streaming experience.**
+
+[⬇️ Android APK downloads](https://github.com/criss-lab/TikVTV-9bu50p/releases) · [Latest CI preview artifacts](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-apk.yml) · [Project homepage](../README.md) · [Feedback](https://github.com/criss-lab/TikVTV-9bu50p/issues)
+
+Preview APKs are temporary debug-signed builds, not production releases. Verify the SHA-256 checksum and review Android/Play Protect prompts; changing preview signatures can require uninstalling the prior preview before installation.
+
 
 The Flutter app in `flutter_app/` is the intended **single codebase for Android and Web**. React/Vite remains as a production fallback until Flutter feature parity and playback tests are confirmed.
 
