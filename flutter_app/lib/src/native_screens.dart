@@ -8,7 +8,8 @@ const _panel = Color(0xFF191A20);
 
 class NativeHotScreen extends StatefulWidget {
   final List<Channel> channels;
-  const NativeHotScreen({super.key, required this.channels});
+  final ValueChanged<Channel> onSelect;
+  const NativeHotScreen({super.key, required this.channels, required this.onSelect});
   @override
   State<NativeHotScreen> createState() => _NativeHotScreenState();
 }
@@ -52,7 +53,7 @@ class _NativeHotScreenState extends State<NativeHotScreen> {
             title: Text(channel.name, maxLines: 1, overflow: TextOverflow.ellipsis),
             subtitle: Text('${channel.country} · score $score'),
             trailing: const Icon(Icons.play_circle_outline, color: _accent),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _NativeChannelPreview(channel: channel))));
+            onTap: () => widget.onSelect(channel));
         },
       ))),
     ]);
