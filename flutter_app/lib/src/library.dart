@@ -20,20 +20,20 @@ class ChannelLibrary extends ChangeNotifier {
   Future<void> load() => _pending ??= _hydrate().whenComplete(() => _pending = null);
 
   Future<void> _hydrate() async {
-    if (_loaded) return;
+    if (_loaded) { return; }
     _loaded = true;
     try {
       final prefs = await SharedPreferences.getInstance();
       _favorites.addAll(prefs.getStringList('favorites_v1') ?? const []);
       final stored = prefs.getString('history_v1');
-      if (stored != null) _history.addAll(List<String>.from(jsonDecode(stored) as List));
+      if (stored != null) { _history.addAll(List<String>.from(jsonDecode(stored) as List)); }
       notifyListeners();
     } catch (e) { debugPrint('Library cache read failed: $e'); }
   }
 
   Future<void> toggleFavorite(String id) async {
     await load();
-    if (!_favorites.add(id)) _favorites.remove(id);
+    if (!_favorites.add(id)) { _favorites.remove(id); }
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -45,7 +45,7 @@ class ChannelLibrary extends ChangeNotifier {
     await load();
     _history.remove(id);
     _history.insert(0, id);
-    if (_history.length > 100) _history.removeRange(100, _history.length);
+    if (_history.length > 100) { _history.removeRange(100, _history.length); }
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
