@@ -28,6 +28,7 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
   bool _showHints = true;
   bool _likedBurst = false;
   Timer? _likedBurstTimer;
+  Timer? _focusDebounce;
 
   Future<void> _togglePlayback(int index) async {
     if (!mounted || index != _index || _gate.locked || _backgrounded) return;
@@ -72,13 +73,27 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
   void _refresh() { if (mounted) setState(() {}); }
 
   void _preloadBatch(int index) {
-    // Warm images/metadata for a batch of three without playing offscreen audio.
-    final first = index > 0 ? index - 1 : index;
-    final last = (index + 1).clamp(0, widget.channels.length - 1);
-    for (var i = first; i <= last; i++) {
+    // Predict forward: warm artwork for the focused channel and the next two.
+    // Keep this decoder-free so low-memory devices never open offscreen streams.
+    final last = (index + 2).clamp(0, widget.channels.length - 1);
+    for (var i = index; i <= last; i++) {
       final logo = widget.channels[i].logo;
-      if (logo.isNotEmpty) unawaited(precacheImage(NetworkImage(logo), context).catchError((Object _) {}));
+      if (logo.isNotEmpty) {
+        unawaited(precacheImage(NetworkImage(logo), context).catchError((Object _) {}));
+      }
     }
+  }
+
+  void _onPageChanged(int index) {
+    if (!mounted || index < 0 || index >= widget.channels.length) return;
+    // Update selection immediately, but wait for a short settle window before
+    // creating a native decoder. Fast multi-page swipes won't open every stream.
+    setState(() { _index = index; _showHints = index == 0; });
+    _preloadBatch(index);
+    _focusDebounce?.cancel();
+    _focusDebounce = Timer(const Duration(milliseconds: 110), () {
+      if (mounted && index == _index) _focus(index);
+    });
   }
 
   void _focus(int index) {
@@ -138,6 +153,7 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
   void dispose() {
     ++_request;
     _likedBurstTimer?.cancel();
+    _focusDebounce?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _player.removeListener(_refresh);
     _library.removeListener(_refresh);
@@ -158,7 +174,9 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
     scrollDirection: Axis.vertical,
     itemCount: widget.channels.length,
     allowImplicitScrolling: true,
-    onPageChanged: _focus,
+    pageSnapping: true,
+    physics: const PageScrollPhysics(parent: ClampingScrollPhysics()),
+    onPageChanged: _onPageChanged,
     itemBuilder: (context, index) {
       final channel = widget.channels[index];
       final focused = index == _index && _player.channel?.id == channel.id;
@@ -203,7 +221,13 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                   )),
                 )),
               if (selected && _likedBurst)
-                const IgnorePointer(child: Center(child: Icon(Icons.favorite, color: Color(0xFFFF315F), size: 104))),
+                IgnorePointer(child: Center(child: TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0.45, end: 1.0),
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.elasticOut,
+                  builder: (context, scale, child) => Transform.scale(scale: scale, child: child),
+                  child: const Icon(Icons.favorite, color: Color(0xFFFF315F), size: 104),
+                ))),
 
               if (focused && _player.loading && !_gate.locked && !_backgrounded)
                 const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
