@@ -21,13 +21,21 @@ try {
       to_regclass('public.payment_orders') IS NOT NULL AS payment_orders,
       to_regclass('public.subscriptions') IS NOT NULL AS subscriptions,
       to_regclass('public.pesapal_ipn_events') IS NOT NULL AS pesapal_ipn_events,
-      to_regclass('public.free_preview_sessions') IS NOT NULL AS free_preview_sessions
+      to_regclass('public.free_preview_sessions') IS NOT NULL AS free_preview_sessions,
+      (SELECT is_nullable = 'YES'
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'payment_orders'
+          AND column_name = 'order_tracking_id') AS order_tracking_id_nullable
   `);
   const tables = result.rows[0];
   if (!tables.payment_orders || !tables.subscriptions || !tables.pesapal_ipn_events || !tables.free_preview_sessions) {
     throw new Error('Required payment and viewing-access tables were not created.');
   }
-  console.log('Neon payment schema migration verified (table names only; no secrets or customer data emitted).');
+  if (tables.order_tracking_id_nullable !== true) {
+    throw new Error('payment_orders.order_tracking_id must allow NULL before Pesapal returns its tracking ID.');
+  }
+  console.log('Neon payment schema migration verified, including nullable pre-checkout tracking ID (no secrets or customer data emitted).');
 } finally {
   await pool.end();
 }
