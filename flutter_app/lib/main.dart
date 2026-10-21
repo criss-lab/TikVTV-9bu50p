@@ -12,6 +12,7 @@ import 'src/native_screens.dart';
 import 'src/epg_service.dart';
 import 'src/catalogue.dart';
 import 'src/playback.dart';
+import 'src/tik_channel_feed.dart';
 import 'src/playback_gate.dart';
 import 'src/library.dart';
 
@@ -187,8 +188,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
           const SizedBox(width:12),
         ])),
         Padding(padding:const EdgeInsets.symmetric(horizontal:10,vertical:4),child:Row(children:[for(final item in <(String,int)>[('Channels',0),('Favorites',1),('History',2)]) Padding(padding:const EdgeInsets.only(right:6),child:ChoiceChip(label:Text(item.$1,style:const TextStyle(fontSize:12)),selected:libraryTab==item.$2,onSelected:(_)=>setState(()=>libraryTab=item.$2))),const Spacer(),PopupMenuButton<String>(tooltip:'Country filter',initialValue:country,itemBuilder:(_)=>['All',...countries].map((v)=>PopupMenuItem(value:v,child:Text(v))).toList(),onSelected:(v)=>setState(()=>country=v),child:const Icon(Icons.public,size:20))])),
-        Expanded(child:channels.isEmpty?Center(child:Column(mainAxisSize:MainAxisSize.min,children:[Text(catalogue.loading?'Loading channels…':'No matching channels. Try another category or clear filters.',textAlign:TextAlign.center),if(!catalogue.loading) TextButton(onPressed:clearFilters,child:const Text('Clear filters'))])):TikChannelFeed(channels: channels),
-
+        Expanded(child:channels.isEmpty?Center(child:Column(mainAxisSize:MainAxisSize.min,children:[Text(catalogue.loading?'Loading channels…':'No matching channels. Try another category or clear filters.',textAlign:TextAlign.center),if(!catalogue.loading) TextButton(onPressed:clearFilters,child:const Text('Clear filters'))])):TikChannelFeed(channels: channels)),
         SizedBox(height: 44, child: ListView(scrollDirection: Axis.horizontal, children: [const Padding(padding: EdgeInsets.all(8), child: Text('✦ AI picks:')), ...['General', 'Entertainment', 'Kids', 'News'].map((v) => Padding(padding: const EdgeInsets.only(right: 5), child: ActionChip(label: Text(v), onPressed: () => setState(() => category = v))))])),
       ]),
     );
