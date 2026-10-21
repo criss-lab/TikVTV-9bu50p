@@ -26,10 +26,11 @@ try {
          FROM information_schema.columns
         WHERE table_schema = 'public'
           AND table_name = 'payment_orders'
-          AND column_name = 'order_tracking_id') AS order_tracking_id_nullable
+          AND column_name = 'order_tracking_id') AS order_tracking_id_nullable,
+      to_regclass('public.pesapal_ipn_events_notification_tracking_status_key') IS NOT NULL AS ipn_status_history_index
   `);
   const tables = result.rows[0];
-  if (!tables.payment_orders || !tables.subscriptions || !tables.pesapal_ipn_events || !tables.free_preview_sessions) {
+  if (!tables.payment_orders || !tables.subscriptions || !tables.pesapal_ipn_events || !tables.free_preview_sessions || !tables.ipn_status_history_index) {
     throw new Error('Required payment and viewing-access tables were not created.');
   }
   if (tables.order_tracking_id_nullable !== true) {
