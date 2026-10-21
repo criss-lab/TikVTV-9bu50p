@@ -56,6 +56,7 @@ class ChannelHome extends StatefulWidget {
 }
 
 class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
+  Timer? _catalogueRefresh;
   String query = '';
   final TextEditingController searchController = TextEditingController();
   bool searchOpen = false;
@@ -101,6 +102,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     catalogue.load();
+    _catalogueRefresh = Timer.periodic(const Duration(hours: 1), (_) => unawaited(catalogue.load()));
     library.load();
     nativeBackend.addListener(refresh);
     unawaited(nativeBackend.restore());
@@ -111,10 +113,12 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     playback.setBackgrounded(state != AppLifecycleState.resumed);
+    if (state == AppLifecycleState.resumed) unawaited(catalogue.load());
   }
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _catalogueRefresh?.cancel();
     searchController.dispose();
     catalogue.removeListener(refresh);
     library.removeListener(refresh);
