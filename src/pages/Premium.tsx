@@ -1,45 +1,85 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Crown, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { usePremiumAccess } from '@/hooks/usePremiumAccess';
-import { invokePesapal } from '@/lib/premium';
-
-const plans = [
-  { code: 'half_day', label: '13 hours', price: 5, detail: '13-hour access' },
-  { code: 'day', label: '1 day', price: 10, detail: '24-hour access' },
-  { code: 'week', label: '1 week', price: 40, detail: '7-day access' },
-  { code: 'month', label: '1 month', price: 130, detail: '30-day access' },
-] as const;
+import { getPaymentPlans, invokePesapal, type PaymentPlan } from '@/lib/premium';
 
 export default function Premium() {
-  const navigate = useNavigate(); const user = useAuthStore(s => s.user);
+  const navigate = useNavigate();
+  const user = useAuthStore(s => s.user);
   const { active, endsAt, loading, refresh } = usePremiumAccess();
-  const [paying, setPaying] = useState(false);
-  const [planCode, setPlanCode] = useState<(typeof plans)[number]['code']>('month');
-  async function checkout() {
-    if (!user) { toast.info('Sign in from Profile before subscribing'); navigate('/profile'); return; }
-    setPaying(true);
+  const [plans, setPlans] = useState<PaymentPlan[]>([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+  const [plansError, setPlansError] = useState<string | null>(null);
+  const [paying, setPaying] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPaymentPlans()
+      .then(result => {
+        if (!cancelled) {
+          setPlans(result);
+          setPlansError(null);
+        }
+      })
+      .catch(error => {
+        if (!cancelled) {
+          setPlans([]);
+          setPlansError(error instanceof Error ? error.message : 'Subscription plans are unavailable.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setPlansLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function checkout(plan: PaymentPlan) {
+    if (!user) {
+      toast.info('Sign in from Profile before subscribing');
+      navigate('/profile');
+      return;
+    }
+    setPaying(plan.code);
     try {
-      const data = await invokePesapal('initiate', undefined, planCode);
-      if (typeof data?.redirect_url !== 'string') throw new Error('Secure checkout URL unavailable');
+      // The server validates the plan code and calculates the amount; the client never sends a price.
+      const data = await invokePesapal('initiate', undefined, plan.code);
+      if (data.plan_code !== plan.code || data.amount_kes !== plan.amount_kes) {
+        throw new Error('The checkout amount does not match the selected plan. Please refresh and try again.');
+      }
+      if (typeof data.redirect_url !== 'string') throw new Error('Secure checkout URL unavailable');
       const checkoutUrl = new URL(data.redirect_url);
-      if (checkoutUrl.protocol !== 'https:' || !['pay.pesapal.com', 'cybqa.pesapal.com'].includes(checkoutUrl.hostname)) throw new Error('Unexpected checkout destination');
+      if (checkoutUrl.protocol !== 'https:' || !['pay.pesapal.com', 'cybqa.pesapal.com'].includes(checkoutUrl.hostname)) {
+        throw new Error('Unexpected checkout destination');
+      }
       window.location.assign(data.redirect_url);
-    } catch (error) { toast.error(error instanceof Error ? error.message : 'Checkout unavailable'); setPaying(false); }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Checkout unavailable');
+      setPaying(null);
+    }
   }
+
   return <main className="min-h-screen bg-black text-white px-6 pt-16 pb-28"><div className="max-w-md mx-auto space-y-6">
-    <Crown className="w-12 h-12 text-primary" /><h1 className="text-3xl font-bold">TikVTVz Premium</h1>
-    <p className="text-white/60">Secure checkout through PesaPal. Access activates only after the server verifies your payment and records your subscription.</p>
-    {loading ? <Loader2 className="animate-spin" /> : active ? <p className="text-green-400 font-semibold">Premium active — enjoy watching.{endsAt && <span className="block mt-2 text-sm font-normal text-white/70">Access until {new Date(endsAt).toLocaleString()}</span>}</p> : <>
-      <div className="grid grid-cols-2 gap-3" aria-label="Choose a subscription plan">
-        {plans.map(plan => <button key={plan.code} type="button" aria-pressed={planCode === plan.code} onClick={() => setPlanCode(plan.code)} className={`rounded-xl border p-4 text-left transition ${planCode === plan.code ? 'border-primary bg-primary/15' : 'border-white/15 bg-white/5'}`}>
-          <span className="block font-semibold">{plan.label}</span><span className="block text-2xl font-bold">KSh {plan.price}</span><span className="block text-xs text-white/60">{plan.detail}</span>
-        </button>)}
-      </div>
-      <button disabled={paying} onClick={checkout} className="w-full rounded-xl bg-primary p-4 font-bold disabled:opacity-50">{paying ? 'Opening checkout…' : `Pay KSh ${plans.find(plan => plan.code === planCode)!.price} with PesaPal`}</button>
-    </>}
+    <Crown className="w-12 h-12 text-primary" />
+    <h1 className="text-3xl font-bold">TikVTVz Premium</h1>
+    <p className="text-white/60">Every plan unlocks all channels for its paid period. Activation requires verified payment and a recorded subscription.</p>
+    {loading ? <Loader2 className="animate-spin" /> : active ? <section className="rounded-xl border border-green-500/40 p-4">
+      <p className="text-green-400 font-semibold">All channels unlocked</p>
+      <p className="text-sm text-white/70 mt-2">Expires {endsAt ? new Date(endsAt).toLocaleString() : 'as recorded by the payment service'}</p>
+      <p className="text-xs text-white/50 mt-1">Access is based on your recorded expiry time, not a per-channel lock.</p>
+    </section> : null}
+    {plansLoading ? <div className="flex items-center gap-2 text-white/70"><Loader2 className="animate-spin" /> Loading current plans…</div> : null}
+    {plansError ? <p role="alert" className="rounded-xl border border-red-400/40 p-4 text-sm text-red-200">{plansError}</p> : null}
+    {!plansLoading && !plansError ? <div className="grid grid-cols-2 gap-3" aria-label="Choose a subscription plan">
+      {plans.map(plan => <button key={plan.code} type="button" disabled={!!paying} onClick={() => void checkout(plan)} className="rounded-xl border border-white/20 bg-white/5 p-4 text-left disabled:opacity-50">
+        <span className="block font-semibold">{plan.label}</span>
+        <span className="block text-2xl font-bold mt-2">KSh {plan.amount_kes}</span>
+        <span className="block text-xs text-white/60 mt-1">{plan.duration_label} · All channels</span>
+        {paying === plan.code && <Loader2 className="animate-spin mt-2" size={16} />}
+      </button>)}
+    </div> : null}
     <button onClick={() => void refresh()} className="block text-sm text-white/70 underline">Refresh subscription status</button>
     <button onClick={() => navigate('/')} className="block text-sm text-white/70 underline">Back to channels</button>
   </div></main>;

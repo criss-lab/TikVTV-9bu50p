@@ -24,27 +24,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     const videoRef    = useRef<HTMLVideoElement>(null);
     const hlsRef      = useRef<unknown>(null);
     const timerRef    = useRef<ReturnType<typeof setTimeout>>();
+    const preloadTimerRef = useRef<ReturnType<typeof setTimeout>>();
     const readyRef    = useRef(false);
     const retryCount  = useRef(0);
     const activeRef = useRef(isActive);
-    const shouldLoadRef = useRef(shouldLoad);
-    // Parent callbacks may be recreated during scrolling; keep current handlers without
-    // tearing down and reinitialising a healthy stream on every render.
-    const onErrorRef = useRef(onError);
-    const onReadyRef = useRef(onReady);
-    const nativeHlsRef = useRef(false);
-    const recoveryRef = useRef<ReturnType<typeof setTimeout>>();
-    const startupTimerRef = useRef<ReturnType<typeof setTimeout>>();
-    const startupFallbackRef = useRef(false);
+    const teaserTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
     activeRef.current = isActive;
-    shouldLoadRef.current = shouldLoad;
-    onErrorRef.current = onError;
-    onReadyRef.current = onReady;
     const [retryKey, setRetryKey] = useState(0);
 
     const [muted,       setMuted]       = useState(true);
     const [error,       setError]       = useState(false);
-    const [errorDetail, setErrorDetail] = useState('');
     const [buffering,   setBuffering]   = useState(false);
     const [ready,       setReady]       = useState(false);
     const [pipActive,   setPipActive]   = useState(false);
@@ -61,9 +51,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
 
     // ── HLS init ────────────────────────────────────────────────────────────
     useEffect(() => {
-      // A mounted neighbouring card must never create another HLS instance or
-      // attach a native stream: only the visible owner acquires network media.
-      if (!shouldLoad || !isActive || !src) {
+      if (!shouldLoad || !src) {
         setReady(false);
         setBuffering(false);
         return;
@@ -73,70 +61,41 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       if (!video) return;
 
       setError(false);
-      setErrorDetail('');
       setReady(false);
       setBuffering(true);
-      clearTimeout(startupTimerRef.current);
-      startupFallbackRef.current = false;
       setQualities([]);
       setCurrentLvl(-1);
       readyRef.current = false;
 
       retryCount.current = 0;
-      // Only the selected stream gets a startup deadline. Give slower providers a fair chance.
-      if (activeRef.current && document.visibilityState !== 'hidden') {
-        timerRef.current = setTimeout(() => {
-          if (video.paused && activeRef.current && document.visibilityState !== 'hidden') {
-            setErrorDetail('The stream did not begin playback within 18 seconds. Check its source and network access.');
-            setError(true);
-            setBuffering(false);
-            onErrorRef.current?.();
-          }
-        }, 18_000);
-      }
+      timerRef.current = setTimeout(() => {
+        if (!readyRef.current && activeRef.current) {
+          setError(true);
+          setBuffering(false);
+          onError?.();
+        }
+      }, 15_000);
 
       const markReady = () => {
         if (disposed) return;
         if (readyRef.current) return;
+        clearTimeout(timerRef.current);
         readyRef.current = true;
         setReady(true);
+        setBuffering(false);
         retryCount.current = 0;
-        onReadyRef.current?.();
-        tryStartPlayback();
+        onReady?.();
+        if (activeRef.current) video.play().catch(() => {});
       };
 
       let disposed = false;
-
-      // Start as soon as a small safety buffer is available; continue filling toward 15s while playing.
-      // Live playlists may have short segments or limited DVR windows, so use a brief fallback.
-      const tryStartPlayback = () => {
-        if (disposed || !activeRef.current || document.visibilityState === 'hidden' || !readyRef.current || !video.paused) return;
-        let ahead = 0;
-        for (let i = 0; i < video.buffered.length; i++) {
-          const start = video.buffered.start(i);
-          const end = video.buffered.end(i);
-          if (video.currentTime >= start - 0.25 && video.currentTime <= end) {
-            ahead = end - video.currentTime;
-            break;
-          }
-        }
-        // Start quickly once a small safety buffer exists; keep filling toward the larger target during playback.
-        if (ahead >= 1.5 || startupFallbackRef.current || video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) video.play().catch(e => { if (e?.name !== 'AbortError' && e?.name !== 'NotAllowedError') console.warn('[IPTV] play rejected', channelName, e); });
-      };
-
-      // The selected stream may start after a short buffer target or the bounded startup fallback.
-      if (activeRef.current && document.visibilityState !== 'hidden') {
-        startupTimerRef.current = setTimeout(() => {
-          startupFallbackRef.current = true;
-          tryStartPlayback();
-        }, 4000);
-      }
       const markError = () => {
         if (disposed) return;
         clearTimeout(timerRef.current);
         setError(true);
+        setReady(false);
         setBuffering(false);
-        onErrorRef.current?.();
+        onError?.();
       };
 
       const destroyHls = () => {
@@ -146,26 +105,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         }
       };
 
-      const onWaiting = () => {
-        if (disposed || !activeRef.current || !readyRef.current) return;
-        setBuffering(true);
-        clearTimeout(recoveryRef.current);
-        recoveryRef.current = setTimeout(() => {
-          if (disposed || !activeRef.current || document.visibilityState === 'hidden') return;
-          const hls = hlsRef.current as { startLoad?: () => void } | null;
-          // A network stall is not proof of a decoder fault. Restart loading only;
-          // recoverMediaError() resets the media pipeline and can worsen a healthy stream.
-          try { hls?.startLoad?.(); } catch { /* transient reconnect */ }
-        }, 3500);
-      };
-      const onPlaying = () => { markReady(); if (!disposed) { clearTimeout(timerRef.current); setBuffering(false); clearTimeout(recoveryRef.current); clearTimeout(startupTimerRef.current); } };
-      const onCanPlay = () => { if (!disposed) { markReady(); tryStartPlayback(); } };
-      const onProgress = () => tryStartPlayback();
+      const onWaiting = () => { if (!disposed && activeRef.current && readyRef.current) setBuffering(true); };
+      const onPlaying = () => { markReady(); if (!disposed) setBuffering(false); };
+      const onCanPlay = () => { if (!disposed) { markReady(); setBuffering(false); if (activeRef.current) video.play().catch(() => {}); } };
       video.addEventListener('waiting', onWaiting);
       video.addEventListener('stalled', onWaiting);
       video.addEventListener('playing', onPlaying);
       video.addEventListener('canplay', onCanPlay);
-      video.addEventListener('progress', onProgress);
       video.addEventListener('loadeddata', markReady);
 
       const init = async () => {
@@ -177,42 +123,26 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           if (Hls.isSupported()) {
             const hls = new Hls({
               enableWorker:           true,
-              // Keep inactive neighbours from downloading media segments. Start network loading only for the visible player.
-              autoStartLoad:           false,
-              // Prefer a healthy forward buffer over ultra-low latency to reduce stalls.
               lowLatencyMode:         false,
-              // Bound memory on Android while keeping a useful forward buffer.
-              maxBufferLength:        30,
-              maxMaxBufferLength:     45,
+              maxBufferLength:        20,
+              maxMaxBufferLength:     35,
               maxBufferSize:          32 * 1000 * 1000,
-              backBufferLength:       6,
-              maxBufferHole:          0.5,
-              startFragPrefetch:      true,
               startLevel:             -1,
-              // Start conservatively on variable mobile connections; ABR can ramp up.
-              abrEwmaDefaultEstimate: 500_000,
-              abrBandWidthFactor:     0.8,
-              abrBandWidthUpFactor:   0.6,
+              abrEwmaDefaultEstimate: 1_000_000,
               progressive:            true,
-              // Fail dead manifests/segments faster instead of spending a minute in internal retries.
-              manifestLoadingTimeOut: 8_000,
-              levelLoadingTimeOut:    10_000,
-              fragLoadingTimeOut:     12_000,
+              // Faster segment load retry
               manifestLoadingMaxRetry: 3,
               levelLoadingMaxRetry:    3,
-              fragLoadingMaxRetry:     4,
-              manifestLoadingMaxRetryTimeout: 8_000,
-              levelLoadingMaxRetryTimeout:    8_000,
-              fragLoadingMaxRetryTimeout:    12_000,
+              fragLoadingMaxRetry:     3,
             });
             hlsRef.current = hls;
 
+            hls.loadSource(src);
             hls.attachMedia(video);
-            hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-              if (disposed) return;
-              hls.loadSource(src);
-              if (activeRef.current && shouldLoadRef.current && document.visibilityState !== 'hidden') hls.startLoad();
-            });
+            // Warm a neighbouring stream for at most 15 seconds, then stop downloading.
+            if (!activeRef.current) preloadTimerRef.current = setTimeout(() => {
+              if (!disposed && !activeRef.current) hls.stopLoad();
+            }, 15_000);
 
             hls.on(Hls.Events.MANIFEST_PARSED, (_: unknown, data: { levels: {height: number; bitrate: number}[] }) => {
               // Build quality levels list
@@ -226,47 +156,29 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
                 })).reverse(),
               ];
               setQualities(lvls);
-              if (activeRef.current && document.visibilityState !== 'hidden') hls.startLoad();
-              else hls.stopLoad();
-              tryStartPlayback();
-              // A parsed playlist alone does not mean media segments are playable.
+              // Wait for loadeddata/canplay: a manifest alone is not playable media.
             });
 
             hls.on(Hls.Events.LEVEL_SWITCHED, (_: unknown, data: { level: number }) => {
               setCurrentLvl(data.level);
             });
 
-            hls.on(Hls.Events.ERROR, (_: unknown, d: { fatal: boolean; type: string; details?: string; response?: { code?: number } }) => {
-              if (d.fatal) { console.warn('[IPTV] Fatal HLS failure', { channelName, type: d.type, details: d.details, status: d.response?.code }); setErrorDetail(`Stream failure: ${d.details || d.type}${d.response?.code ? ` (HTTP ${d.response.code})` : ''}`); }
-              if (!d.fatal || disposed || !activeRef.current || document.visibilityState === 'hidden') return;
-              // Retry transient CDN/network failures with backoff before giving up.
-              if (retryCount.current < 4 && d.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                retryCount.current++;
-                clearTimeout(recoveryRef.current);
-                recoveryRef.current = setTimeout(() => {
-                  if (!disposed && activeRef.current) hls.startLoad();
-                }, Math.min(1000 * 2 ** (retryCount.current - 1), 8000));
-              } else if (retryCount.current < 4 && d.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                retryCount.current++;
-                try { hls.recoverMediaError(); } catch { markError(); }
-              } else if (retryCount.current < 4) {
-                retryCount.current++;
-                clearTimeout(recoveryRef.current);
-                recoveryRef.current = setTimeout(() => {
-                  if (!disposed && activeRef.current && document.visibilityState !== 'hidden') hls.startLoad();
-                }, Math.min(1000 * 2 ** (retryCount.current - 1), 8000));
-              } else {
-                markError();
+            hls.on(Hls.Events.ERROR, (_: unknown, d: { fatal: boolean; type: string }) => {
+              if (d.fatal) {
+                if (retryCount.current < 2 && d.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                  retryCount.current++;
+                  hls.startLoad();
+                } else if (retryCount.current < 2 && d.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                  retryCount.current++;
+                  hls.recoverMediaError();
+                } else {
+                  markError();
+                }
               }
             });
           } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            // Native HLS can eagerly fetch on src assignment, so attach it only when this player is selected.
-            nativeHlsRef.current = true;
-            if (activeRef.current && document.visibilityState !== 'hidden') {
-              video.src = src;
-              video.onerror = markError;
-              video.load();
-            }
+            video.src = src;
+            video.onerror = markError;
           } else {
             markError();
           }
@@ -280,128 +192,61 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       return () => {
         disposed = true;
         clearTimeout(timerRef.current);
-        clearTimeout(recoveryRef.current);
-        clearTimeout(startupTimerRef.current);
+        clearTimeout(preloadTimerRef.current);
+        clearTimeout(teaserTimerRef.current);
         video.removeEventListener('waiting', onWaiting);
         video.removeEventListener('stalled', onWaiting);
         video.removeEventListener('canplay', onCanPlay);
-        video.removeEventListener('progress', onProgress);
         video.removeEventListener('playing', onPlaying);
         video.removeEventListener('loadeddata', markReady);
         video.onerror = null;
         destroyHls();
-        nativeHlsRef.current = false;
         if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
         readyRef.current = false;
       };
-    }, [src, shouldLoad, isActive, retryKey]);
+    }, [src, shouldLoad, retryKey, onError, onReady]);
 
     // ── Play / pause ─────────────────────────────────────────────────────────
     useEffect(() => {
       const video = videoRef.current;
       if (!video) return;
-      const hls = hlsRef.current as { startLoad?: () => void; stopLoad?: () => void } | null;
-      if (isActive && shouldLoad && document.visibilityState !== 'hidden') {
-        // Only the selected card may download media segments; inactive cards are not initialised.
-        try { hls?.startLoad?.(); } catch { /* player may still be initializing */ }
-        if (nativeHlsRef.current && video.getAttribute('src') !== src) {
-          video.src = src;
-          video.load();
-        }
-        if (!readyRef.current) {
-          clearTimeout(timerRef.current);
-          timerRef.current = setTimeout(() => {
-            if (video.paused && activeRef.current && document.visibilityState !== 'hidden') {
-              setErrorDetail('The stream did not start within 18 seconds.');
-              setError(true);
-              setBuffering(false);
-              onErrorRef.current?.();
-            }
-          }, 18_000);
-        }
-        if (ready) {
-          let ahead = 0;
-          for (let i = 0; i < video.buffered.length; i++) {
-            if (video.currentTime >= video.buffered.start(i) - 0.25 && video.currentTime <= video.buffered.end(i)) {
-              ahead = video.buffered.end(i) - video.currentTime;
-              break;
-            }
-          }
-          if (ahead >= 1.5 || video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA || startupFallbackRef.current) {
-            clearTimeout(startupTimerRef.current);
-            video.play().catch(() => {});
-          } else {
-            // Keep the startup deadline short; the player continues buffering while playback runs.
-            clearTimeout(startupTimerRef.current);
-            startupTimerRef.current = setTimeout(() => {
-              if (activeRef.current && shouldLoad && document.visibilityState !== 'hidden') {
-                startupFallbackRef.current = true;
-                video.play().catch(() => {});
-              }
-            }, 4000);
-          }
-        }
-      } else {
-        // Stop playback immediately on scroll, route changes, and hidden documents.
-        video.pause();
-        try { hls?.stopLoad?.(); } catch { /* HLS may already be destroyed */ }
-        setBuffering(false);
-        clearTimeout(recoveryRef.current);
-      }
-    }, [isActive, ready, shouldLoad, src]);
+      const hls = hlsRef.current as { startLoad: () => void } | null;
+      if (isActive && shouldLoad) {
+        video.muted = muted;
+        clearTimeout(preloadTimerRef.current);
+        hls?.startLoad();
+        if (ready) video.play().catch(() => {});
+      } else { video.pause(); setBuffering(false); }
+    }, [isActive, ready, shouldLoad, muted]);
 
-    // Pause and release network activity when the app is backgrounded; resume only the selected player.
+    // Neighbouring channels play a silent three-second teaser, pause for five
+    // seconds, and repeat. Only the focused channel can play continuously or
+    // with sound. The entitlement-controlled shouldLoad tears this down on lock.
     useEffect(() => {
+      clearTimeout(teaserTimerRef.current);
       const video = videoRef.current;
-      if (!video) return;
-      const onVisibilityChange = () => {
-        const hls = hlsRef.current as { startLoad?: () => void; stopLoad?: () => void } | null;
-        if (document.visibilityState === 'hidden') {
+      if (!video || !shouldLoad || isActive || !ready || error || document.hidden) return;
+      video.muted = true;
+      const hls = hlsRef.current as { startLoad: () => void; stopLoad: () => void } | null;
+      let cancelled = false;
+      const tease = () => {
+        if (cancelled || activeRef.current || document.hidden) return;
+        hls?.startLoad();
+        void video.play().catch(() => {});
+        teaserTimerRef.current = setTimeout(() => {
+          if (cancelled) return;
           video.pause();
-          try { hls?.stopLoad?.(); } catch { /* stream may already be stopped */ }
-          clearTimeout(recoveryRef.current);
-          clearTimeout(startupTimerRef.current);
-          return;
-        }
-        if (activeRef.current && shouldLoadRef.current) {
-          try { hls?.startLoad?.(); } catch { /* player may still be initializing */ }
-          // Native HLS is lazy-attached for inactive cards to avoid competing downloads.
-          if (nativeHlsRef.current && video.getAttribute('src') !== src) {
-            video.src = src;
-            video.load();
-          }
-          if (!readyRef.current) {
-            clearTimeout(timerRef.current);
-            timerRef.current = setTimeout(() => {
-              if (video.paused && activeRef.current && document.visibilityState !== 'hidden') {
-                setError(true);
-                setBuffering(false);
-                onErrorRef.current?.();
-              }
-            }, 18_000);
-          }
-          clearTimeout(startupTimerRef.current);
-          startupFallbackRef.current = false;
-          startupTimerRef.current = setTimeout(() => {
-            if (activeRef.current && shouldLoadRef.current && document.visibilityState !== 'hidden') {
-              startupFallbackRef.current = true;
-              video.play().catch(() => {});
-            }
-          }, 4_000);
-        }
+          hls?.stopLoad();
+          teaserTimerRef.current = setTimeout(tease, 5000);
+        }, 3000);
       };
-      const onPageHide = () => {
-        video.pause();
-        const hls = hlsRef.current as { stopLoad?: () => void } | null;
-        try { hls?.stopLoad?.(); } catch { /* ignored during page teardown */ }
-      };
-      document.addEventListener('visibilitychange', onVisibilityChange);
-      window.addEventListener('pagehide', onPageHide);
+      tease();
       return () => {
-        document.removeEventListener('visibilitychange', onVisibilityChange);
-        window.removeEventListener('pagehide', onPageHide);
+        cancelled = true;
+        clearTimeout(teaserTimerRef.current);
+        if (!activeRef.current) { video.pause(); hls?.stopLoad(); }
       };
-    }, [src]);
+    }, [isActive, shouldLoad, ready, error]);
 
     // ── PiP events ───────────────────────────────────────────────────────────
     useEffect(() => {
@@ -457,7 +302,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           muted={muted}
           playsInline
           loop={false}
-          preload="none"
+          preload="auto"
         />
 
         {/* Placeholder while loading */}
@@ -481,7 +326,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         {/* Buffering spinner */}
         {buffering && !error && isActive && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div role="status" aria-label={ready ? 'Buffering for smooth playback' : 'Loading live stream'} className="flex flex-col items-center gap-3 rounded-2xl bg-black/60 px-6 py-5 backdrop-blur-sm"><div className="w-10 h-10 rounded-full border-white/20 border-t-white animate-spin" style={{ borderWidth: 3 }} /><span className="text-xs font-semibold text-white/80">{ready ? 'Buffering for smooth playback…' : 'Preparing live stream…'}</span></div>
+            <div role="status" aria-label={ready ? 'Reconnecting stream' : 'Loading live stream'} className="flex flex-col items-center gap-3 rounded-2xl bg-black/60 px-6 py-5 backdrop-blur-sm"><div className="w-10 h-10 rounded-full border-white/20 border-t-white animate-spin" style={{ borderWidth: 3 }} /><span className="text-xs font-semibold text-white/80">{ready ? 'Reconnecting live stream…' : 'Preparing live stream…'}</span></div>
           </div>
         )}
 
@@ -490,8 +335,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none">
             <div className="bg-black/60 backdrop-blur rounded-2xl p-6 flex flex-col items-center gap-3">
               <WifiOff className="w-9 h-9 text-white/40" />
-              <p className="text-white/70 text-sm">Stream unavailable</p>
-              {errorDetail && <p className="text-white/50 text-xs text-center max-w-[280px] break-words">{errorDetail}</p>}
+              <p className="text-white/50 text-sm">Stream unavailable</p>
               <button
                 className="pointer-events-auto flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white text-sm px-4 py-2 rounded-full transition-colors"
                 onClick={handleRetry}

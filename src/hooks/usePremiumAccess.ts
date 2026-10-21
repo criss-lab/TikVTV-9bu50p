@@ -16,7 +16,8 @@ export function usePremiumAccess() {
       return result.active;
     } catch (error) {
       console.error('Premium status unavailable', error);
-      setEndsAt(null);
+      // A temporary API failure is not proof that an already verified paid
+      // entitlement was revoked. Its server-issued expiry still bounds access.
       return false;
     } finally { setLoading(false); }
   }, [user?.id]);
@@ -29,12 +30,14 @@ export function usePremiumAccess() {
     window.addEventListener(PREMIUM_CHANGED, update);
     window.addEventListener('focus', update);
     document.addEventListener('visibilitychange', visible);
-    const timer = window.setInterval(() => { setNow(Date.now()); if (!document.hidden) void refresh(); }, 15000);
+    const clock = window.setInterval(() => setNow(Date.now()), 1000);
+    const poll = window.setInterval(() => { if (!document.hidden) void refresh(); }, 3000);
     return () => {
       window.removeEventListener(PREMIUM_CHANGED, update);
       window.removeEventListener('focus', update);
       document.removeEventListener('visibilitychange', visible);
-      window.clearInterval(timer);
+      window.clearInterval(clock);
+      window.clearInterval(poll);
     };
   }, [refresh]);
   const active = !!endsAt && Date.parse(endsAt) > now;

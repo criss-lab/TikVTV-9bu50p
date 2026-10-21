@@ -1,5 +1,7 @@
 import type { IPTVChannel, ChannelPage } from '@/types';
-import { PAGE_SIZE } from '@/constants/categories';
+// Fetch catalogue entries in groups of three; only the active viewing window opens HLS connections.
+const PAGE_SIZE = 3;
+import { prioritizeStreams } from '@/lib/streamHealth';
 
 // ── Primary JSON API ──────────────────────────────────────────────────────────
 const CHANNELS_API = 'https://iptv-org.github.io/api/channels.json';
@@ -147,17 +149,21 @@ const EXTRA_SOURCES: Array<[string, string]> = [
   ['pe',           'https://iptv-org.github.io/iptv/countries/pe.m3u'],
 ];
 
-const CACHE_KEY = 'tikvtv_iptv_v9';
-const CACHE_TTL = 20 * 60 * 60 * 1000; // 20 hours
+const CACHE_KEY = 'tikvtv_iptv_v10_browser_hls';
+const CACHE_TTL = 60 * 60 * 1000; // Refresh unreliable public streams hourly
 
 interface RawChannel { id: string; name: string; logo: string; country: string; languages: string[]; categories: string[]; is_nsfw: boolean; website?: string; network?: string; alt_names?: string[]; }
 interface RawStream  { channel: string; url: string; }
 interface CacheData  { channels: IPTVChannel[]; timestamp: number; }
 
 let memCache: IPTVChannel[] | null = null;
-// Coalesce concurrent cold starts so multiple pages/components never download and parse
-// the large primary catalogue independently.
-let channelLoadPromise: Promise<IPTVChannel[]> | null = null;
+// Only send browser-playable HLS playlists to the HLS video player.
+function browserHls(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' && /\\.m3u8?(?:$|[?#])/i.test(parsed.pathname + parsed.search);
+  } catch { return false; }
+}
 const deadIds = new Set<string>();
 
 export function markChannelDead(id: string) {
@@ -232,15 +238,6 @@ function genLogoUrl(name: string): string {
   return `https://ui-avatars.com/api/?name=${initials}&background=${c}&color=f59e0b&size=128&bold=true&font-size=0.4`;
 }
 
-function isValidStreamUrl(value: string): boolean {
-  try {
-    const parsed = new URL(value.trim());
-    return (parsed.protocol === 'https:' || parsed.protocol === 'http:') && Boolean(parsed.hostname);
-  } catch {
-    return false;
-  }
-}
-
 function parseM3U(text: string, sourceTag: string): IPTVChannel[] {
   const lines    = text.split('\n');
   const channels: IPTVChannel[] = [];
@@ -250,7 +247,7 @@ function parseM3U(text: string, sourceTag: string): IPTVChannel[] {
     const line = lines[idx].trim();
     if (line.startsWith('#EXTINF:')) {
       const nextLine = (lines[idx + 1] || '').trim();
-      if (nextLine && !nextLine.startsWith('#') && isValidStreamUrl(nextLine)) {
+      if (nextLine && !nextLine.startsWith('#') && browserHls(nextLine)) {
         // Skip YouTube / Twitch
         if (nextLine.includes('youtube.com') || nextLine.includes('twitch.tv') || nextLine.includes('youtu.be')) {
           idx += 2;
@@ -303,7 +300,7 @@ function parseM3U(text: string, sourceTag: string): IPTVChannel[] {
 
 async function fetchM3U(url: string, tag: string): Promise<IPTVChannel[]> {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(12_000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(5_000) });
     if (!res.ok) return [];
     const text = await res.text();
     if (!text.includes('#EXTINF')) return [];
@@ -317,120 +314,35 @@ async function fetchM3U(url: string, tag: string): Promise<IPTVChannel[]> {
 }
 
 async function fetchExtraSources(): Promise<IPTVChannel[]> {
-  // Keep optional playlist traffic bounded so it cannot flood mobile connections or compete with playback.
-  const all: IPTVChannel[] = [];
-  for (let i = 0; i < EXTRA_SOURCES.length; i += 8) {
-    const batch = EXTRA_SOURCES.slice(i, i + 8);
-    const results = await Promise.allSettled(batch.map(([tag, url]) => fetchM3U(url, tag)));
-    for (const result of results) if (result.status === 'fulfilled') all.push(...result.value);
-  }
-  return all;
+  // A small curated batch avoids serially waiting on dozens of remote playlists.
+  // The primary IPTV-org JSON API already covers countries and categories.
+  const sources = EXTRA_SOURCES.slice(0, 8);
+  const results = await Promise.all(sources.map(([tag, url]) => fetchM3U(url, tag)));
+  return results.flat();
 }
 
-let extraSourcesPromise: Promise<IPTVChannel[]> | null = null;
-let extraSourcesScheduled = false;
-function getExtraSourcesOnce(): Promise<IPTVChannel[]> {
-  if (!extraSourcesPromise) {
-    extraSourcesPromise = fetchExtraSources().catch(error => {
-      extraSourcesPromise = null;
-      console.warn('[IPTV] Optional source enrichment failed:', error);
-      return [];
-    });
-  }
-  return extraSourcesPromise;
-}
-
-// Optional playlist imports are large and numerous. Let the primary catalogue render and
-// give the selected TV stream first use of the network before background enrichment starts.
-function scheduleExtraSourceEnrichment() {
-  if (extraSourcesScheduled) return;
-  extraSourcesScheduled = true;
-  const startWhenVisible = () => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-      const onVisible = () => {
-        if (document.visibilityState !== 'visible') return;
-        document.removeEventListener('visibilitychange', onVisible);
-        void getExtraSourcesOnce().then(enrichCachedChannels);
-      };
-      document.addEventListener('visibilitychange', onVisible);
-      return;
-    }
-    void getExtraSourcesOnce().then(enrichCachedChannels);
-  };
-
-  if (typeof window !== 'undefined') {
-    const idleWindow = window as Window & {
-      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
-    };
-    if (idleWindow.requestIdleCallback) {
-      idleWindow.requestIdleCallback(startWhenVisible, { timeout: 15_000 });
-      return;
-    }
-  }
-  setTimeout(startWhenVisible, 10_000);
-}
-
-function enrichCachedChannels(extraChannels: IPTVChannel[]) {
-  if (!extraChannels.length || !memCache) return;
-  const existingIds = new Set(memCache.map(ch => ch.id));
-  const existingUrls = new Set(memCache.map(ch => ch.streamUrl.trim()));
-  // Update the sets as we filter so duplicates inside the same downloaded playlist batch
-  // are rejected too, not just duplicates against the existing catalogue.
-  const deduped = extraChannels.filter(ch => {
-    if (!ch || typeof ch.id !== 'string' || typeof ch.name !== 'string'
-      || typeof ch.streamUrl !== 'string' || ch.name.trim().length < 2) return false;
-    const id = ch.id.trim();
-    const url = ch.streamUrl.trim();
-    if (!id || !url || existingIds.has(id) || existingUrls.has(url)) return false;
-    existingIds.add(id);
-    existingUrls.add(url);
-    return true;
-  });
-  if (!deduped.length) return;
-  memCache = [...memCache, ...shuffle(deduped)];
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: memCache, timestamp: Date.now() } satisfies CacheData));
-  } catch (e) {
-    console.warn('[IPTV] Enriched cache write failed:', e);
-  }
-  console.log(`[IPTV] Background enrichment added ${deduped.length} channels`);
-  if (typeof window !== 'undefined') window.dispatchEvent(new Event('iptv-channels-updated'));
-}
-
-async function loadAllChannels(): Promise<IPTVChannel[]> {
+export async function fetchAllChannels(): Promise<IPTVChannel[]> {
   if (memCache && memCache.length > 0) return memCache;
 
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (raw) {
       const data: CacheData = JSON.parse(raw);
-      const now = Date.now();
-      const cacheIsValid = Number.isFinite(data?.timestamp)
-        && data.timestamp <= now
-        && now - data.timestamp < CACHE_TTL
-        && Array.isArray(data.channels)
-        && data.channels.length > 100
-        && data.channels.every(ch =>
-          ch && typeof ch.id === 'string' && typeof ch.name === 'string'
-          && typeof ch.streamUrl === 'string' && Array.isArray(ch.categories)
-        );
-      if (cacheIsValid) {
+      if (Date.now() - data.timestamp < CACHE_TTL && data.channels.length > 100) {
         console.log('[IPTV] Cache hit:', data.channels.length, 'channels');
         memCache = data.channels;
-        // Reuse the instant cache, then enrich it without delaying first paint.
-        scheduleExtraSourceEnrichment();
         return memCache;
       }
     }
   } catch {}
 
-  console.log('[IPTV] Fetching primary channel data…');
+  console.log('[IPTV] Fetching everything…');
 
   try {
-    // Do not hold the first screen hostage to dozens of optional M3U feeds.
-    const [chanRes, streamRes] = await Promise.all([
-      fetch(CHANNELS_API, { signal: AbortSignal.timeout(12_000) }),
-      fetch(STREAMS_API, { signal: AbortSignal.timeout(12_000) }),
+    const [chanRes, streamRes, extraChannels] = await Promise.all([
+      fetch(CHANNELS_API),
+      fetch(STREAMS_API),
+      fetchExtraSources(),
     ]);
 
     if (!chanRes.ok || !streamRes.ok) throw new Error('Primary API error');
@@ -439,13 +351,11 @@ async function loadAllChannels(): Promise<IPTVChannel[]> {
     const rawStreams:  RawStream[]  = await streamRes.json();
 
     console.log(`[IPTV] Primary: ${rawChannels.length} channels, ${rawStreams.length} streams`);
-    const streamMap = new Map<string, string[]>();
-    for (const stream of rawStreams) {
-      if (!stream.channel || !isValidStreamUrl(stream.url)) continue;
-      const urls = streamMap.get(stream.channel) || [];
-      const url = stream.url.trim();
-      if (!urls.includes(url)) urls.push(url);
-      streamMap.set(stream.channel, urls);
+    console.log(`[IPTV] Extra M3U: ${extraChannels.length} channels`);
+
+    const streamMap = new Map<string, string>();
+    for (const s of rawStreams) {
+      if (s.channel && s.url && browserHls(s.url) && !streamMap.has(s.channel)) streamMap.set(s.channel, s.url);
     }
 
     const primary: IPTVChannel[] = rawChannels
@@ -458,42 +368,37 @@ async function loadAllChannels(): Promise<IPTVChannel[]> {
         countryCode: ch.country || 'INT',
         languages:   ch.languages || [],
         categories:  ch.categories?.length ? ch.categories : ['general'],
-        streamUrl:   streamMap.get(ch.id)![0],
-        alternativeStreamUrls: streamMap.get(ch.id)!.slice(1),
+        streamUrl:   streamMap.get(ch.id)!,
         alt_names:   ch.alt_names || [],
         website:     ch.website,
         network:     ch.network,
       }));
 
-    // Render primary IPTV channels immediately. Enrich the in-memory list in the background.
-    const initial = shuffle(primary);
-    memCache = initial;
-    console.log(`[IPTV] Ready: ${initial.length} primary channels; optional feeds loading in background`);
+    const existingIds  = new Set(primary.map(ch => ch.id));
+    const existingUrls = new Set(primary.map(ch => ch.streamUrl));
+    const deduped = extraChannels.filter(ch =>
+      !existingIds.has(ch.id) &&
+      !existingUrls.has(ch.streamUrl) &&
+      browserHls(ch.streamUrl) && ch.name && ch.name.length > 1
+    );
+
+    const all = shuffle([...primary, ...deduped]);
+    console.log(`[IPTV] Total: ${all.length} (${primary.length} primary + ${deduped.length} extra)`);
+
     try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: initial, timestamp: Date.now() } satisfies CacheData));
+      const cacheData: CacheData = { channels: all, timestamp: Date.now() };
+      localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
     } catch (e) {
-      console.warn('[IPTV] Initial cache write failed:', e);
+      console.warn('[IPTV] Cache write failed:', e);
     }
 
-    scheduleExtraSourceEnrichment();
-    return initial;
+    memCache = all;
+    return memCache;
   } catch (err) {
     console.error('[IPTV] Primary fetch failed, using fallback:', err);
     memCache = getFallbackChannels();
     return memCache;
   }
-}
-
-
-/** Shared promise prevents duplicate primary API downloads during simultaneous page mounts. */
-export function fetchAllChannels(): Promise<IPTVChannel[]> {
-  if (memCache && memCache.length > 0) return Promise.resolve(memCache);
-  if (!channelLoadPromise) {
-    channelLoadPromise = loadAllChannels().finally(() => {
-      channelLoadPromise = null;
-    });
-  }
-  return channelLoadPromise;
 }
 
 export function getChannelPage(channels: IPTVChannel[], category: string, page: number, countryCode = ''): ChannelPage {
@@ -504,6 +409,7 @@ export function getChannelPage(channels: IPTVChannel[], category: string, page: 
   if (countryCode) {
     filtered = filtered.filter(ch => ch.countryCode.toLowerCase() === countryCode.toLowerCase());
   }
+  filtered = prioritizeStreams(filtered);
   const start = (page - 1) * PAGE_SIZE;
   return { items: filtered.slice(start, start + PAGE_SIZE), hasMore: start + PAGE_SIZE < filtered.length, total: filtered.length };
 }

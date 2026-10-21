@@ -1,0 +1,32 @@
+name: Dependency security audit
+on:
+  workflow_dispatch:
+  push:
+    branches: [audit/production-readiness-hardening]
+    paths: ['package.json', 'package-lock.json', '.github/workflows/dependency-security.yml']
+  pull_request:
+    paths: ['package.json', 'package-lock.json', '.github/workflows/dependency-security.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Capture complete dependency audit
+        run: npm audit --json > npm-audit.json || true
+      - name: Upload dependency audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-security-audit
+          path: npm-audit.json
+          if-no-files-found: error
+      - name: Enforce no critical dependency advisories
+        run: npm audit --audit-level=critical

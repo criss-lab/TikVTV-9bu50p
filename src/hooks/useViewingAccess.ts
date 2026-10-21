@@ -1,48 +1,44 @@
 import { useEffect, useState } from 'react';
 import { usePremiumAccess } from '@/hooks/usePremiumAccess';
 import { useAuthStore } from '@/stores/authStore';
+import { getViewingAccess } from '@/lib/premium';
 
-const PREVIEW_MS = 15 * 60 * 1000;
-const STORAGE_PREFIX = 'tikvtvz:free-preview:v1:';
-
-/** One persistent preview per account/browser, shared across channels and routes. */
-export function useViewingAccess() {
+/** Each of the first seven distinct channels has its own immutable 15-minute preview. */
+export function useViewingAccess(channelId: string | null) {
   const userId = useAuthStore(s => s.user?.id);
-  const { active, endsAt, loading, refresh } = usePremiumAccess();
-  const key = STORAGE_PREFIX + (userId || 'guest');
-  const [deadline, setDeadline] = useState<number | null>(null);
+  const { active: premiumActive, endsAt, loading: premiumLoading, refresh } = usePremiumAccess();
+  const [previewEnd, setPreviewEnd] = useState<string | null>(null);
+  const [serverEnd, setServerEnd] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
-
+  const [used, setUsed] = useState(0);
   useEffect(() => {
-    const current = Date.now();
-    let saved: number | null = null;
-    try {
-      const value = window.localStorage.getItem(key);
-      const parsed = value === null ? NaN : Number(value);
-      if (Number.isFinite(parsed) && parsed > 0 && parsed <= current + PREVIEW_MS) saved = parsed;
-      if (saved === null) {
-        saved = current + PREVIEW_MS;
-        window.localStorage.setItem(key, String(saved));
-      }
-    } catch {
-      // Storage may be disabled; keep the current session's preview functional.
-      saved = current + PREVIEW_MS;
-    }
-    setDeadline(saved);
-    setNow(current);
-    const tick = () => setNow(Date.now());
-    const timer = window.setInterval(tick, 1000);
-    window.addEventListener('focus', tick);
-    document.addEventListener('visibilitychange', tick);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener('focus', tick);
-      document.removeEventListener('visibilitychange', tick);
+    let cancelled = false;
+    setPreviewEnd(null); setServerEnd(null); setLoading(true);
+    const check = async () => {
+      if (!userId || !channelId) { if (!cancelled) { setLoading(false); setPreviewEnd(null); setServerEnd(null); } return; }
+      try {
+        const result = await getViewingAccess(userId, channelId);
+        if (cancelled) return;
+        setPreviewEnd(result.preview_ends_at);
+        setServerEnd(result.active ? result.ends_at : null);
+        setUsed(result.previews_used);
+      } catch (error) {
+        console.error('Channel entitlement unavailable', error);
+        // Retain only previously verified deadlines; the clock still expires them.
+        // A network timeout must not turn a paid viewer into a new customer.
+      } finally { if (!cancelled) { setNow(Date.now()); setLoading(false); } }
     };
-  }, [key]);
-
-  const remainingMs = Math.max(0, (deadline ?? now + PREVIEW_MS) - now);
-  const previewActive = deadline === null || remainingMs > 0;
-  const allowed = active || previewActive;
-  return { allowed, active, endsAt, loading, remainingMs, previewActive, refresh };
+    void check();
+    const clock = window.setInterval(() => setNow(Date.now()), 1000);
+    const poll = window.setInterval(() => { if (!document.hidden) void check(); }, 3000);
+    const resume = () => { if (!document.hidden) { void check(); void refresh(); } };
+    window.addEventListener('focus', resume);
+    document.addEventListener('visibilitychange', resume);
+    return () => { cancelled = true; clearInterval(clock); clearInterval(poll); window.removeEventListener('focus', resume); document.removeEventListener('visibilitychange', resume); };
+  }, [userId, channelId, refresh]);
+  const paidActive = premiumActive || (!!serverEnd && Date.parse(serverEnd) > now);
+  const remainingMs = Math.max(0, (previewEnd ? Date.parse(previewEnd) : now) - now);
+  const previewActive = remainingMs > 0;
+  return { allowed: paidActive || previewActive, active: paidActive, endsAt: serverEnd || endsAt, loading: loading || premiumLoading, remainingMs, previewActive, previewsUsed: used, refresh };
 }
