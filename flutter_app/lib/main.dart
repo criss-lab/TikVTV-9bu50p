@@ -183,6 +183,11 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
         ListTile(leading:const Icon(Icons.favorite),title:const Text('Favorites'),onTap:(){Navigator.pop(sheetContext);clearFilters();setState(() {tab=0;libraryTab=1;});}),
         ListTile(leading:const Icon(Icons.history),title:const Text('Watch history'),onTap:(){Navigator.pop(sheetContext);clearFilters();setState(() {tab=0;libraryTab=2;});}),
         ListTile(leading:const Icon(Icons.public),title:const Text('Explore countries'),onTap:(){Navigator.pop(sheetContext);selectTab(2);}),
+        ListTile(leading:const Icon(Icons.delete_outline),title:const Text('Clear watch history'),onTap:() async {
+          Navigator.pop(sheetContext);
+          final confirmed = await showDialog<bool>(context:context,builder:(dialogContext)=>AlertDialog(title:const Text('Clear watch history?'),content:const Text('This removes the watch history saved on this device. Favorites will be kept.'),actions:[TextButton(onPressed:()=>Navigator.pop(dialogContext,false),child:const Text('Cancel')),TextButton(onPressed:()=>Navigator.pop(dialogContext,true),child:const Text('Clear'))]));
+          if(confirmed==true) { await library.clearHistory(); }
+        }),
       ]))));
   }
 
