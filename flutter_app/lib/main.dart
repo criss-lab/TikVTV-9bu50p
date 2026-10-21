@@ -56,7 +56,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     searchOpen = value == 1;
     if (value == 0 || value == 2 || value == 5) { category = '🔥'; libraryTab = 0; country='All'; }
     if (value == 3) { category = '🔥'; libraryTab = 0; country='All'; }
-    if (value == 4) { category = 'Entertainment'; libraryTab = 0; country='All'; }
+    if (value == 4) { category = '🔥'; libraryTab = 0; country='All'; }
     if (value == 6) { libraryTab = 0; category = '🔥'; }
     });
   }
@@ -126,7 +126,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
             NavigationDestination(icon:Icon(Icons.person_outline),label:'Profile'),
           ]),
       )),
-      body: Column(children:[
+      body: tab == 4 ? _clipsNotice() : Column(children:[
         if(searchOpen || tab==1) Padding(padding:const EdgeInsets.fromLTRB(12,10,12,6),child:TextField(controller:searchController,autofocus:tab==1,decoration:InputDecoration(hintText:'Search channels',prefixIcon:const Icon(Icons.search),suffixIcon:IconButton(tooltip:'Clear search',icon:const Icon(Icons.close),onPressed:(){searchController.clear();setState(()=>query='');}),filled:true,fillColor:const Color(0xFF1B1C24),border:OutlineInputBorder(borderRadius:BorderRadius.circular(18),borderSide:BorderSide.none)),onChanged:(v)=>setState(()=>query=v))),
         SizedBox(height:64,child:ListView(scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:10,vertical:7),children:rail.map((entry){
           final selected=category==entry.$1 || category==entry.$2;
@@ -165,6 +165,13 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
       ]),
     );
   }
+
+  Widget _clipsNotice() => Center(child:Padding(padding:const EdgeInsets.all(24),child:Column(mainAxisSize:MainAxisSize.min,children:[
+    const Icon(Icons.movie_outlined,size:56,color:Colors.white54),
+    const SizedBox(height:16),const Text('Clips',style:TextStyle(fontSize:22,fontWeight:FontWeight.bold)),
+    const SizedBox(height:8),const Text('Clip storage is disabled. Live TV playback does not record or upload your streams.',textAlign:TextAlign.center,style:TextStyle(color:Colors.white60)),
+    const SizedBox(height:18),FilledButton.icon(onPressed:()=>selectTab(0),icon:const Icon(Icons.live_tv),label:const Text('Watch live TV')),
+  ])));
 
   void _showProfile() {
     showModalBottomSheet<void>(context:context,showDragHandle:true,isScrollControlled:true,
