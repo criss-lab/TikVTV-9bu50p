@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'src/native_backend.dart';
 import 'src/native_screens.dart';
+import 'src/epg_service.dart';
 import 'src/catalogue.dart';
 import 'src/playback.dart';
 import 'src/library.dart';
@@ -47,6 +48,21 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   void clearFilters() { searchController.clear(); setState(() { query=''; category='🔥'; country='All'; language='All'; libraryTab=0; }); }
   int libraryTab = 0; // 0 channels, 1 favourites, 2 history
   String guideCategory = 'all';
+  final Map<String, List<EpgProgramme>> guidePrograms = {};
+  final Set<String> guideLoading = {};
+  final Map<String, String> guideErrors = {};
+  Future<void> _loadGuide(Channel channel) async {
+    setState(() { guideLoading.add(channel.id); guideErrors.remove(channel.id); });
+    try {
+      final programs = await EpgService.instance.programmesFor(channel.id);
+      if (!mounted) return;
+      setState(() { guidePrograms[channel.id] = programs; guideLoading.remove(channel.id); });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { guideErrors[channel.id] = e.toString().replaceFirst('Bad state: ', ''); guideLoading.remove(channel.id); });
+    }
+  }
+  String _guideTime(DateTime value) { final local = value.toLocal(); return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}'; }
   void _openAccount() => Navigator.push(context, MaterialPageRoute(builder: (_) => const NativeAccountScreen()));
   void _openPremium() => Navigator.push(context, MaterialPageRoute(builder: (_) => const NativePremiumScreen()));
   void selectTab(int value) {
@@ -211,7 +227,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
         const SizedBox(width:8),const Expanded(child:Text('TV Schedule',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold))),
         Text(DateTime.now().toLocal().toString().substring(0,10),style:const TextStyle(color:Colors.white54,fontSize:12)),
       ])),
-      const Padding(padding:EdgeInsets.symmetric(horizontal:16,vertical:4),child:Text('Channel guide · programme listings are shown only when schedule data is available',style:TextStyle(color:Colors.white54,fontSize:12))),
+      const Padding(padding:EdgeInsets.symmetric(horizontal:16,vertical:4),child:Text('Official XMLTV programme listings · tap the calendar icon to load a channel schedule',style:TextStyle(color:Colors.white54,fontSize:12))),
       SizedBox(height:48,child:ListView(scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:12,vertical:5),children:[
         for(final cat in categories) Padding(padding:const EdgeInsets.only(right:6),child:ChoiceChip(label:Text(cat=='all'?'All Channels':cat[0].toUpperCase()+cat.substring(1)),selected:guideCategory==cat,onSelected:(_)=>setState(()=>guideCategory=cat))),
       ])),
@@ -224,8 +240,13 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
             const SizedBox(width:12),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
               Text(c.name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontWeight:FontWeight.bold)),
               const SizedBox(height:5),Text(c.country.isEmpty ? 'Live stream available' : c.country,style:const TextStyle(fontSize:12,color:Colors.white70)),
-              const SizedBox(height:3),const Text('Programme schedule unavailable for this channel',maxLines:2,overflow:TextOverflow.ellipsis,style:TextStyle(fontSize:11,color:Colors.white38)),
-            ])),const Icon(Icons.chevron_right,color:Colors.white38),
+              const SizedBox(height:3),
+              if(guideLoading.contains(c.id)) const Text('Loading official schedule…',style:TextStyle(fontSize:11,color:Colors.white54))
+              else if(guideErrors.containsKey(c.id)) Text(guideErrors[c.id]!,maxLines:2,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:11,color:Colors.orangeAccent))
+              else if(guidePrograms.containsKey(c.id) && guidePrograms[c.id]!.isEmpty) const Text('No published schedule found for this channel',style:TextStyle(fontSize:11,color:Colors.white38))
+              else if(guidePrograms.containsKey(c.id)) ...[for(final program in guidePrograms[c.id]!.take(2)) Padding(padding:const EdgeInsets.only(top:3),child:Text('${_guideTime(program.start)}–${_guideTime(program.stop)} · ${program.title}',maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:11,color:Colors.white70)))]
+              else const Text('Tap calendar to load schedule',style:TextStyle(fontSize:11,color:Colors.white38)),
+            ])),Row(mainAxisSize:MainAxisSize.min,children:[IconButton(tooltip:'Load TV schedule',onPressed:guideLoading.contains(c.id)?null:()=>_loadGuide(c),icon:const Icon(Icons.calendar_month,color:Color(0xFFFF315F))),const Icon(Icons.chevron_right,color:Colors.white38)]),
           ]))));
         },
       )),
