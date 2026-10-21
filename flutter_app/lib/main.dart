@@ -43,6 +43,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   bool matchesCategory(Channel c) => category == '🔥' || category == 'All' || category == 'General' || c.categories.any((v) => v.toLowerCase() == category.toLowerCase());
   void clearFilters() { searchController.clear(); setState(() { query=''; category='🔥'; country='All'; language='All'; libraryTab=0; }); }
   int libraryTab = 0; // 0 channels, 1 favourites, 2 history
+  String guideCategory = 'all';
   Future<void> openWebFeature(String route) async {
     final uri = Uri.parse('https://www.streamora.co.ke/$route');
     final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -50,7 +51,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   }
   void selectTab(int value) {
     if (value == 4) { setState(() => tab = value); return; }
-    if (value == 5) { openWebFeature('epg'); return; }
+
     setState(() {
     tab = value;
     searchOpen = value == 1;
@@ -131,7 +132,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
             NavigationDestination(icon:Icon(Icons.person_outline),label:'Profile'),
           ]),
       )),
-      body: tab == 4 ? _clipsNotice() : Column(children:[
+      body: tab == 4 ? _clipsNotice() : tab == 5 ? _guideScreen(all) : Column(children:[
         if(searchOpen || tab==1) Padding(padding:const EdgeInsets.fromLTRB(12,10,12,6),child:TextField(controller:searchController,autofocus:tab==1,decoration:InputDecoration(hintText:'Search channels',prefixIcon:const Icon(Icons.search),suffixIcon:IconButton(tooltip:'Clear search',icon:const Icon(Icons.close),onPressed:(){searchController.clear();setState(()=>query='');}),filled:true,fillColor:const Color(0xFF1B1C24),border:OutlineInputBorder(borderRadius:BorderRadius.circular(18),borderSide:BorderSide.none)),onChanged:(v)=>setState(()=>query=v))),
         SizedBox(height:64,child:ListView(scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:10,vertical:7),children:rail.map((entry){
           final selected=category==entry.$1 || category==entry.$2;
@@ -169,6 +170,49 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
         SizedBox(height: 44, child: ListView(scrollDirection: Axis.horizontal, children: [const Padding(padding: EdgeInsets.all(8), child: Text('✦ AI picks:')), ...['General', 'Entertainment', 'Kids', 'News'].map((v) => Padding(padding: const EdgeInsets.only(right: 5), child: ActionChip(label: Text(v), onPressed: () => setState(() => category = v))))])),
       ]),
     );
+  }
+
+
+  Widget _guideScreen(List<Channel> all) {
+    const categories = ['all','news','sports','entertainment','music','documentary'];
+    final guideChannels = all.where((c) => (country == 'All' || c.country == country) &&
+      (guideCategory == 'all' || c.categories.any((v) => v.toLowerCase() == guideCategory))).take(40).toList();
+    final templates = <String,List<String>>{
+      'news':['Morning News','World Update','Breaking News','Evening News'],
+      'sports':['Football Highlights','Sports Center','Live Match','Sports Analysis'],
+      'entertainment':['Morning Show','Talk Show','Drama Series','Comedy Hour'],
+      'music':['Top Hits','Video Countdown','Live Concert','Retro Classics'],
+      'documentary':['Nature Documentary','History Files','Science Today','World Discovery'],
+      'general':['Morning Magazine','Lifestyle Show','Feature Film','Night Program'],
+    };
+    final hour = DateTime.now().hour;
+    return Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+      Padding(padding:const EdgeInsets.fromLTRB(16,12,16,4),child:Row(children:[
+        const Icon(Icons.calendar_month,color:Color(0xFFFF315F)),
+        const SizedBox(width:8),const Expanded(child:Text('TV Schedule',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold))),
+        Text(DateTime.now().toLocal().toString().substring(0,10),style:const TextStyle(color:Colors.white54,fontSize:12)),
+      ])),
+      const Padding(padding:EdgeInsets.symmetric(horizontal:16,vertical:4),child:Text('Programme previews · select a channel to watch live',style:TextStyle(color:Colors.white54,fontSize:12))),
+      SizedBox(height:48,child:ListView(scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:12,vertical:5),children:[
+        for(final cat in categories) Padding(padding:const EdgeInsets.only(right:6),child:ChoiceChip(label:Text(cat=='all'?'All Channels':cat[0].toUpperCase()+cat.substring(1)),selected:guideCategory==cat,onSelected:(_)=>setState(()=>guideCategory=cat))),
+      ])),
+      Expanded(child:guideChannels.isEmpty?const Center(child:Text('No channels match this guide filter.')):ListView.separated(
+        padding:const EdgeInsets.fromLTRB(12,4,12,16),itemCount:guideChannels.length,separatorBuilder:(_,__)=>const SizedBox(height:8),
+        itemBuilder:(context,index){
+          final c=guideChannels[index]; final cat=c.categories.firstWhere((v)=>templates.containsKey(v.toLowerCase()),orElse:()=> 'general').toLowerCase();
+          final shows=templates[cat]??templates['general']!;
+          final nowShow=shows[hour%shows.length]; final nextShow=shows[(hour+1)%shows.length];
+          return Material(color:const Color(0xFF191A20),borderRadius:BorderRadius.circular(14),child:InkWell(borderRadius:BorderRadius.circular(14),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>ChannelScreen(channel:c))),child:Padding(padding:const EdgeInsets.all(12),child:Row(children:[
+            Container(width:54,height:54,decoration:BoxDecoration(color:Colors.white10,borderRadius:BorderRadius.circular(10)),padding:const EdgeInsets.all(5),child:c.logo.isEmpty?const Icon(Icons.live_tv):Image.network(c.logo,fit:BoxFit.contain,errorBuilder:(_,__,___)=>const Icon(Icons.live_tv))),
+            const SizedBox(width:12),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+              Text(c.name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontWeight:FontWeight.bold)),
+              const SizedBox(height:5),Row(children:[const Icon(Icons.play_circle_outline,size:14,color:Color(0xFFFF315F)),const SizedBox(width:4),Expanded(child:Text('NOW · $nowShow',maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:12,color:Colors.white70)))]),
+              const SizedBox(height:3),Row(children:[const Icon(Icons.schedule,size:14,color:Colors.white38),const SizedBox(width:4),Expanded(child:Text('NEXT · $nextShow',maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:11,color:Colors.white38)))]),
+            ])),const Icon(Icons.chevron_right,color:Colors.white38),
+          ]))));
+        },
+      )),
+    ]);
   }
 
   Widget _clipsNotice() => Center(child:Padding(padding:const EdgeInsets.all(24),child:Column(mainAxisSize:MainAxisSize.min,children:[
