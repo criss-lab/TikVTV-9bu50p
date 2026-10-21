@@ -39,6 +39,10 @@ jobs:
           java-version: '17'
       - name: Generate Android runner
         run: flutter create . --platforms=android --project-name tikvtv
+      - name: Install supplied Firebase Android configuration
+        run: cp firebase/google-services.json android/app/google-services.json
+      - name: Configure Firebase Android runner
+        run: python3 tool/configure_firebase.py
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
