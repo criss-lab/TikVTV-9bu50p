@@ -32,7 +32,7 @@ export default function ChannelDetail() {
   const [muted, setMuted]  = useState(true);
   const [pipActive, setPipActive] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
-  const { allowed, active, remainingMs, loading: accessLoading } = useViewingAccess();
+  const { allowed, active, remainingMs, loading: accessLoading } = useViewingAccess(id ?? null);
 
   const { liked, likeCount, toggleLike }     = useReactions(id || '', user?.id);
   const { isFavorite, toggleFavorite }       = useFavorites(user?.id);
