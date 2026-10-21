@@ -1,3 +1,5 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'src/media_handler.dart';
@@ -16,6 +18,8 @@ import 'src/library.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    await Firebase.initializeApp();
+    await FirebaseAnalytics.instance.logAppOpen();
     await AudioService.init(
       builder: () => TikVtvMediaHandler(playback),
       config: const AudioServiceConfig(
@@ -307,6 +311,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
     PlaybackGate.instance.onLock = playback.lockForPayment;
     library.addListener(refresh);
     library.recordWatch(widget.channel.id);
+    unawaited(FirebaseAnalytics.instance.logEvent(name: 'channel_open', parameters: {'channel_id': widget.channel.id}));
     _openChannel();
   }
   void _openChannel() {
