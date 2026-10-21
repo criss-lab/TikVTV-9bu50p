@@ -133,21 +133,26 @@ async function route(req, res) {
     try {
       const user = await authenticate(req);
       requireDb();
-      // Insert-once: channel changes, app reinstalls, and second devices cannot reset the timer.
-      await pool.query(
-        "INSERT INTO free_preview_sessions (user_id, started_at, expires_at) VALUES ($1, NOW(), NOW() + INTERVAL '15 minutes') ON CONFLICT (user_id) DO NOTHING",
-        [user.id],
-      );
-      const result = await pool.query(
-        "SELECT p.expires_at AS preview_ends_at, s.expires_at AS subscription_ends_at, (s.user_id IS NOT NULL) AS active FROM free_preview_sessions p LEFT JOIN subscriptions s ON s.user_id = p.user_id AND s.expires_at > NOW() WHERE p.user_id = $1",
-        [user.id],
-      );
-      const row = result.rows[0];
-      if (!row) throw new Error('Could not initialize preview access');
-      const active = row.active === true;
-      const previewEndsAt = row.preview_ends_at;
-      const allowed = active || new Date(previewEndsAt).getTime() > Date.now();
-      return json(res, 200, { active, ends_at: row.subscription_ends_at || null, preview_ends_at: previewEndsAt, allowed });
+      const channelId = url.searchParams.get('channel_id')?.trim();
+      if (!channelId || channelId.length > 200) return json(res, 400, { error: 'Valid channel_id is required' });
+      // Check the paid entitlement first: every paid plan unlocks every channel.
+      const paid = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1', [user.id]);
+      if (paid.rowCount) return json(res, 200, { active: true, allowed: true, ends_at: paid.rows[0].expires_at, preview_ends_at: null, previews_used: 0, previews_limit: 7 });
+      // Serialize allocations per account, including simultaneous web/APK requests.
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['preview:' + user.id]);
+        let preview = await client.query('SELECT expires_at FROM free_channel_previews WHERE user_id=$1 AND channel_id=$2', [user.id, channelId]);
+        const count = await client.query('SELECT COUNT(*)::int AS used FROM free_channel_previews WHERE user_id=$1', [user.id]);
+        const used = count.rows[0].used;
+        if (!preview.rowCount && used < 7) {
+          preview = await client.query("INSERT INTO free_channel_previews (user_id,channel_id,started_at,expires_at) VALUES ($1,$2,NOW(),NOW()+INTERVAL '15 minutes') ON CONFLICT (user_id,channel_id) DO UPDATE SET channel_id=EXCLUDED.channel_id RETURNING expires_at", [user.id,channelId]);
+        }
+        await client.query('COMMIT');
+        const expiry = preview.rows[0]?.expires_at || null;
+        return json(res, 200, { active: false, allowed: Boolean(expiry && new Date(expiry).getTime() > Date.now()), ends_at: null, preview_ends_at: expiry, previews_used: used, previews_limit: 7 });
+      } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
     } catch (e) {
       console.error('Viewing access lookup failed:', e.message);
       return json(res, e.status || 503, { error: e.message || 'Viewing access lookup failed' });
