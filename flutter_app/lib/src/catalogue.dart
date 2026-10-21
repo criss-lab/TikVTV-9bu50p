@@ -5,8 +5,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class Channel {
   final String id, name, logo, country;
+  final List<String> categories;
+  final List<String> languages;
   final List<String> urls;
-  const Channel(this.id, this.name, this.logo, this.country, this.urls);
+  const Channel(this.id, this.name, this.logo, this.country, this.urls, {this.categories = const [], this.languages = const []});
 }
 
 class ChannelCatalogue extends ChangeNotifier {
@@ -40,7 +42,7 @@ class ChannelCatalogue extends ChangeNotifier {
           final data = jsonDecode(raw) as Map<String, dynamic>;
           final saved = (data['channels'] as List<dynamic>).cast<Map<String, dynamic>>();
           channels = List.unmodifiable(saved.map((v) => Channel(v['id'] as String, v['name'] as String,
-            v['logo'] as String, v['country'] as String, List<String>.from(v['urls'] as List))));
+            v['logo'] as String, v['country'] as String, List<String>.from(v['urls'] as List), categories: List<String>.from(v['categories'] as List? ?? const []), languages: List<String>.from(v['languages'] as List? ?? const []))));
           _loadedAt = DateTime.fromMillisecondsSinceEpoch(data['timestamp'] as int);
           notifyListeners();
         }
@@ -86,7 +88,7 @@ class ChannelCatalogue extends ChangeNotifier {
         if (id is! String || name is! String || name.trim().isEmpty || !sources.containsKey(id)) continue;
         parsed.add(Channel(id, name, item['logo'] is String ? item['logo'] : '',
           item['country'] is String ? item['country'] : 'INT',
-          List.unmodifiable(sources[id]!)));
+          List.unmodifiable(sources[id]!), categories: List<String>.from(item['categories'] as List? ?? const []), languages: List<String>.from(item['languages'] as List? ?? const [])));
       }
       channels = List.unmodifiable(parsed);
       _loadedAt = DateTime.now();
@@ -95,7 +97,7 @@ class ChannelCatalogue extends ChangeNotifier {
         await prefs.setString('channel_catalogue_v1', jsonEncode({
           'timestamp': _loadedAt!.millisecondsSinceEpoch,
           'channels': parsed.map((ch) => {'id': ch.id, 'name': ch.name,
-            'logo': ch.logo, 'country': ch.country, 'urls': ch.urls}).toList(),
+            'logo': ch.logo, 'country': ch.country, 'urls': ch.urls, 'categories': ch.categories, 'languages': ch.languages}).toList(),
         }));
       } catch (e) { debugPrint('Catalogue cache write failed: $e'); }
     } catch (e) {
