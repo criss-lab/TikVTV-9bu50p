@@ -23,17 +23,17 @@ One place to discover channels, search by name, save favorites, revisit watched 
 
 ## 📥 Download TikVTV for Android
 
-**Find APK downloads here—no need to search through individual commits.**
+**Direct APK and checksum links stay the same when new successful builds update the rolling preview.** The links only become active after the first successful APK workflow publishes its release; a failed build will not be advertised as a downloadable APK.
 
 | Download area | What you get |
 | --- | --- |
-| **[📦 Releases — pinned download hub](https://github.com/criss-lab/TikVTV-9bu50p/releases)** | Version-tagged APKs and SHA-256 checksums, when a release has been published. |
+| **[⬇️ Direct APK: latest Android preview](https://github.com/criss-lab/TikVTV-9bu50p/releases/download/preview-latest/TikVTV-preview.apk)** | Direct download from the rolling preview release, available after its first successful build. |\n| **[🔐 APK SHA-256 checksum](https://github.com/criss-lab/TikVTV-9bu50p/releases/download/preview-latest/SHA256SUMS.txt)** | Verify the preview APK before installation. |\n| **[📦 All releases](https://github.com/criss-lab/TikVTV-9bu50p/releases)** | Latest preview plus version-tagged builds. |
 | **[⬇️ Latest preview build runs](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-apk.yml)** | Open a successful run → **Artifacts** → download `TikVTV-preview-<run number>` ZIP → extract `TikVTV-preview.apk`. GitHub sign-in may be required. |
 | **[🧪 Android build status](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-apk.yml)** | Check whether the latest APK actually compiled before downloading. |
 
 **Signing and installation:** CI preview APKs are signed using Flutter's generated **temporary debug signing key**, not an official persistent production key. Android may show an unknown-app-source prompt; follow Android's own installation and Play Protect guidance. We do not bypass Play Protect or guarantee approval. Because CI signing keys may change between runs, a newer preview may require uninstalling the previous preview first (back up local app data). Check the provided `SHA256SUMS.txt` against your downloaded APK. Only install files from this repository's trusted release or workflow pages.
 
-**For maintainers:** push a `v*` tag to publish a GitHub **pre-release** with its preview APK and checksum. A stable production APK requires a persistent, securely stored release signing key, versioning, and independent testing; never commit keystores or passwords.
+**For maintainers:** successful builds on `main` update the `preview-latest` pre-release and direct download link automatically. Push a `v*` tag to publish a GitHub **pre-release** with its preview APK and checksum. A stable production APK requires a persistent, securely stored release signing key, versioning, and independent testing; never commit keystores or passwords.
 
 ## 🌍 Help more viewers discover TikVTV
 
