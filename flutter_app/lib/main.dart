@@ -82,7 +82,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
           Container(width: 32,height: 32,alignment: Alignment.center,decoration: const BoxDecoration(shape: BoxShape.circle,gradient: LinearGradient(colors:[Color(0xFFFF315F),Color(0xFF32CED0)])),child: const Icon(Icons.live_tv,size: 19,color: Colors.white)),
           const SizedBox(width: 8), const Text('TikVTV',style: TextStyle(fontWeight: FontWeight.w800,fontSize: 21)),
           const Text('z',style: TextStyle(fontSize: 12,fontWeight: FontWeight.bold)),
-          const Spacer(), Container(padding: const EdgeInsets.symmetric(horizontal: 10,vertical: 5),decoration: BoxDecoration(color: Colors.white.withOpacity(.05),borderRadius: BorderRadius.circular(22),border: Border.all(color: Colors.white12)),child: Text('${all.length} ch',style: const TextStyle(fontSize: 11,color: Colors.white54))),
+          const Spacer(), Container(padding: const EdgeInsets.symmetric(horizontal: 10,vertical: 5),decoration: BoxDecoration(color: Colors.white.withValues(alpha: .05),borderRadius: BorderRadius.circular(22),border: Border.all(color: Colors.white12)),child: Text('${all.length} ch',style: const TextStyle(fontSize: 11,color: Colors.white54))),
         ]),
         actions: [
           IconButton(tooltip:'Search channels',onPressed:()=>setState(()=>searchOpen=!searchOpen),icon: const Icon(Icons.search)),
