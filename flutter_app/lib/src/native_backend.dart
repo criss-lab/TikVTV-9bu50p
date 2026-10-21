@@ -141,6 +141,9 @@ class NativeBackend extends ChangeNotifier {
     return sorted.take(limit).map((e) => {'channel_id':e.key,'score':e.value}).toList();
   }
 
+  /// Read-only entitlement used by the native playback gate. Payment credentials stay server-side.
+  Future<bool> hasPlaybackEntitlement() async => (await premiumStatus())['active'] == true;
+
   Future<Map<String, dynamic>> premiumStatus() async {
     _requireSignedIn();
     final uri = _uri('/rest/v1/premium_subscriptions', {
