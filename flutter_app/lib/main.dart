@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'src/native_backend.dart';
+import 'src/native_screens.dart';
 import 'src/catalogue.dart';
 import 'src/playback.dart';
 import 'src/library.dart';
@@ -14,6 +16,7 @@ void main() {
 final catalogue = ChannelCatalogue();
 final playback = SharedPlayback();
 final library = ChannelLibrary();
+final nativeBackend = NativeBackend.instance;
 
 class TikVTV extends StatelessWidget {
   const TikVTV({super.key});
@@ -44,11 +47,8 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   void clearFilters() { searchController.clear(); setState(() { query=''; category='🔥'; country='All'; language='All'; libraryTab=0; }); }
   int libraryTab = 0; // 0 channels, 1 favourites, 2 history
   String guideCategory = 'all';
-  Future<void> openWebFeature(String route) async {
-    final uri = Uri.parse('https://www.streamora.co.ke/$route');
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!opened && mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not open $route')));
-  }
+  void _openAccount() => Navigator.push(context, MaterialPageRoute(builder: (_) => const NativeAccountScreen()));
+  void _openPremium() => Navigator.push(context, MaterialPageRoute(builder: (_) => const NativePremiumScreen()));
   void selectTab(int value) {
     if (value == 4) { setState(() => tab = value); return; }
 
@@ -67,6 +67,8 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     catalogue.load();
     library.load();
+    nativeBackend.addListener(refresh);
+    unawaited(nativeBackend.restore());
     library.addListener(refresh);
     catalogue.addListener(refresh);
   }
@@ -81,6 +83,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     searchController.dispose();
     catalogue.removeListener(refresh);
     library.removeListener(refresh);
+    nativeBackend.removeListener(refresh);
     super.dispose();
   }
   @override
@@ -132,7 +135,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
             NavigationDestination(icon:Icon(Icons.person_outline),label:'Profile'),
           ]),
       )),
-      body: tab == 6 ? _profileScreen(all.length) : tab == 4 ? _clipsNotice() : tab == 5 ? _guideScreen(all) : Column(children:[
+      body: tab == 6 ? _profileScreen(all.length) : tab == 4 ? _clipsNotice() : tab == 5 ? _guideScreen(all) : tab == 3 ? NativeHotScreen(channels: all) : Column(children:[
         if(searchOpen || tab==1) Padding(padding:const EdgeInsets.fromLTRB(12,10,12,6),child:TextField(controller:searchController,autofocus:tab==1,decoration:InputDecoration(hintText:'Search channels',prefixIcon:const Icon(Icons.search),suffixIcon:IconButton(tooltip:'Clear search',icon:const Icon(Icons.close),onPressed:(){searchController.clear();setState(()=>query='');}),filled:true,fillColor:const Color(0xFF1B1C24),border:OutlineInputBorder(borderRadius:BorderRadius.circular(18),borderSide:BorderSide.none)),onChanged:(v)=>setState(()=>query=v))),
         SizedBox(height:64,child:ListView(scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:10,vertical:7),children:rail.map((entry){
           final selected=category==entry.$1 || category==entry.$2;
@@ -189,8 +192,9 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     ListTile(leading:const Icon(Icons.history),title:const Text('Watch history'),subtitle:const Text('Channels watched on this device'),trailing:const Icon(Icons.chevron_right),onTap:()=>setState(() {tab=0;libraryTab=2;query='';searchController.clear();searchOpen=false;category='🔥';country='All';})),
     ListTile(leading:const Icon(Icons.public),title:const Text('Explore countries'),trailing:const Icon(Icons.chevron_right),onTap:()=>selectTab(2)),
     ListTile(leading:const Icon(Icons.translate),title:const Text('Stream language'),subtitle:Text(language=='All'?'All languages':language),trailing:const Icon(Icons.chevron_right),onTap:_chooseLanguage),
-    ListTile(leading:const Icon(Icons.workspace_premium),title:const Text('Premium / subscription'),trailing:const Icon(Icons.open_in_new),onTap:()=>openWebFeature('premium')),
-    ListTile(leading:const Icon(Icons.account_circle_outlined),title:const Text('Account and sign in'),subtitle:const Text('Account services open on Streamora'),trailing:const Icon(Icons.open_in_new),onTap:()=>openWebFeature('profile')),
+    ListTile(leading:const Icon(Icons.workspace_premium),title:const Text('Premium / subscription'),subtitle:const Text('Manage subscription inside TikVTV'),trailing:const Icon(Icons.chevron_right),onTap:_openPremium),
+    ListTile(leading:const Icon(Icons.account_circle_outlined),title:Text(nativeBackend.signedIn ? (nativeBackend.email ?? 'Account') : 'Account and sign in'),subtitle:Text(nativeBackend.signedIn ? 'Signed in on this device' : 'Sign in or create an account inside TikVTV'),trailing:const Icon(Icons.chevron_right),onTap:_openAccount),
+    if(nativeBackend.signedIn) ListTile(leading:const Icon(Icons.logout),title:const Text('Sign out'),onTap:() async { await nativeBackend.signOut(); if(mounted) setState(() {}); }),
     ListTile(leading:const Icon(Icons.delete_outline),title:const Text('Clear watch history'),onTap:() async {
       final confirmed=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('Clear watch history?'),content:const Text('This removes local watch history. Favorites remain saved.'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')),TextButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Clear'))]));
       if(confirmed==true) await library.clearHistory();
@@ -201,37 +205,26 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     const categories = ['all','news','sports','entertainment','music','documentary'];
     final guideChannels = all.where((c) => (country == 'All' || c.country == country) &&
       (guideCategory == 'all' || c.categories.any((v) => v.toLowerCase() == guideCategory))).take(40).toList();
-    final templates = <String,List<String>>{
-      'news':['Morning News','World Update','Breaking News','Evening News'],
-      'sports':['Football Highlights','Sports Center','Live Match','Sports Analysis'],
-      'entertainment':['Morning Show','Talk Show','Drama Series','Comedy Hour'],
-      'music':['Top Hits','Video Countdown','Live Concert','Retro Classics'],
-      'documentary':['Nature Documentary','History Files','Science Today','World Discovery'],
-      'general':['Morning Magazine','Lifestyle Show','Feature Film','Night Program'],
-    };
-    final hour = DateTime.now().hour;
     return Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
       Padding(padding:const EdgeInsets.fromLTRB(16,12,16,4),child:Row(children:[
         const Icon(Icons.calendar_month,color:Color(0xFFFF315F)),
         const SizedBox(width:8),const Expanded(child:Text('TV Schedule',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold))),
         Text(DateTime.now().toLocal().toString().substring(0,10),style:const TextStyle(color:Colors.white54,fontSize:12)),
       ])),
-      const Padding(padding:EdgeInsets.symmetric(horizontal:16,vertical:4),child:Text('Programme previews · select a channel to watch live',style:TextStyle(color:Colors.white54,fontSize:12))),
+      const Padding(padding:EdgeInsets.symmetric(horizontal:16,vertical:4),child:Text('Channel guide · programme listings are shown only when schedule data is available',style:TextStyle(color:Colors.white54,fontSize:12))),
       SizedBox(height:48,child:ListView(scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:12,vertical:5),children:[
         for(final cat in categories) Padding(padding:const EdgeInsets.only(right:6),child:ChoiceChip(label:Text(cat=='all'?'All Channels':cat[0].toUpperCase()+cat.substring(1)),selected:guideCategory==cat,onSelected:(_)=>setState(()=>guideCategory=cat))),
       ])),
       Expanded(child:guideChannels.isEmpty?const Center(child:Text('No channels match this guide filter.')):ListView.separated(
         padding:const EdgeInsets.fromLTRB(12,4,12,16),itemCount:guideChannels.length,separatorBuilder:(_,__)=>const SizedBox(height:8),
         itemBuilder:(context,index){
-          final c=guideChannels[index]; final cat=c.categories.firstWhere((v)=>templates.containsKey(v.toLowerCase()),orElse:()=> 'general').toLowerCase();
-          final shows=templates[cat]??templates['general']!;
-          final nowShow=shows[hour%shows.length]; final nextShow=shows[(hour+1)%shows.length];
+          final c=guideChannels[index];
           return Material(color:const Color(0xFF191A20),borderRadius:BorderRadius.circular(14),child:InkWell(borderRadius:BorderRadius.circular(14),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>ChannelScreen(channel:c))),child:Padding(padding:const EdgeInsets.all(12),child:Row(children:[
             Container(width:54,height:54,decoration:BoxDecoration(color:Colors.white10,borderRadius:BorderRadius.circular(10)),padding:const EdgeInsets.all(5),child:c.logo.isEmpty?const Icon(Icons.live_tv):Image.network(c.logo,fit:BoxFit.contain,errorBuilder:(_,__,___)=>const Icon(Icons.live_tv))),
             const SizedBox(width:12),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
               Text(c.name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontWeight:FontWeight.bold)),
-              const SizedBox(height:5),Row(children:[const Icon(Icons.play_circle_outline,size:14,color:Color(0xFFFF315F)),const SizedBox(width:4),Expanded(child:Text('NOW · $nowShow',maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:12,color:Colors.white70)))]),
-              const SizedBox(height:3),Row(children:[const Icon(Icons.schedule,size:14,color:Colors.white38),const SizedBox(width:4),Expanded(child:Text('NEXT · $nextShow',maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:11,color:Colors.white38)))]),
+              const SizedBox(height:5),Text(c.country.isEmpty ? 'Live stream available' : c.country,style:const TextStyle(fontSize:12,color:Colors.white70)),
+              const SizedBox(height:3),const Text('Programme schedule unavailable for this channel',maxLines:2,overflow:TextOverflow.ellipsis,style:TextStyle(fontSize:11,color:Colors.white38)),
             ])),const Icon(Icons.chevron_right,color:Colors.white38),
           ]))));
         },
@@ -251,29 +244,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     showModalBottomSheet<void>(context:context,showDragHandle:true,builder:(ctx)=>SafeArea(child:ListView(shrinkWrap:true,children:[for(final lang in ['All',...availableLanguages]) ListTile(title:Text(lang=='All'?'All languages':lang),trailing:language==lang?const Icon(Icons.check,color:Color(0xFFFF315F)):null,onTap:(){setState(()=>language=lang);Navigator.pop(ctx);})])));
   }
 
-  void _showProfile() {
-    final availableLanguages = catalogue.channels.expand((c) => c.languages).where((v) => v.isNotEmpty).toSet().toList()..sort();
-    showModalBottomSheet<void>(context:context,showDragHandle:true,isScrollControlled:true,
-      builder:(sheetContext)=>SafeArea(child:Padding(padding:const EdgeInsets.fromLTRB(16,0,16,20),child:Column(mainAxisSize:MainAxisSize.min,children:[
-        const CircleAvatar(radius:30,backgroundColor:Color(0xFFDB4773),child:Icon(Icons.person,color:Colors.white,size:30)),
-        const SizedBox(height:8),const Text('My TikVTV',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold)),
-        const Text('Your viewing library',style:TextStyle(color:Colors.white60)),
-        ListTile(leading:const Icon(Icons.live_tv),title:const Text('All channels'),onTap:(){Navigator.pop(sheetContext);selectTab(0);}),
-        ListTile(leading:const Icon(Icons.favorite),title:const Text('Favorites'),onTap:(){Navigator.pop(sheetContext);clearFilters();setState(() {tab=0;libraryTab=1;});}),
-        ListTile(leading:const Icon(Icons.history),title:const Text('Watch history'),onTap:(){Navigator.pop(sheetContext);clearFilters();setState(() {tab=0;libraryTab=2;});}),
-        ListTile(leading:const Icon(Icons.public),title:const Text('Explore countries'),onTap:(){Navigator.pop(sheetContext);selectTab(2);}),
-        ListTile(leading:const Icon(Icons.translate),title:const Text('Stream language'),subtitle:Text(language=='All'?'All languages':language),onTap:(){Navigator.pop(sheetContext);showModalBottomSheet<void>(context:context,showDragHandle:true,builder:(ctx)=>SafeArea(child:ListView(shrinkWrap:true,children:[for(final lang in ['All',...availableLanguages]) ListTile(title:Text(lang=='All'?'All languages':lang),trailing:language==lang?const Icon(Icons.check,color:Color(0xFFFF315F)):null,onTap:(){setState(()=>language=lang);Navigator.pop(ctx);})])));}),
-        ListTile(leading:const Icon(Icons.workspace_premium),title:const Text('Premium / subscription'),subtitle:const Text('Manage your Streamora subscription'),onTap:(){Navigator.pop(sheetContext);openWebFeature('premium');}),
-        ListTile(leading:const Icon(Icons.account_circle_outlined),title:const Text('Account and sign in'),subtitle:const Text('Open account services'),onTap:(){Navigator.pop(sheetContext);openWebFeature('profile');}),
-        ListTile(leading:const Icon(Icons.delete_outline),title:const Text('Clear watch history'),onTap:() async {
-          Navigator.pop(sheetContext);
-          final confirmed = await showDialog<bool>(context:context,builder:(dialogContext)=>AlertDialog(title:const Text('Clear watch history?'),content:const Text('This removes the watch history saved on this device. Favorites will be kept.'),actions:[TextButton(onPressed:()=>Navigator.pop(dialogContext,false),child:const Text('Cancel')),TextButton(onPressed:()=>Navigator.pop(dialogContext,true),child:const Text('Clear'))]));
-          if(confirmed==true) { await library.clearHistory(); if(mounted) setState(() {}); }
-        }),
-      ]))));
-  }
 
-}
 
 class ChannelScreen extends StatefulWidget {
   final Channel channel;
