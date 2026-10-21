@@ -28,6 +28,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     const readyRef    = useRef(false);
     const retryCount  = useRef(0);
     const activeRef = useRef(isActive);
+    const teaserTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
     activeRef.current = isActive;
     const [retryKey, setRetryKey] = useState(0);
@@ -192,6 +193,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         disposed = true;
         clearTimeout(timerRef.current);
         clearTimeout(preloadTimerRef.current);
+        clearTimeout(teaserTimerRef.current);
         video.removeEventListener('waiting', onWaiting);
         video.removeEventListener('stalled', onWaiting);
         video.removeEventListener('canplay', onCanPlay);
@@ -210,11 +212,41 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       if (!video) return;
       const hls = hlsRef.current as { startLoad: () => void } | null;
       if (isActive && shouldLoad) {
+        video.muted = muted;
         clearTimeout(preloadTimerRef.current);
         hls?.startLoad();
         if (ready) video.play().catch(() => {});
       } else { video.pause(); setBuffering(false); }
-    }, [isActive, ready, shouldLoad]);
+    }, [isActive, ready, shouldLoad, muted]);
+
+    // Neighbouring channels play a silent three-second teaser, pause for five
+    // seconds, and repeat. Only the focused channel can play continuously or
+    // with sound. The entitlement-controlled shouldLoad tears this down on lock.
+    useEffect(() => {
+      clearTimeout(teaserTimerRef.current);
+      const video = videoRef.current;
+      if (!video || !shouldLoad || isActive || !ready || error || document.hidden) return;
+      video.muted = true;
+      const hls = hlsRef.current as { startLoad: () => void; stopLoad: () => void } | null;
+      let cancelled = false;
+      const tease = () => {
+        if (cancelled || activeRef.current || document.hidden) return;
+        hls?.startLoad();
+        void video.play().catch(() => {});
+        teaserTimerRef.current = setTimeout(() => {
+          if (cancelled) return;
+          video.pause();
+          hls?.stopLoad();
+          teaserTimerRef.current = setTimeout(tease, 5000);
+        }, 3000);
+      };
+      tease();
+      return () => {
+        cancelled = true;
+        clearTimeout(teaserTimerRef.current);
+        if (!activeRef.current) { video.pause(); hls?.stopLoad(); }
+      };
+    }, [isActive, shouldLoad, ready, error]);
 
     // ── PiP events ───────────────────────────────────────────────────────────
     useEffect(() => {
