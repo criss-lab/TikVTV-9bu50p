@@ -1,14 +1,41 @@
-# TikVTVz PesaPal backend contract
+# TikVTV payment architecture and operations
 
-The frontend invokes the authenticated Supabase/OnSpace Edge Function named `pesapal-payment`. **Do not ship PesaPal consumer credentials in Vite variables, the Android APK, or GitHub.** Configure server-only `PESAPAL_CONSUMER_KEY`, `PESAPAL_CONSUMER_SECRET`, and environment-specific PesaPal API base URL in the backend's secret manager. Credentials from BeroTV must be transferred privately and only if authorized for TikVTVz merchant transactions.
+## Ownership boundaries
 
-## Required server actions
-- `initiate`: identify the user from the verified Authorization JWT, not a request-body userId. Create a unique pending order tied to that user, expected plan, price, and currency; obtain PesaPal bearer token server-side; submit the order with approved callback/IPN URLs; persist tracking ID; return `{redirect_url}`.
-- `check_status`: authenticate JWT; look up the provided orderTrackingId in pending orders and verify ownership. Query PesaPal's transaction status API server-to-server. Verify transaction identity, expected amount/currency and merchant, and only then atomically/idempotently grant or extend `premium_subscriptions`. Return `{payment_status_description}`. Never trust a browser query parameter or a client-supplied status as payment evidence.
-- IPN: accept PesaPal notifications and independently verify status via PesaPal API. Upsert the transaction and entitlement idempotently; tolerate duplicate/out-of-order callbacks. The callback page is a fallback for delayed IPNs.
+- **Supabase** remains the identity provider and normal application backend: authentication, sessions, profiles, reactions, comments, and other non-payment features.
+- **Render payment API** is the only client-facing payment service. It validates Supabase bearer tokens against Supabase Auth before accepting checkout, status, or subscription requests.
+- **Neon PostgreSQL** stores payment orders, verified PesaPal event records, and premium subscription expiries. Web and Flutter clients must not read or write premium entitlements directly in Supabase.
+- **PesaPal** collects payment and supplies transaction status. The backend verifies the transaction server-to-server before activating access.
 
-## Database / RLS
-Use `premium_subscriptions` with `user_id`, `status='active'`, and `ends_at` fields. Allow authenticated users to SELECT only their own subscriptions. Deny direct client INSERT/UPDATE/DELETE of premium entitlements; only the privileged backend grants them. Orders must have a unique tracking ID and unique provider transaction ID, and belong to a single authenticated user.
+## Plans
 
-## Deployment checklist
-Configure the function, PesaPal credentials, callback URL `https://<your-app-domain>/payment-callback`, IPN registration, plan price/currency, and database schema on TikVTVz's actual OnSpace backend. Test successful, pending, failed, duplicate IPN, delayed database write, login resume, and expiry. The frontend does not claim payment success until it can read a valid entitlement.
+The server owns the authoritative prices and durations:
+
+| Plan code | Price | Duration |
+| --- | ---: | --- |
+| `half_day` | KSh 5 | 12 hours |
+| `day` | KSh 10 | 24 hours |
+| `week` | KSh 40 | 7 days |
+| `month` | KSh 130 | 30 days |
+
+Clients submit only the plan code; the server calculates the amount and duration.
+
+## API contract
+
+- `POST /v1/checkout`: requires a valid Supabase bearer token and a plan code. Creates a pending Neon order and returns the PesaPal redirect URL.
+- `POST /v1/payment/status`: requires a valid bearer token and order tracking ID. Checks order ownership and independently asks PesaPal for the transaction status.
+- `GET /v1/subscription`: returns the authenticated user's active Neon entitlement and expiry.
+- `GET /pesapal/ipn`: verifies notifications server-to-server and records/activates the matching order idempotently.
+- `GET /pesapal/readiness`: reports ready only when Neon, the payment schema, Supabase token validation configuration, and PesaPal credentials are available.
+
+Do not accept a client-supplied user ID, amount, payment status, or expiry as authoritative. A callback's tracking ID and merchant reference must identify the same order. Failed, reversed, cancelled, pending, or mismatched transactions must never grant access.
+
+## Database migration and deployment
+
+The Neon schema is defined in `payment-backend/schema.sql`. The repeatable migration command is `npm run migrate` from `payment-backend`; it uses the server-only `DATABASE_URL` and verifies that all three required tables exist. The Render secret-sync workflow maps GitHub's `NEON_DATABASE_URL` to Render's `DATABASE_URL`, preserves the Supabase URL/key needed for token validation, sets the registered PesaPal IPN to the live environment, deploys, and requires live readiness.
+
+Required GitHub Actions secrets include `Render_api_secret`, `NEON_DATABASE_URL`, `PESAPAL_CONSUMER_KEY`, `PESAPAL_CONSUMER_SECRET`, `VITE_SUPABASE_URL`, and `VITE_SUPABASE_ANON_KEY`. Never put PesaPal consumer credentials or the Neon connection string in Vite variables, source code, logs, or the Android APK.
+
+## Validation
+
+The payment-backend quality workflow checks Node syntax and runs plan regression tests. Before production release, also run a real low-value live payment end-to-end, verify the PesaPal callback/IPN, confirm the matching Neon order and expiry, test duplicate/out-of-order callbacks, and verify that access expires server-side. A successful readiness check proves dependencies and schema are reachable; it does not by itself prove a real payment has been processed.
