@@ -177,10 +177,10 @@ export default function Feed() {
       </div>
 
       {!accessLoading && !active && !allowed && (
-        <div className="fixed inset-0 z-40 pointer-events-none flex flex-col items-center justify-center gap-4 bg-black/95 px-6 text-center text-white">
+        <div className="fixed inset-x-3 bottom-24 z-[100] flex flex-col items-center justify-center gap-4 rounded-2xl border border-white/15 bg-zinc-950/95 p-6 text-center text-white shadow-2xl">
           <h2 className="text-2xl font-bold">Free preview ended</h2>
           <p className="text-white/70">{previewsUsed >= 7 ? 'Your seven channel previews are used. Unlock all channels with Premium.' : 'This channel’s 15-minute preview has ended. Swipe to another channel for a fresh preview, or unlock all channels.'}</p>
-          <button className="pointer-events-auto rounded-xl bg-primary px-6 py-3 font-bold" onClick={() => navigate('/premium')}>Unlock Premium</button>
+          <button type="button" className="w-full rounded-xl bg-primary px-6 py-3 font-bold" onClick={() => navigate('/premium')}>Unlock all channels — view plans</button>
         </div>
       )}
       {!accessLoading && !active && allowed && (
