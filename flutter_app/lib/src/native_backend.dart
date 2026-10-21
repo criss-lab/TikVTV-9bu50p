@@ -2,12 +2,14 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Account sign-in remains with the existing identity provider; payments and entitlements
 /// are exclusively handled by the Render API backed by Neon and Pesapal.
 class NativeBackend extends ChangeNotifier {
   NativeBackend._();
   static final NativeBackend instance = NativeBackend._();
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
   static const String _url = String.fromEnvironment('SUPABASE_URL');
   static const String _key = String.fromEnvironment('SUPABASE_ANON_KEY');
   static const String _paymentApi = String.fromEnvironment('PAYMENT_API_URL', defaultValue: 'https://tikvtv-payment-api.onrender.com');
@@ -33,8 +35,27 @@ class NativeBackend extends ChangeNotifier {
   Future<void> restore() async {
     if (!configured) return;
     final prefs = await SharedPreferences.getInstance();
-    accessToken = prefs.getString('native_supabase_access');
-    refreshToken = prefs.getString('native_supabase_refresh');
+    // Migrate legacy session tokens out of ordinary preferences into Android Keystore-backed storage.
+    accessToken = await _secureStorage.read(key: 'native_supabase_access');
+    refreshToken = await _secureStorage.read(key: 'native_supabase_refresh');
+    if (accessToken == null || refreshToken == null) {
+      final legacyAccess = prefs.getString('native_supabase_access');
+      final legacyRefresh = prefs.getString('native_supabase_refresh');
+      if (legacyAccess != null && legacyRefresh != null) {
+        await _secureStorage.write(key: 'native_supabase_access', value: legacyAccess);
+        await _secureStorage.write(key: 'native_supabase_refresh', value: legacyRefresh);
+        await prefs.remove('native_supabase_access');
+        await prefs.remove('native_supabase_refresh');
+        accessToken = legacyAccess;
+        refreshToken = legacyRefresh;
+      } else {
+        // Never retain a half-restored session with no refresh credential.
+        await _secureStorage.delete(key: 'native_supabase_access');
+        await _secureStorage.delete(key: 'native_supabase_refresh');
+        accessToken = null;
+        refreshToken = null;
+      }
+    }
     final rawUser = prefs.getString('native_supabase_user');
     if (rawUser != null) { try { user = Map<String, dynamic>.from(jsonDecode(rawUser) as Map); } catch (_) { user = null; } }
     if (accessToken != null && refreshToken != null) { try { await _refreshSession(); } catch (_) { await signOut(); } }
@@ -45,7 +66,9 @@ class NativeBackend extends ChangeNotifier {
     if (token is! String || refresh is! String || profile is! Map) throw StateError('Email confirmation may be required. Check your inbox, then sign in.');
     accessToken = token; refreshToken = refresh; user = Map<String, dynamic>.from(profile);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('native_supabase_access', token); await prefs.setString('native_supabase_refresh', refresh); await prefs.setString('native_supabase_user', jsonEncode(user));
+    await _secureStorage.write(key: 'native_supabase_access', value: token);
+    await _secureStorage.write(key: 'native_supabase_refresh', value: refresh);
+    await prefs.setString('native_supabase_user', jsonEncode(user));
     notifyListeners();
   }
   Future<void> _refreshSession() async {
@@ -77,6 +100,8 @@ class NativeBackend extends ChangeNotifier {
   Future<void> signOut() async {
     if (configured && accessToken != null) { try { await http.post(_uri('/auth/v1/logout'), headers: _headers).timeout(const Duration(seconds: 8)); } catch (_) {} }
     accessToken = null; refreshToken = null; user = null;
+    await _secureStorage.delete(key: 'native_supabase_access');
+    await _secureStorage.delete(key: 'native_supabase_refresh');
     final prefs = await SharedPreferences.getInstance(); await prefs.remove('native_supabase_access'); await prefs.remove('native_supabase_refresh'); await prefs.remove('native_supabase_user'); notifyListeners();
   }
   Future<List<Map<String, dynamic>>> trending({int limit = 30}) async {

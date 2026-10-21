@@ -11,6 +11,9 @@ for name in ("INTERNET", "WAKE_LOCK", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_
         xml = xml.replace("<application", permission + "\n    <application", 1)
 if "android:usesCleartextTraffic" not in xml:
     xml = xml.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
+if "android:allowBackup" not in xml:
+    # Avoid exporting local session/profile preferences through Android backup.
+    xml = xml.replace("<application", '<application android:allowBackup="false"', 1)
 xml = xml.replace('android:name=".MainActivity"', 'android:name="com.ryanheise.audioservice.AudioServiceActivity"')
 if 'com.ryanheise.audioservice.AudioService"' not in xml:
     service = """
