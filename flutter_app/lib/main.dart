@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'src/catalogue.dart';
 import 'src/playback.dart';
 import 'src/library.dart';
@@ -42,14 +43,23 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   bool matchesCategory(Channel c) => category == '🔥' || category == 'All' || category == 'General' || c.categories.any((v) => v.toLowerCase() == category.toLowerCase());
   void clearFilters() { searchController.clear(); setState(() { query=''; category='🔥'; country='All'; language='All'; libraryTab=0; }); }
   int libraryTab = 0; // 0 channels, 1 favourites, 2 history
-  void selectTab(int value) => setState(() {
+  Future<void> openWebFeature(String route) async {
+    final uri = Uri.parse('https://www.streamora.co.ke/$route');
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not open $route')));
+  }
+  void selectTab(int value) {
+    if (value == 4) { openWebFeature('clips'); return; }
+    if (value == 5) { openWebFeature('epg'); return; }
+    setState(() {
     tab = value;
     searchOpen = value == 1;
     if (value == 0 || value == 2 || value == 5) { category = '🔥'; libraryTab = 0; country='All'; }
     if (value == 3) { category = '🔥'; libraryTab = 0; country='All'; }
     if (value == 4) { category = 'Entertainment'; libraryTab = 0; country='All'; }
     if (value == 6) { libraryTab = 0; category = '🔥'; }
-  });
+    });
+  }
   @override
   void initState() {
     super.initState();
@@ -99,13 +109,13 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
           IconButton(tooltip:'Search channels',onPressed:()=>setState(()=>searchOpen=!searchOpen),icon: const Icon(Icons.search)),
           IconButton(tooltip:'Refresh channels',onPressed:()=>catalogue.load(force:true),icon:const Icon(Icons.refresh)),
           PopupMenuButton<String>(tooltip:'Language',initialValue:language,itemBuilder:(_)=>['All',...languages].map((v)=>PopupMenuItem(value:v,child:Text(v))).toList(),onSelected:(v)=>setState(()=>language=v),child: Padding(padding:const EdgeInsets.symmetric(horizontal:8),child:Center(child:Text(language=='All'?'All⌄':'${language.toUpperCase()}⌄',style:const TextStyle(fontSize:12))))),
-          IconButton(tooltip:'Open profile',onPressed:_showProfile,icon:const CircleAvatar(radius:17,backgroundColor:Color(0xFFDB4773),child:Icon(Icons.person,color:Colors.white,size:19))),
+          IconButton(tooltip:'Open profile',onPressed:()=>openWebFeature('profile'),icon:const CircleAvatar(radius:17,backgroundColor:Color(0xFFDB4773),child:Icon(Icons.person,color:Colors.white,size:19))),
         ],
       ),
       bottomNavigationBar: SafeArea(top:false,child:Container(
         decoration:const BoxDecoration(color:Color(0xFF11131D),border:Border(top:BorderSide(color:Colors.white10))),
         child:NavigationBar(height:66,backgroundColor:const Color(0xFF11131D),indicatorColor:const Color(0xFF4B162A),selectedIndex:tab,labelBehavior:NavigationDestinationLabelBehavior.alwaysShow,
-          onDestinationSelected:(v) { if (v == 6) { _showProfile(); } else { selectTab(v); } },
+          onDestinationSelected:(v) { if (v == 6) { openWebFeature('profile'); } else { selectTab(v); } },
           destinations:const [
             NavigationDestination(icon:Icon(Icons.home_outlined),selectedIcon:Icon(Icons.home,color:Color(0xFFFF315F)),label:'Home'),
             NavigationDestination(icon:Icon(Icons.search),label:'Search'),
