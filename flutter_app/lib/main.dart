@@ -10,6 +10,7 @@ import 'src/native_screens.dart';
 import 'src/epg_service.dart';
 import 'src/catalogue.dart';
 import 'src/playback.dart';
+import 'src/playback_gate.dart';
 import 'src/library.dart';
 
 Future<void> main() async {
@@ -302,6 +303,8 @@ class _ChannelScreenState extends State<ChannelScreen> {
   void initState() {
     super.initState();
     playback.addListener(refresh);
+    PlaybackGate.instance.addListener(refresh);
+    PlaybackGate.instance.onLock = playback.lockForPayment;
     library.addListener(refresh);
     library.recordWatch(widget.channel.id);
     _openChannel();
@@ -314,6 +317,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
   @override
   void dispose() {
     playback.removeListener(refresh);
+    PlaybackGate.instance.removeListener(refresh);
     library.removeListener(refresh);
     playback.stopIfCurrent(widget.channel.id, lease: _playbackLease);
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
@@ -324,6 +328,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
   Widget build(BuildContext context) {
     final controller = playback.controller;
     final selected = playback.channel?.id == widget.channel.id;
+    final gate = PlaybackGate.instance;
     return Scaffold(
       appBar: _landscape ? null : AppBar(title: Text(widget.channel.name), actions: [
         IconButton(tooltip: 'Share channel link', icon: const Icon(Icons.share), onPressed: () async {
@@ -339,6 +344,8 @@ class _ChannelScreenState extends State<ChannelScreen> {
       ]),
       body: SafeArea(child: _landscape ? Center(child: AspectRatio(aspectRatio: 16 / 9, child: _player(controller, selected))) : ListView(children: [
         AspectRatio(aspectRatio: 16 / 9, child: _player(controller, selected)),
+        if (!gate.active) Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), child: Text(gate.locked ? 'Free viewing ended. Subscribe to unlock all channels.' : 'Free viewing remaining: ${gate.remaining.inMinutes.toString().padLeft(2, '0')}:${(gate.remaining.inSeconds % 60).toString().padLeft(2, '0')}')),
+        if (gate.locked) Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: FilledButton.icon(onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_) => const NativePremiumScreen())); await gate.refresh(); if (mounted && !gate.locked) _openChannel(); }, icon: const Icon(Icons.lock_open), label: const Text('Unlock channels with PesaPal'))),
         if (playback.error != null) TextButton.icon(
           onPressed: _openChannel,
           icon: const Icon(Icons.refresh), label: const Text('Retry stream')),
@@ -355,7 +362,8 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
   Widget _player(VideoPlayerController? controller, bool selected) => ColoredBox(color: Colors.black,
     child: Stack(fit: StackFit.expand, children: [
-      if (selected && controller != null && controller.value.isInitialized)
+      if (PlaybackGate.instance.locked) Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.lock, size: 42, color: Color(0xFFFF315F)), const SizedBox(height: 8), const Text('Free viewing ended'), const SizedBox(height: 8), FilledButton(onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_) => const NativePremiumScreen())); await PlaybackGate.instance.refresh(); if (mounted && !PlaybackGate.instance.locked) _openChannel(); }, child: const Text('Pay with PesaPal'))]))
+      else if (selected && controller != null && controller.value.isInitialized)
         Center(child: AspectRatio(aspectRatio: controller.value.aspectRatio > 0 ? controller.value.aspectRatio : 16 / 9, child: VideoPlayer(controller)))
       else Center(child: playback.error != null && !playback.loading
         ? Text(playback.error!, textAlign: TextAlign.center) : const CircularProgressIndicator()),
