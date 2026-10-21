@@ -33,6 +33,11 @@ class ChannelHome extends StatefulWidget {
 class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   String query = '';
   int tab = 0;
+  String category = '🔥';
+  String country = 'All';
+  String language = 'All';
+  static const featured = ['🔥', 'All', 'News', 'Sports', 'Movies', 'Music', 'Entertainment', 'Kids', 'Documentary', 'Lifestyle', 'Education', 'Religious', 'Business', 'Culture', 'Cooking', 'Travel', 'Weather', 'General'];
+  bool matchesCategory(Channel c) => category == '🔥' || category == 'All' || c.categories.any((v) => v.toLowerCase() == category.toLowerCase());
   @override
   void initState() {
     super.initState();
@@ -56,9 +61,16 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   }
   @override
   Widget build(BuildContext context) {
-    final channels = catalogue.channels.where((c) =>
+    final all = catalogue.channels;
+    final countries = (all.map((c) => c.country).where((v) => v.isNotEmpty).toSet().toList()..sort());
+    final languages = (all.expand((c) => c.languages).where((v) => v.isNotEmpty).toSet().toList()..sort());
+    final categories = [...featured, ...all.expand((c) => c.categories).where((v) => v.isNotEmpty && !featured.any((f) => f.toLowerCase() == v.toLowerCase())).toSet().toList()..sort()];
+    final q = query.trim().toLowerCase();
+    final channels = all.where((c) =>
       (tab == 0 || (tab == 1 ? library.isFavorite(c.id) : library.wasWatched(c.id))) &&
-      c.name.toLowerCase().contains(query.toLowerCase())).toList();
+      matchesCategory(c) && (country == 'All' || c.country == country) &&
+      (language == 'All' || c.languages.contains(language)) &&
+      (q.isEmpty || [c.name, c.country, ...c.categories, ...c.languages].any((v) => v.toLowerCase().contains(q)))).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('TikVTV Live'), actions: [
         IconButton(tooltip: 'Refresh catalogue', onPressed: () => catalogue.load(force: true), icon: const Icon(Icons.refresh)),
@@ -73,9 +85,12 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
           decoration: const InputDecoration(labelText: 'Search channels', prefixIcon: Icon(Icons.search)),
           onChanged: (value) => setState(() => query = value),
         )),
+        SizedBox(height: 48, child: ListView(scrollDirection: Axis.horizontal, children: categories.map((v) => Padding(padding: const EdgeInsets.symmetric(horizontal: 3), child: ChoiceChip(label: Text(v), selected: category == v, onSelected: (_) => setState(() => category = v)))).toList())),
+        Row(children: [Expanded(child: DropdownButton<String>(isExpanded: true, value: country, items: ['All', ...countries].map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis))).toList(), onChanged: (v) => setState(() => country = v ?? 'All'))), Expanded(child: DropdownButton<String>(isExpanded: true, value: language, items: ['All', ...languages].map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis))).toList(), onChanged: (v) => setState(() => language = v ?? 'All')))]),
         if (catalogue.error != null) Padding(padding: const EdgeInsets.all(12),
           child: Text('Catalogue: ${catalogue.error}', style: const TextStyle(color: Colors.orange))),
         if (catalogue.loading) const LinearProgressIndicator(),
+        if (!catalogue.loading && channels.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('No matching channels. Try another category or clear your filters.')),
         Expanded(child: ListView.builder(
           itemCount: channels.length,
           itemBuilder: (context, index) {
