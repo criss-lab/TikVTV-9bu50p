@@ -224,7 +224,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
           initialValue: selectedPlan,
           decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Subscription duration'),
           items: const [
-            DropdownMenuItem(value: 'half_day', child: Text('12 hours — KSh 5')),
+            DropdownMenuItem(value: 'half_day', child: Text('13 hours — KSh 5')),
             DropdownMenuItem(value: 'day', child: Text('1 day — KSh 10')),
             DropdownMenuItem(value: 'week', child: Text('1 week — KSh 40')),
             DropdownMenuItem(value: 'month', child: Text('1 month — KSh 130')),
