@@ -23,6 +23,8 @@ class SharedPlayback extends ChangeNotifier {
   Duration bufferedAhead = Duration.zero;
   bool buffering = false;
   int recoveryCount = 0;
+  int _lastReportedSecond = -1;
+  bool _lastReportedBuffering = false;
 
   /// A route owns only its lease; an older route cannot stop a newer player.
   int get lease => _lease;
@@ -50,6 +52,7 @@ class SharedPlayback extends ChangeNotifier {
   Future<void> open(Channel next) async {
     final token = ++_generation;
     _lease = token;
+    _lastReportedSecond = -1;
     bufferedAhead = Duration.zero;
     buffering = false;
     final previous = controller;
@@ -138,7 +141,12 @@ class SharedPlayback extends ChangeNotifier {
               break;
             }
           }
-          notifyListeners();
+          final second = candidate.value.position.inSeconds;
+          if (second != _lastReportedSecond || buffering != _lastReportedBuffering) {
+            _lastReportedSecond = second;
+            _lastReportedBuffering = buffering;
+            notifyListeners();
+          }
         });
         notifyListeners();
         return;
