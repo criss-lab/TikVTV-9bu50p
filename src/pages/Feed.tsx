@@ -27,8 +27,6 @@ export default function Feed() {
   const [deadIds,     setDeadIds]    = useState<Set<string>>(new Set());
   const [liveIds,     setLiveIds]    = useState<Set<string>>(new Set());
   const t = useT();
-  const { allowed, active, remainingMs, loading: accessLoading } = useViewingAccess();
-
   const { channels, loading, hasMore, loadMore, total, error } = useChannels(category, countryFilter);
   const { user }     = useAuthStore();
   const { addToHistory } = useWatchHistory();
@@ -41,6 +39,7 @@ export default function Feed() {
   }, [catParam, category]);
 
   const liveChannels = channels.filter(ch => !deadIds.has(ch.id));
+  const { allowed, active, remainingMs, loading: accessLoading, previewsUsed } = useViewingAccess(liveChannels[activeIndex]?.id ?? null);
   const liveCount    = liveIds.size;
 
   // IntersectionObserver: detect active card & load more
@@ -146,7 +145,7 @@ export default function Feed() {
             key={`${channel.id}-${category}-${index}`}
             channel={channel}
             isActive={index === activeIndex}
-            shouldLoad={allowed && !accessLoading && Math.abs(index - activeIndex) <= PRELOAD_RADIUS}
+            shouldLoad={allowed && !accessLoading && index === activeIndex}
             index={index}
             user={user}
             onAuthRequired={() => setShowAuth(true)}
@@ -180,12 +179,12 @@ export default function Feed() {
       {!accessLoading && !active && !allowed && (
         <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-4 bg-black/95 px-6 text-center text-white">
           <h2 className="text-2xl font-bold">Free preview ended</h2>
-          <p className="text-white/70">Your 15-minute preview has elapsed. Unlock channels with Premium.</p>
+          <p className="text-white/70">{previewsUsed >= 7 ? 'Your seven channel previews are used. Unlock all channels with Premium.' : 'This channel’s 15-minute preview has ended. Swipe to another channel for a fresh preview, or unlock all channels.'}</p>
           <button className="rounded-xl bg-primary px-6 py-3 font-bold" onClick={() => navigate('/premium')}>Unlock Premium</button>
         </div>
       )}
       {!accessLoading && !active && allowed && (
-        <div className="fixed left-3 top-16 z-30 rounded-lg bg-black/75 px-3 py-2 text-xs font-semibold text-white pointer-events-none">Free preview {String(Math.floor(remainingMs / 60000)).padStart(2, '0')}:{String(Math.floor(remainingMs % 60000 / 1000)).padStart(2, '0')}</div>
+        <div className="fixed left-3 top-16 z-30 rounded-lg bg-black/75 px-3 py-2 text-xs font-semibold text-white pointer-events-none">Channel preview {String(Math.floor(remainingMs / 60000)).padStart(2, '0')}:{String(Math.floor(remainingMs % 60000 / 1000)).padStart(2, '0')}</div>
       )}
       {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
     </div>
