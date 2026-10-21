@@ -1,6 +1,7 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 import pg from 'pg';
+import { plans } from './plans.js';
 
 const { Pool } = pg;
 const port = Number(process.env.PORT || 10000);
@@ -8,12 +9,6 @@ const live = process.env.PESAPAL_ENVIRONMENT === 'live';
 const base = live ? 'https://pay.pesapal.com/v3' : 'https://cybqa.pesapal.com/pesapalv3';
 const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: true }, max: 5, idleTimeoutMillis: 10000, connectionTimeoutMillis: 10000 }) : null;
 const allowedOrigins = new Set((process.env.CORS_ORIGINS || 'https://streamora.co.ke,https://www.streamora.co.ke').split(',').map(x => x.trim()).filter(Boolean));
-const plans = {
-  half_day: { amount: 5, durationMs: 12 * 60 * 60 * 1000, label: '12-hour access' },
-  day: { amount: 10, durationMs: 24 * 60 * 60 * 1000, label: 'Daily access' },
-  week: { amount: 40, durationMs: 7 * 24 * 60 * 60 * 1000, label: 'Weekly access' },
-  month: { amount: 130, durationMs: 30 * 24 * 60 * 60 * 1000, label: 'Monthly access' }
-};
 const json = (res, status, data) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); res.end(JSON.stringify(data)); };
 const configured = () => Boolean(process.env.PESAPAL_CONSUMER_KEY && process.env.PESAPAL_CONSUMER_SECRET && process.env.PESAPAL_IPN_ID);
 const authConfigured = () => Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY);
@@ -64,8 +59,13 @@ async function initOrder(user, body) {
 }
 async function verifyAndActivate(tracking, suppliedReference = '') {
   requireDb();
-  const orderResult = await pool.query("SELECT * FROM payment_orders WHERE order_tracking_id=$1 OR ($2 <> '' AND merchant_reference=$2) ORDER BY created_at DESC LIMIT 1", [tracking || '', suppliedReference || '']);
-  const order = orderResult.rows[0]; if (!order) throw Object.assign(new Error('Payment order not found'), { status: 404 });
+  if (typeof tracking !== 'string' || !tracking.trim()) throw Object.assign(new Error('Payment tracking ID is required'), { status: 400 });
+  const orderResult = await pool.query('SELECT * FROM payment_orders WHERE order_tracking_id=$1 LIMIT 1', [tracking.trim()]);
+  const order = orderResult.rows[0];
+  if (!order) throw Object.assign(new Error('Payment order not found'), { status: 404 });
+  if (suppliedReference && suppliedReference !== order.merchant_reference) {
+    throw Object.assign(new Error('Payment reference does not match the order'), { status: 400 });
+  }
   const verified = await pesapal('/api/Transactions/GetTransactionStatus?orderTrackingId=' + encodeURIComponent(order.order_tracking_id));
   const status = String(verified.payment_status_description || '').toLowerCase();
   const amount = Number(verified.amount); const currency = String(verified.currency || '').toUpperCase();
