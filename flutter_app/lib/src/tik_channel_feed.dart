@@ -139,13 +139,6 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
           child: ColoredBox(
             color: const Color(0xFF191A20),
             child: Stack(fit: StackFit.expand, children: [
-              if (selected) const IgnorePointer(child: DecoratedBox(
-                decoration: BoxDecoration(gradient: LinearGradient(
-                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                  colors: [Color(0x44000000), Colors.transparent, Color(0x99000000)],
-                  stops: [0, 0.42, 1],
-                )),
-              )),
               if (focused && !_backgrounded && !_gate.locked && controller != null && controller.value.isInitialized)
                 FittedBox(
                   fit: BoxFit.contain,
@@ -156,8 +149,24 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                 Image.network(channel.logo, fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => const Icon(Icons.live_tv, size: 60, color: Colors.white24))
               else const Icon(Icons.live_tv, size: 60, color: Colors.white24),
+              if (selected) const IgnorePointer(child: DecoratedBox(
+                decoration: BoxDecoration(gradient: LinearGradient(
+                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                  colors: [Color(0x44000000), Colors.transparent, Color(0x99000000)],
+                  stops: [0, 0.42, 1],
+                )),
+              )),
+
               if (focused && _player.loading && !_gate.locked && !_backgrounded)
-                const Center(child: CircularProgressIndicator()),
+                const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  CircularProgressIndicator(), SizedBox(height: 12),
+                  Text('Connecting to live channel…', style: TextStyle(color: Colors.white70)),
+                ])),
+              if (focused && _player.buffering && !_player.loading && !_gate.locked && !_backgrounded)
+                const Positioned(top: 16, left: 90, child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
+                  SizedBox(width: 7), Text('Buffering', style: TextStyle(fontSize: 11)),
+                ])),
               if (focused && _player.error != null && !_gate.locked && !_backgrounded)
                 Center(child: Padding(padding: const EdgeInsets.all(20),
                   child: FilledButton.icon(onPressed: () => _focus(index),
@@ -174,7 +183,7 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
               if (selected && _showHints && !_gate.locked)
                 const Positioned(top: 16, right: 14, child: Text('SWIPE ↑',
                   style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600))),
-              Positioned(right: 12, bottom: 70, child: Column(children: [
+              if (selected) Positioned(right: 12, bottom: 70, child: Column(children: [
                 IconButton(tooltip: 'Favorite', onPressed: () => _library.toggleFavorite(channel.id),
                   icon: Icon(_library.isFavorite(channel.id) ? Icons.favorite : Icons.favorite_border,
                     color: _library.isFavorite(channel.id) ? const Color(0xFFFF315F) : Colors.white)),
