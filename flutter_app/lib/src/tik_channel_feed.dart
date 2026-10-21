@@ -22,6 +22,7 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
   final PlaybackGate _gate = PlaybackGate.instance;
   int _index = 0;
   int? _lease;
+  bool _backgrounded = false;
   String? _ownedId;
   int _request = 0;
 
@@ -53,11 +54,18 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
     setState(() => _index = index);
     _preloadBatch(index);
     _ownedId = channel.id;
+    // Reserve ownership before the asynchronous open completes so disposal
+    // cannot accidentally stop a newer route's playback.
     _lease = null;
     unawaited(_library.recordWatch(channel.id));
     unawaited(_player.open(channel).then((_) {
       if (!mounted || request != _request) return;
       _lease = _player.lease;
+    }).catchError((Object error) {
+      if (mounted && request == _request) {
+        debugPrint('Channel focus failed: $error');
+        _refresh();
+      }
     }));
   }
 
@@ -81,7 +89,8 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Keep explicit background audio policy in SharedPlayback; do not autoplay
     // a different item while the app is backgrounded.
-    _player.setBackgrounded(state != AppLifecycleState.resumed);
+    _backgrounded = state != AppLifecycleState.resumed;
+    _player.setBackgrounded(_backgrounded);
   }
 
   @override
@@ -91,13 +100,18 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
     _player.removeListener(_refresh);
     _library.removeListener(_refresh);
     _gate.removeListener(_refresh);
-    if (_ownedId != null) _player.stopIfCurrent(_ownedId!, lease: _lease);
+    // Do not tear down playback owned by another route or an unfinished open.
+    if (_ownedId != null && _lease != null) {
+      _player.stopIfCurrent(_ownedId!, lease: _lease);
+    }
     _pages.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => PageView.builder(
+  Widget build(BuildContext context) => widget.channels.isEmpty
+      ? const Center(child: Text('No channels available yet. Try refreshing the catalogue.'))
+      : PageView.builder(
     controller: _pages,
     scrollDirection: Axis.vertical,
     itemCount: widget.channels.length,
@@ -105,6 +119,7 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
     itemBuilder: (context, index) {
       final channel = widget.channels[index];
       final focused = index == _index && _player.channel?.id == channel.id;
+      final selected = index == _index;
       final controller = focused ? _player.controller : null;
       return Padding(
         padding: const EdgeInsets.fromLTRB(10, 5, 10, 9),
@@ -113,7 +128,7 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
           child: ColoredBox(
             color: const Color(0xFF191A20),
             child: Stack(fit: StackFit.expand, children: [
-              if (focused && !_gate.locked && controller != null && controller.value.isInitialized)
+              if (focused && !_backgrounded && !_gate.locked && controller != null && controller.value.isInitialized)
                 FittedBox(
                   fit: BoxFit.contain,
                   child: SizedBox(width: controller.value.size.width, height: controller.value.size.height,
@@ -123,13 +138,13 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                 Image.network(channel.logo, fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => const Icon(Icons.live_tv, size: 60, color: Colors.white24))
               else const Icon(Icons.live_tv, size: 60, color: Colors.white24),
-              if (focused && _player.loading && !_gate.locked)
+              if (focused && _player.loading && !_gate.locked && !_backgrounded)
                 const Center(child: CircularProgressIndicator()),
-              if (focused && _player.error != null && !_gate.locked)
+              if (focused && _player.error != null && !_gate.locked && !_backgrounded)
                 Center(child: Padding(padding: const EdgeInsets.all(20),
                   child: FilledButton.icon(onPressed: () => _focus(index),
                     icon: const Icon(Icons.refresh), label: const Text('Retry stream')))),
-              if (_gate.locked)
+              if (selected && _gate.locked)
                 const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
                   Icon(Icons.lock, size: 42), SizedBox(height: 8),
                   Text('Subscription required to play live TV'),
