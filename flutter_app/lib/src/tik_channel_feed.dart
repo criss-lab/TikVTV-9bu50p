@@ -59,7 +59,13 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
     _lease = null;
     unawaited(_library.recordWatch(channel.id));
     unawaited(_player.open(channel).then((_) {
-      if (!mounted || request != _request) return;
+      if (!mounted || request != _request) {
+        // A disposed feed must release only the session it initiated.
+        if (!mounted && _player.channel?.id == channel.id) {
+          _player.stopIfCurrent(channel.id, lease: _player.lease);
+        }
+        return;
+      }
       _lease = _player.lease;
     }).catchError((Object error) {
       if (mounted && request == _request) {
