@@ -15,6 +15,9 @@ permissions:
 jobs:
   flutter-web:
     runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
     defaults:
       run:
         working-directory: flutter_app
@@ -28,7 +31,7 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
-      - run: flutter build web --release
+      - run: flutter build web --release --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
       - name: Configure SPA navigation
         run: |
           printf '/* /index.html 200\n' > build/web/_redirects
