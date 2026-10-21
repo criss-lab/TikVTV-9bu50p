@@ -33,19 +33,21 @@ class ChannelHome extends StatefulWidget {
 
 class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   String query = '';
+  final TextEditingController searchController = TextEditingController();
   bool searchOpen = false;
   int tab = 0;
   String category = '🔥';
   String country = 'All';
   String language = 'All';
-  bool matchesCategory(Channel c) => category == '🔥' || category == 'All' || c.categories.any((v) => v.toLowerCase() == category.toLowerCase());
+  bool matchesCategory(Channel c) => category == '🔥' || category == 'All' || category == 'General' || c.categories.any((v) => v.toLowerCase() == category.toLowerCase());
+  void clearFilters() { searchController.clear(); setState(() { query=''; category='🔥'; country='All'; language='All'; libraryTab=0; }); }
   int libraryTab = 0; // 0 channels, 1 favourites, 2 history
   void selectTab(int value) => setState(() {
     tab = value;
     searchOpen = value == 1;
-    if (value == 0 || value == 2 || value == 5) { category = '🔥'; libraryTab = 0; }
-    if (value == 3) { category = '🔥'; libraryTab = 0; }
-    if (value == 4) { category = 'Entertainment'; libraryTab = 0; }
+    if (value == 0 || value == 2 || value == 5) { category = '🔥'; libraryTab = 0; country='All'; }
+    if (value == 3) { category = '🔥'; libraryTab = 0; country='All'; }
+    if (value == 4) { category = 'Entertainment'; libraryTab = 0; country='All'; }
     if (value == 6) { libraryTab = 0; category = '🔥'; }
   });
   @override
@@ -65,6 +67,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    searchController.dispose();
     catalogue.removeListener(refresh);
     library.removeListener(refresh);
     super.dispose();
@@ -95,7 +98,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
         actions: [
           IconButton(tooltip:'Search channels',onPressed:()=>setState(()=>searchOpen=!searchOpen),icon: const Icon(Icons.search)),
           IconButton(tooltip:'Refresh channels',onPressed:()=>catalogue.load(force:true),icon:const Icon(Icons.refresh)),
-          PopupMenuButton<String>(tooltip:'Language',initialValue:language,itemBuilder:(_)=>['All',...languages].map((v)=>PopupMenuItem(value:v,child:Text(v))).toList(),onSelected:(v)=>setState(()=>language=v),child: const Padding(padding:EdgeInsets.symmetric(horizontal:8),child:Center(child:Text('EN⌄',style:TextStyle(fontSize:12))))),
+          PopupMenuButton<String>(tooltip:'Language',initialValue:language,itemBuilder:(_)=>['All',...languages].map((v)=>PopupMenuItem(value:v,child:Text(v))).toList(),onSelected:(v)=>setState(()=>language=v),child: Padding(padding:const EdgeInsets.symmetric(horizontal:8),child:Center(child:Text(language=='All'?'All⌄':'${language.toUpperCase()}⌄',style:const TextStyle(fontSize:12))))),
           IconButton(tooltip:'Open profile',onPressed:_showProfile,icon:const CircleAvatar(radius:17,backgroundColor:Color(0xFFDB4773),child:Icon(Icons.person,color:Colors.white,size:19))),
         ],
       ),
@@ -114,7 +117,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
           ]),
       )),
       body: Column(children:[
-        if(searchOpen || tab==1) Padding(padding:const EdgeInsets.fromLTRB(12,10,12,6),child:TextField(autofocus:tab==1,decoration:InputDecoration(hintText:'Search channels',prefixIcon:const Icon(Icons.search),filled:true,fillColor:const Color(0xFF1B1C24),border:OutlineInputBorder(borderRadius:BorderRadius.circular(18),borderSide:BorderSide.none)),onChanged:(v)=>setState(()=>query=v))),
+        if(searchOpen || tab==1) Padding(padding:const EdgeInsets.fromLTRB(12,10,12,6),child:TextField(controller:searchController,autofocus:tab==1,decoration:InputDecoration(hintText:'Search channels',prefixIcon:const Icon(Icons.search),suffixIcon:IconButton(tooltip:'Clear search',icon:const Icon(Icons.close),onPressed:(){searchController.clear();setState(()=>query='');}),filled:true,fillColor:const Color(0xFF1B1C24),border:OutlineInputBorder(borderRadius:BorderRadius.circular(18),borderSide:BorderSide.none)),onChanged:(v)=>setState(()=>query=v))),
         SizedBox(height:64,child:ListView(scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:10,vertical:7),children:rail.map((entry){
           final selected=category==entry.$1 || category==entry.$2;
           return Padding(padding:const EdgeInsets.symmetric(horizontal:3),child:Tooltip(message:entry.$2,child:InkWell(borderRadius:BorderRadius.circular(30),onTap:()=>setState(()=>category=entry.$1=='🔥'?'🔥':entry.$2),child:Container(width:49,alignment:Alignment.center,decoration:BoxDecoration(shape:BoxShape.circle,color:selected?Colors.white:const Color(0xFF23242A)),child:Text(entry.$1,style:TextStyle(fontSize:22,color:selected?Colors.black:Colors.white))))));
@@ -127,7 +130,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
           const SizedBox(width:12),
         ])),
         Padding(padding:const EdgeInsets.symmetric(horizontal:10,vertical:4),child:Row(children:[for(final item in <(String,int)>[('Channels',0),('Favorites',1),('History',2)]) Padding(padding:const EdgeInsets.only(right:6),child:ChoiceChip(label:Text(item.$1,style:const TextStyle(fontSize:12)),selected:libraryTab==item.$2,onSelected:(_)=>setState(()=>libraryTab=item.$2))),const Spacer(),PopupMenuButton<String>(tooltip:'Country filter',initialValue:country,itemBuilder:(_)=>['All',...countries].map((v)=>PopupMenuItem(value:v,child:Text(v))).toList(),onSelected:(v)=>setState(()=>country=v),child:const Icon(Icons.public,size:20))])),
-        Expanded(child:channels.isEmpty?Center(child:Text(catalogue.loading?'Loading channels…':'No matching channels. Try another category or clear filters.',textAlign:TextAlign.center)):ListView.builder(
+        Expanded(child:channels.isEmpty?Center(child:Column(mainAxisSize:MainAxisSize.min,children:[Text(catalogue.loading?'Loading channels…':'No matching channels. Try another category or clear filters.',textAlign:TextAlign.center),if(!catalogue.loading) TextButton(onPressed:clearFilters,child:const Text('Clear filters'))])):ListView.builder(
           padding:EdgeInsets.symmetric(horizontal:screenWidth>600?24:10,vertical:8),
           itemCount:channels.length,itemBuilder:(context,index){
             final c=channels[index];
@@ -160,8 +163,8 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
         const SizedBox(height:8),const Text('My TikVTV',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold)),
         const Text('Your viewing library',style:TextStyle(color:Colors.white60)),
         ListTile(leading:const Icon(Icons.live_tv),title:const Text('All channels'),onTap:(){Navigator.pop(sheetContext);selectTab(0);}),
-        ListTile(leading:const Icon(Icons.favorite),title:const Text('Favorites'),onTap:(){Navigator.pop(sheetContext);setState(() {tab=0;libraryTab=1;category='🔥';});}),
-        ListTile(leading:const Icon(Icons.history),title:const Text('Watch history'),onTap:(){Navigator.pop(sheetContext);setState(() {tab=0;libraryTab=2;category='🔥';});}),
+        ListTile(leading:const Icon(Icons.favorite),title:const Text('Favorites'),onTap:(){Navigator.pop(sheetContext);clearFilters();setState(() {tab=0;libraryTab=1;});}),
+        ListTile(leading:const Icon(Icons.history),title:const Text('Watch history'),onTap:(){Navigator.pop(sheetContext);clearFilters();setState(() {tab=0;libraryTab=2;});}),
         ListTile(leading:const Icon(Icons.public),title:const Text('Explore countries'),onTap:(){Navigator.pop(sheetContext);selectTab(2);}),
       ]))));
   }
