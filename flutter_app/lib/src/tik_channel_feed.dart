@@ -66,12 +66,28 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
     WidgetsBinding.instance.addObserver(this);
     _player.addListener(_refresh);
     _library.addListener(_refresh);
+    _wasLocked = _gate.locked;
     _gate.addListener(_refresh);
     _gate.onLock = _player.lockForPayment;
     WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _focus(0); });
   }
 
-  void _refresh() { if (mounted) setState(() {}); }
+  bool _wasLocked = true;
+  void _refresh() {
+    if (!mounted) return;
+    final isLocked = _gate.locked;
+    if (_wasLocked && !isLocked && widget.channels.isNotEmpty) {
+      _wasLocked = false;
+      // Locking released the shared decoder. Restart the focused channel as
+      // soon as a server-verified subscription unlocks the feed.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_gate.locked && widget.channels.isNotEmpty) _focus(_index.clamp(0, widget.channels.length - 1));
+      });
+    } else {
+      _wasLocked = isLocked;
+    }
+    setState(() {});
+  }
 
   void _preloadBatch(int index) {
     // Predict forward: warm artwork for the focused channel and the next two.
