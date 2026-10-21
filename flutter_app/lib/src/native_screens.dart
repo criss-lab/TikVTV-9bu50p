@@ -221,7 +221,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       if (!loading && !active && backend.signedIn) ...[
         const Text('Choose a plan', style: TextStyle(fontWeight: FontWeight.bold)),
         DropdownButtonFormField<String>(
-          value: selectedPlan,
+          initialValue: selectedPlan,
           decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Subscription duration'),
           items: const [
             DropdownMenuItem(value: 'half_day', child: Text('12 hours — KSh 5')),
