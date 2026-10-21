@@ -10,7 +10,8 @@ import 'library.dart';
 /// decoder; initializing three live videos simultaneously exhausts many phones.
 class TikChannelFeed extends StatefulWidget {
   final List<Channel> channels;
-  const TikChannelFeed({super.key, required this.channels});
+  final VoidCallback onUnlockPremium;
+  const TikChannelFeed({super.key, required this.channels, required this.onUnlockPremium});
   @override
   State<TikChannelFeed> createState() => _TikChannelFeedState();
 }
@@ -65,12 +66,28 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
     WidgetsBinding.instance.addObserver(this);
     _player.addListener(_refresh);
     _library.addListener(_refresh);
+    _wasLocked = _gate.locked;
     _gate.addListener(_refresh);
     _gate.onLock = _player.lockForPayment;
     WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _focus(0); });
   }
 
-  void _refresh() { if (mounted) setState(() {}); }
+  bool _wasLocked = true;
+  void _refresh() {
+    if (!mounted) return;
+    final isLocked = _gate.locked;
+    if (_wasLocked && !isLocked && widget.channels.isNotEmpty) {
+      _wasLocked = false;
+      // Locking released the shared decoder. Restart the focused channel as
+      // soon as a server-verified subscription unlocks the feed.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_gate.locked && widget.channels.isNotEmpty) _focus(_index.clamp(0, widget.channels.length - 1));
+      });
+    } else {
+      _wasLocked = isLocked;
+    }
+    setState(() {});
+  }
 
   void _preloadBatch(int index) {
     // Predict forward: warm artwork for the focused channel and the next two.
@@ -244,10 +261,26 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                   child: FilledButton.icon(onPressed: () => _focus(index),
                     icon: const Icon(Icons.refresh), label: const Text('Retry stream')))),
               if (selected && _gate.locked)
-                const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.lock, size: 42), SizedBox(height: 8),
-                  Text('Subscription required to play live TV'),
-                ])),
+                Center(child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 28),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const CircleAvatar(radius: 28, backgroundColor: Color(0x33FF315F), child: Icon(Icons.lock_open_rounded, size: 29, color: Color(0xFFFF315F))),
+                    const SizedBox(height: 12),
+                    const Text('Unlock live TV', textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    const Text('One subscription opens every channel. Already paid? Check your access without paying again.',
+                      textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: widget.onUnlockPremium,
+                      icon: const Icon(Icons.workspace_premium),
+                      label: const Text('View Premium / pay securely'),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(onPressed: () => unawaited(_gate.refresh()), icon: const Icon(Icons.refresh), label: const Text('Already paid? Check access')),
+                  ]),
+                )),
               Positioned(top: 14, left: 14, child: DecoratedBox(
                 decoration: BoxDecoration(color: const Color(0xFFFF315F), borderRadius: BorderRadius.circular(6)),
                 child: const Padding(padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
