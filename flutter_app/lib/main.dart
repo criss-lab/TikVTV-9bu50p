@@ -185,10 +185,10 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
       Expanded(child:Card(color:const Color(0xFF191A20),child:Padding(padding:const EdgeInsets.all(14),child:Column(children:[const Icon(Icons.history,color:Color(0xFFFF315F)),Text(library.history.length.toString(),style:const TextStyle(fontSize:21,fontWeight:FontWeight.bold)),const Text('History',style:TextStyle(color:Colors.white54,fontSize:12))])))),
     ]),
     const SizedBox(height:10),
-    ListTile(leading:const Icon(Icons.favorite),title:const Text('Favorites'),subtitle:const Text('Your saved channels on this device'),trailing:const Icon(Icons.chevron_right),onTap:()=>setState(()=>libraryTab=1)),
-    ListTile(leading:const Icon(Icons.history),title:const Text('Watch history'),subtitle:const Text('Channels watched on this device'),trailing:const Icon(Icons.chevron_right),onTap:()=>setState(()=>libraryTab=2)),
+    ListTile(leading:const Icon(Icons.favorite),title:const Text('Favorites'),subtitle:const Text('Your saved channels on this device'),trailing:const Icon(Icons.chevron_right),onTap:()=>setState(() {tab=0;libraryTab=1;query='';searchController.clear();category='🔥';country='All';})),
+    ListTile(leading:const Icon(Icons.history),title:const Text('Watch history'),subtitle:const Text('Channels watched on this device'),trailing:const Icon(Icons.chevron_right),onTap:()=>setState(() {tab=0;libraryTab=2;query='';searchController.clear();category='🔥';country='All';})),
     ListTile(leading:const Icon(Icons.public),title:const Text('Explore countries'),trailing:const Icon(Icons.chevron_right),onTap:()=>selectTab(2)),
-    ListTile(leading:const Icon(Icons.translate),title:const Text('Stream language'),subtitle:Text(language=='All'?'All languages':language),trailing:const Icon(Icons.chevron_right),onTap:_showProfile),
+    ListTile(leading:const Icon(Icons.translate),title:const Text('Stream language'),subtitle:Text(language=='All'?'All languages':language),trailing:const Icon(Icons.chevron_right),onTap:_chooseLanguage),
     ListTile(leading:const Icon(Icons.workspace_premium),title:const Text('Premium / subscription'),trailing:const Icon(Icons.open_in_new),onTap:()=>openWebFeature('premium')),
     ListTile(leading:const Icon(Icons.account_circle_outlined),title:const Text('Account and sign in'),subtitle:const Text('Account services open on Streamora'),trailing:const Icon(Icons.open_in_new),onTap:()=>openWebFeature('profile')),
     ListTile(leading:const Icon(Icons.delete_outline),title:const Text('Clear watch history'),onTap:() async {
@@ -245,6 +245,11 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     const SizedBox(height:8),const Text('Clip storage is disabled as requested. Live TV playback does not record or upload your streams.',textAlign:TextAlign.center,style:TextStyle(color:Colors.white60)),
     const SizedBox(height:18),FilledButton.icon(onPressed:()=>selectTab(0),icon:const Icon(Icons.live_tv),label:const Text('Watch live TV')),
   ])));
+
+  void _chooseLanguage() {
+    final availableLanguages = catalogue.channels.expand((c) => c.languages).where((v) => v.isNotEmpty).toSet().toList()..sort();
+    showModalBottomSheet<void>(context:context,showDragHandle:true,builder:(ctx)=>SafeArea(child:ListView(shrinkWrap:true,children:[for(final lang in ['All',...availableLanguages]) ListTile(title:Text(lang=='All'?'All languages':lang),trailing:language==lang?const Icon(Icons.check,color:Color(0xFFFF315F)):null,onTap:(){setState(()=>language=lang);Navigator.pop(ctx);})])));
+  }
 
   void _showProfile() {
     final availableLanguages = catalogue.channels.expand((c) => c.languages).where((v) => v.isNotEmpty).toSet().toList()..sort();
