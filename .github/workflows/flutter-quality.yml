@@ -14,6 +14,9 @@ permissions:
 jobs:
   analyze-and-test:
     runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
     defaults:
       run:
         working-directory: flutter_app
@@ -32,8 +35,8 @@ jobs:
         run: dart format lib test
       - run: flutter analyze
       - run: flutter test
-      - run: flutter build apk --debug
-      - run: flutter build apk --release
+      - run: flutter build apk --debug --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+      - run: flutter build apk --release --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
       - uses: actions/upload-artifact@v4
         with:
           name: tikvtv-flutter-debug-apk
