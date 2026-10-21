@@ -30,8 +30,12 @@ jobs:
           done
       - name: Remove unused direct packages and regenerate lockfile
         run: npm uninstall --package-lock-only --ignore-scripts xlsx jspdf
-      - name: Apply non-breaking npm security resolutions
-        run: npm audit fix --package-lock-only --ignore-scripts
+      - name: Apply available non-breaking npm security resolutions
+        shell: bash
+        run: |
+          # npm audit fix exits nonzero if any advisory remains, including advisories
+          # that require a breaking change. Verification below is authoritative.
+          npm audit fix --package-lock-only --ignore-scripts || echo 'Some advisories remain; enforcing the critical security gate below.'
       - name: Verify clean installation
         run: npm ci --ignore-scripts
       - name: Verify web build
