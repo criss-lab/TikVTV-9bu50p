@@ -19,6 +19,10 @@ class SharedPlayback extends ChangeNotifier {
   Future<void> _disposals = Future<void>.value();
   VideoPlayerController? _candidate;
   Completer<void>? _candidateSettled;
+  int _lease = 0;
+
+  /// A route owns only its lease; an older route cannot stop a newer player.
+  int get lease => _lease;
 
   Future<void> _release(VideoPlayerController? player) {
     if (player == null) return _disposals;
@@ -42,6 +46,7 @@ class SharedPlayback extends ChangeNotifier {
 
   Future<void> open(Channel next) async {
     final token = ++_generation;
+    _lease = token;
     final previous = controller;
     final pending = _candidateSettled?.future;
     controller = null;
@@ -80,8 +85,10 @@ class SharedPlayback extends ChangeNotifier {
         try {
           await initialization.timeout(const Duration(seconds: 15));
         } on TimeoutException {
-          error = 'Source ${i + 1} timed out. Waiting for native player cleanup before retry.';
-          notifyListeners();
+          if (token == _generation) {
+            error = 'Source ${i + 1} timed out. Waiting for native player cleanup before retry.';
+            notifyListeners();
+          }
           // Keep ownership until initialization settles; a timeout is not cancellation.
           try { await initialization; } catch (_) { /* release below */ }
           await _release(candidate);
@@ -138,8 +145,8 @@ class SharedPlayback extends ChangeNotifier {
     notifyListeners();
   }
 
-  void stopIfCurrent(String id) {
-    if (channel?.id != id) return;
+  void stopIfCurrent(String id, {int? lease}) {
+    if (channel?.id != id || (lease != null && lease != _lease)) return;
     ++_generation;
     final old = controller;
     controller = null;
