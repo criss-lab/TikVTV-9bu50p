@@ -8,6 +8,9 @@ on:
       - '.github/workflows/sync-pesapal-render.yml'
 permissions:
   contents: read
+concurrency:
+  group: payment-secret-sync
+  cancel-in-progress: true
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -97,7 +100,7 @@ jobs:
           for attempt in $(seq 1 36); do
             if body=$(curl --fail --silent --show-error --max-time 10 https://tikvtv-payment-api.onrender.com/pesapal/readiness); then
               echo "$body"
-              if echo "$body" | grep -q '"ready":true' && echo "$body" | grep -q '"premium_activation_enabled":true'; then
+              if echo "$body" | grep -q '"ready":true' && echo "$body" | grep -q '"premium_activation_enabled":true' && echo "$body" | grep -q '"environment":"live"' && echo "$body" | grep -q '"payment_schema":true'; then
                 echo 'Payment API readiness verified.'
                 exit 0
               fi
