@@ -16,7 +16,8 @@ export function usePremiumAccess() {
       return result.active;
     } catch (error) {
       console.error('Premium status unavailable', error);
-      setEndsAt(null);
+      // A temporary API failure is not proof that an already verified paid
+      // entitlement was revoked. Its server-issued expiry still bounds access.
       return false;
     } finally { setLoading(false); }
   }, [user?.id]);
