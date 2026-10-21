@@ -6,12 +6,13 @@ import { getViewingAccess } from '@/lib/premium';
 const PREVIEW_MS = 15 * 60 * 1000;
 const STORAGE_PREFIX = 'tikvtvz:free-preview:v2:';
 
-/** Server-owned account preview shared across web and the Capacitor APK. */
+/** Server-owned preview and paid entitlement shared across web and the Capacitor APK. */
 export function useViewingAccess() {
   const userId = useAuthStore(s => s.user?.id);
   const { active, endsAt, loading: premiumLoading, refresh } = usePremiumAccess();
   const key = STORAGE_PREFIX + 'guest';
   const [deadline, setDeadline] = useState<number | null>(null);
+  const [serverEndsAt, setServerEndsAt] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const [gateLoading, setGateLoading] = useState(true);
 
@@ -19,13 +20,14 @@ export function useViewingAccess() {
     let cancelled = false;
     setGateLoading(true);
     setDeadline(null);
-    const applyDeadline = (value: string | number | null) => {
+    setServerEndsAt(null);
+    const applyAccess = (previewValue: string | number | null, subscriptionEnd?: string | null) => {
       if (cancelled) return;
-      const parsed = typeof value === 'number' ? value : value ? Date.parse(value) : NaN;
+      const parsed = typeof previewValue === 'number' ? previewValue : previewValue ? Date.parse(previewValue) : NaN;
       let timestamp = Number.isFinite(parsed) ? parsed : Date.now();
       if (userId) {
-        // Preserve the strictest known deadline on this install so signing out does not
-        // immediately grant a fresh guest preview after an account's preview expires.
+        // Preserve the strictest known preview deadline on this install so signing out
+        // does not immediately grant a fresh guest preview after the account preview expires.
         try {
           const previous = Number(window.localStorage.getItem(key));
           if (Number.isFinite(previous) && previous > 0) timestamp = Math.min(timestamp, previous);
@@ -33,6 +35,9 @@ export function useViewingAccess() {
         } catch {
           // The account's server deadline remains authoritative even without local storage.
         }
+        setServerEndsAt(subscriptionEnd ?? null);
+      } else {
+        setServerEndsAt(null);
       }
       setDeadline(timestamp);
       setNow(Date.now());
@@ -40,15 +45,16 @@ export function useViewingAccess() {
     };
     const failClosed = () => {
       if (cancelled) return;
-      // Lock for this session without overwriting the last known-good local deadline.
+      // Fail closed if the server cannot confirm current account access.
       setDeadline(Date.now());
+      setServerEndsAt(null);
       setNow(Date.now());
       setGateLoading(false);
     };
 
     if (userId) {
       void getViewingAccess(userId)
-        .then(result => applyDeadline(result.preview_ends_at))
+        .then(result => applyAccess(result.preview_ends_at, result.ends_at))
         .catch(error => {
           console.error('Server viewing access unavailable; playback remains locked', error);
           failClosed();
@@ -67,21 +73,25 @@ export function useViewingAccess() {
       } catch {
         saved = current + PREVIEW_MS;
       }
-      applyDeadline(saved);
+      applyAccess(saved);
     }
 
     const tick = () => setNow(Date.now());
     const onResume = () => {
       tick();
-      if (userId) void getViewingAccess(userId).then(result => applyDeadline(result.preview_ends_at)).catch(() => failClosed());
+      if (userId) {
+        void getViewingAccess(userId).then(result => applyAccess(result.preview_ends_at, result.ends_at)).catch(() => failClosed());
+      }
       void refresh();
     };
     const clock = window.setInterval(tick, 1000);
+    // Refresh the server-owned entitlement frequently so payment activation and expiry
+    // propagate quickly, including when the PesaPal callback returns to this screen.
     const poll = window.setInterval(() => {
       if (userId && !document.hidden) {
-        void getViewingAccess(userId).then(result => applyDeadline(result.preview_ends_at)).catch(() => failClosed());
+        void getViewingAccess(userId).then(result => applyAccess(result.preview_ends_at, result.ends_at)).catch(() => failClosed());
       }
-    }, 15000);
+    }, 3000);
     window.addEventListener('focus', onResume);
     document.addEventListener('visibilitychange', onResume);
     return () => {
@@ -95,6 +105,8 @@ export function useViewingAccess() {
 
   const remainingMs = Math.max(0, (deadline ?? now) - now);
   const previewActive = deadline !== null && remainingMs > 0;
-  const allowed = active || previewActive;
-  return { allowed, active, endsAt, loading: premiumLoading || gateLoading, remainingMs, previewActive, refresh };
+  const serverSubscriptionActive = !!serverEndsAt && Date.parse(serverEndsAt) > now;
+  const paidActive = active || serverSubscriptionActive;
+  const allowed = paidActive || previewActive;
+  return { allowed, active: paidActive, endsAt: serverSubscriptionActive ? serverEndsAt : endsAt, loading: premiumLoading || gateLoading, remainingMs, previewActive, refresh };
 }
