@@ -7,7 +7,7 @@ test('server-side plans preserve the approved KSh prices and durations', () => {
   assert.deepEqual(
     Object.fromEntries(Object.entries(plans).map(([key, plan]) => [key, { amount: plan.amount, durationMs: plan.durationMs }])),
     {
-      half_day: { amount: 5, durationMs: 13 * 60 * 60 * 1000 },
+      half_day: { amount: 5, durationMs: 12 * 60 * 60 * 1000 },
       day: { amount: 10, durationMs: 24 * 60 * 60 * 1000 },
       week: { amount: 40, durationMs: 7 * 24 * 60 * 60 * 1000 },
       month: { amount: 130, durationMs: 30 * 24 * 60 * 60 * 1000 },
