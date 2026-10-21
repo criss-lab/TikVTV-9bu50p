@@ -38,7 +38,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   String country = 'All';
   String language = 'All';
   bool matchesCategory(Channel c) => category == '🔥' || category == 'All' || c.categories.any((v) => v.toLowerCase() == category.toLowerCase());
-  int get libraryTab => tab == 6 ? 1 : tab == 5 ? 2 : 0;
+  int libraryTab = 0; // 0 channels, 1 favourites, 2 history
   @override
   void initState() {
     super.initState();
@@ -72,7 +72,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
       (language == 'All' || c.languages.contains(language)) &&
       (q.isEmpty || [c.name, c.country, ...c.categories, ...c.languages].any((v) => v.toLowerCase().contains(q)))).toList();
     const rail = <(String, String)>[('🔥','Hot'),('📰','News'),('⚽','Sports'),('🎬','Movies'),('🎵','Music'),('🎥','Entertainment'),('🧸','Kids'),('🌍','Travel'),('👨‍🍳','Cooking'),('✈️','Lifestyle')];
-    final screenWidth = MediaQuery.sizeOf(context).width;
+    final screenWidth = MediaQuery.of(context).size.width;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF10121B), elevation: 0,
@@ -81,11 +81,11 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
           Container(width: 32,height: 32,alignment: Alignment.center,decoration: const BoxDecoration(shape: BoxShape.circle,gradient: LinearGradient(colors:[Color(0xFFFF315F),Color(0xFF32CED0)])),child: const Icon(Icons.live_tv,size: 19,color: Colors.white)),
           const SizedBox(width: 8), const Text('TikVTV',style: TextStyle(fontWeight: FontWeight.w800,fontSize: 21)),
           const Text('z',style: TextStyle(fontSize: 12,fontWeight: FontWeight.bold)),
-          const Spacer(), Container(padding: const EdgeInsets.symmetric(horizontal: 10,vertical: 5),decoration: BoxDecoration(color: Colors.white.withValues(alpha:.05),borderRadius: BorderRadius.circular(22),border: Border.all(color: Colors.white12)),child: Text('${all.length} ch',style: const TextStyle(fontSize: 11,color: Colors.white54))),
+          const Spacer(), Container(padding: const EdgeInsets.symmetric(horizontal: 10,vertical: 5),decoration: BoxDecoration(color: Colors.white.withOpacity(.05),borderRadius: BorderRadius.circular(22),border: Border.all(color: Colors.white12)),child: Text('${all.length} ch',style: const TextStyle(fontSize: 11,color: Colors.white54))),
         ]),
         actions: [
           IconButton(tooltip:'Search channels',onPressed:()=>setState(()=>searchOpen=!searchOpen),icon: const Icon(Icons.search)),
-          IconButton(tooltip:'Refresh channels',onPressed:()=>catalogue.load(force:true),icon:const Icon(Icons.notifications_none)),
+          IconButton(tooltip:'Refresh channels',onPressed:()=>catalogue.load(force:true),icon:const Icon(Icons.refresh)),
           PopupMenuButton<String>(tooltip:'Language',initialValue:language,itemBuilder:(_)=>['All',...languages].map((v)=>PopupMenuItem(value:v,child:Text(v))).toList(),onSelected:(v)=>setState(()=>language=v),child: const Padding(padding:EdgeInsets.symmetric(horizontal:8),child:Center(child:Text('EN⌄',style:TextStyle(fontSize:12))))),
           Padding(padding:const EdgeInsets.only(right:12),child:CircleAvatar(radius:17,backgroundColor:const Color(0xFFDB4773),child:Text(tab==6?'♥':'N',style:const TextStyle(color:Colors.white)))),
         ],
@@ -93,7 +93,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
       bottomNavigationBar: SafeArea(top:false,child:Container(
         decoration:const BoxDecoration(color:Color(0xFF11131D),border:Border(top:BorderSide(color:Colors.white10))),
         child:NavigationBar(height:66,backgroundColor:const Color(0xFF11131D),indicatorColor:const Color(0xFF4B162A),selectedIndex:tab,labelBehavior:NavigationDestinationLabelBehavior.alwaysShow,
-          onDestinationSelected:(v)=>setState(() {tab=v; if(v==1) searchOpen=true; if(v==3) category='🔥';}),
+          onDestinationSelected:(v)=>setState(() {tab=v; if(v==1) searchOpen=true; if(v==3) category='🔥'; if(v==0) libraryTab=0;}),
           destinations:const [
             NavigationDestination(icon:Icon(Icons.home_outlined),selectedIcon:Icon(Icons.home,color:Color(0xFFFF315F)),label:'Home'),
             NavigationDestination(icon:Icon(Icons.search),label:'Search'),
@@ -117,7 +117,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
           const Spacer(),DropdownButton<String>(value:countries.contains(country)?country:'All',items:['All',...countries].map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(),onChanged:(v)=>setState(()=>country=v??'All)),
           const SizedBox(width:12),
         ])),
-        if(tab==6) Padding(padding:const EdgeInsets.all(12),child:Row(children:[const Icon(Icons.favorite,color:Color(0xFFFF315F)),const SizedBox(width:8),const Text('Your favourites',style:TextStyle(fontWeight:FontWeight.bold)),const Spacer(),TextButton(onPressed:()=>setState(()=>tab=0),child:const Text('All channels'))])),
+        Padding(padding:const EdgeInsets.symmetric(horizontal:10,vertical:4),child:Row(children:[for(final item in <(String,int)>[('Channels',0),('Favorites',1),('History',2)]) Padding(padding:const EdgeInsets.only(right:6),child:ChoiceChip(label:Text(item.$1,style:const TextStyle(fontSize:12)),selected:libraryTab==item.$2,onSelected:(_)=>setState(()=>libraryTab=item.$2))),const Spacer(),PopupMenuButton<String>(tooltip:'Country filter',initialValue:country,itemBuilder:(_)=>['All',...countries].map((v)=>PopupMenuItem(value:v,child:Text(v))).toList(),onSelected:(v)=>setState(()=>country=v),child:const Icon(Icons.public,size:20))])),
         Expanded(child:channels.isEmpty?Center(child:Text(catalogue.loading?'Loading channels…':'No matching channels. Try another category or clear filters.',textAlign:TextAlign.center)):ListView.builder(
           padding:EdgeInsets.symmetric(horizontal:screenWidth>600?24:10,vertical:8),
           itemCount:channels.length,itemBuilder:(context,index){
