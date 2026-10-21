@@ -43,6 +43,7 @@ jobs:
           values={entry['envVar']['key']:entry['envVar'].get('value','') for entry in existing}
           values['PESAPAL_CONSUMER_KEY']=os.environ['PESAPAL_CONSUMER_KEY']
           values['PESAPAL_CONSUMER_SECRET']=os.environ['PESAPAL_CONSUMER_SECRET']
+          values['PESAPAL_IPN_ID']='14314610-0182-4a20-858a-d9c21fd81890'
           request('PUT',base,[{'key':k,'value':v} for k,v in values.items()])
           print('Render environment synchronization request completed (values withheld).')
           PY
