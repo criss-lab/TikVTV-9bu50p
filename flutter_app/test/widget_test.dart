@@ -5,7 +5,7 @@ import 'package:tikvtv/main.dart';
 void main() {
   testWidgets('TikVTV displays its channel shell', (tester) async {
     await tester.pumpWidget(const TikVTV());
-    expect(find.text('TikVTV Live'), findsOneWidget);
+    expect(find.text('TikVTV'), findsOneWidget);
     expect(find.byType(NavigationBar), findsOneWidget);
   });
 }
