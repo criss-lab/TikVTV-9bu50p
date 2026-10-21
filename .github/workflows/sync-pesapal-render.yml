@@ -90,12 +90,32 @@ jobs:
           request('PUT',base,[{'key':k,'value':v} for k,v in values.items()])
           print('Render payment environment synchronized; values withheld.')
           PY
-      - name: Trigger Render deployment
+      - name: Trigger and wait for this Render deployment
         env:
           RENDER_API_KEY: ${{ secrets.Render_api_secret }}
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error -X POST "https://api.render.com/v1/services/srv-dbc9m8g473hc73fi9vl0/deploys" -H "Authorization: Bearer $RENDER_API_KEY" -H "Content-Type: application/json" -d '{}'
+          deploy_response=$(curl --fail --silent --show-error -X POST "https://api.render.com/v1/services/srv-dbc9m8g473hc73fi9vl0/deploys" -H "Authorization: Bearer $RENDER_API_KEY" -H "Content-Type: application/json" -d '{}')
+          deploy_id=$(printf '%s' "$deploy_response" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id", ""))')
+          test -n "$deploy_id" || { echo 'Render did not return a deployment ID'; exit 1; }
+          echo "Waiting for Render deployment $deploy_id to finish."
+          for attempt in $(seq 1 60); do
+            deploy_status=$(curl --fail --silent --show-error --max-time 15 "https://api.render.com/v1/services/srv-dbc9m8g473hc73fi9vl0/deploys/$deploy_id" -H "Authorization: Bearer $RENDER_API_KEY" -H "Accept: application/json" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status", "unknown"))')
+            echo "Render deployment status: $deploy_status"
+            if [ "$deploy_status" = "live" ]; then
+              echo 'The requested Render deployment is live.'
+              exit 0
+            fi
+            case "$deploy_status" in
+              build_failed|update_failed|pre_deploy_failed|canceled|deactivated)
+                echo "Render deployment ended unsuccessfully: $deploy_status"
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          echo 'Timed out waiting for the requested Render deployment to become live.'
+          exit 1
       - name: Verify live payment API readiness
         run: |
           set -euo pipefail
