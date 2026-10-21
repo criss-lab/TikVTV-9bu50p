@@ -79,7 +79,7 @@ export function useViewingAccess() {
     const clock = window.setInterval(tick, 1000);
     const poll = window.setInterval(() => {
       if (userId && !document.hidden) {
-        void getViewingAccess(userId).then(result => applyDeadline(result.preview_ends_at)).catch(() => applyDeadline(Date.now()));
+        void getViewingAccess(userId).then(result => applyDeadline(result.preview_ends_at)).catch(() => failClosed());
       }
     }, 15000);
     window.addEventListener('focus', onResume);
