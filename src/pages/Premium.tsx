@@ -23,7 +23,7 @@ export default function Premium() {
     try {
       // The server MUST validate the plan ID and derive the amount itself. Never trust a client amount.
       const data = await invokePesapal('initiate', undefined, plan.id);
-      if (typeof data?.redirect_url !== 'string') throw new Error('Secure checkout URL unavailable');
+      if (!('redirect_url' in data) || typeof data.redirect_url !== 'string') throw new Error('Secure checkout URL unavailable');
       const checkoutUrl = new URL(data.redirect_url);
       if (checkoutUrl.protocol !== 'https:' || !['pay.pesapal.com', 'cybqa.pesapal.com'].includes(checkoutUrl.hostname)) throw new Error('Unexpected checkout destination');
       window.location.assign(data.redirect_url);
