@@ -7,8 +7,6 @@ class Channel {
   final String id, name, logo, country;
   final List<String> categories;
   final List<String> languages;
-  final List<String> categories;
-  final List<String> languages;
   final List<String> urls;
   const Channel(this.id, this.name, this.logo, this.country, this.urls, {this.categories = const [], this.languages = const []});
 }
@@ -99,7 +97,7 @@ class ChannelCatalogue extends ChangeNotifier {
         await prefs.setString('channel_catalogue_v1', jsonEncode({
           'timestamp': _loadedAt!.millisecondsSinceEpoch,
           'channels': parsed.map((ch) => {'id': ch.id, 'name': ch.name,
-            'logo': ch.logo, 'country': ch.country, 'urls': ch.urls, 'categories': ch.categories, 'languages': ch.languages, 'categories': ch.categories, 'languages': ch.languages}).toList(),
+            'logo': ch.logo, 'country': ch.country, 'urls': ch.urls, 'categories': ch.categories, 'languages': ch.languages}).toList(),
         }));
       } catch (e) { debugPrint('Catalogue cache write failed: $e'); }
     } catch (e) {
