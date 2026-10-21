@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:video_player/video_player.dart';
 import 'catalogue.dart';
+import 'playback_gate.dart';
 
 /// Exactly one active playback owner. All asynchronous work is generation-guarded.
 class SharedPlayback extends ChangeNotifier {
@@ -65,7 +66,25 @@ class SharedPlayback extends ChangeNotifier {
     }
   }
 
+  Future<void> lockForPayment() async {
+    ++_generation;
+    _cancelWatchdog();
+    final old = controller;
+    controller = null;
+    channel = null;
+    loading = false;
+    buffering = false;
+    error = null;
+    notifyListeners();
+    await _release(old);
+  }
+
   Future<void> open(Channel next) async {
+    await PlaybackGate.instance.start();
+    if (PlaybackGate.instance.locked) {
+      await lockForPayment();
+      return;
+    }
     final token = ++_generation;
     _lease = token;
     _cancelWatchdog();
@@ -96,6 +115,7 @@ class SharedPlayback extends ChangeNotifier {
 
   Future<void> _trySources(Channel selected, int token, int start) async {
     for (var i = start; i < selected.urls.length; i++) {
+      if (PlaybackGate.instance.locked) { await lockForPayment(); return; }
       if (token != _generation) { return; }
       sourceIndex = i;
       error = null;
@@ -135,6 +155,7 @@ class SharedPlayback extends ChangeNotifier {
           return;
         }
         await candidate.setLooping(false);
+        if (PlaybackGate.instance.locked) { await _release(candidate); return; }
         await candidate.play().timeout(const Duration(seconds: 8));
         if (token != _generation) {
           await _release(candidate);
