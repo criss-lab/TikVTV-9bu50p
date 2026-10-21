@@ -81,6 +81,13 @@ class PlaybackGate extends ChangeNotifier {
     notifyListeners();
   }
 
+  void acceptVerifiedStatus(Map<String, dynamic> status) {
+    final expiry = DateTime.tryParse(status['ends_at']?.toString() ?? '')?.toUtc();
+    _verifiedPaidExpiry = status['active'] == true ? expiry : null;
+    active = NativeBackend.instance.signedIn && _verifiedPaidExpiry != null && _verifiedPaidExpiry!.isAfter(DateTime.now().toUtc());
+    _tick();
+  }
+
   Future<void> refresh() async {
     if (_inflight != null) await _inflight;
     await start();
