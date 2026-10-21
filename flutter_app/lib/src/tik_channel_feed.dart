@@ -160,3 +160,4 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
       );
     },
   );
+}
