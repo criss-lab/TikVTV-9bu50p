@@ -115,7 +115,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
         if(catalogue.error!=null) Padding(padding:const EdgeInsets.all(10),child:Text('Catalogue: ${catalogue.error}',style:const TextStyle(color:Colors.orange))),
         if(tab==2 || tab==5) SizedBox(height:46,child:Row(children:[
           const Padding(padding:EdgeInsets.only(left:14),child:Text('Discover channels',style:TextStyle(fontWeight:FontWeight.bold))),
-          const Spacer(),DropdownButton<String>(value:countries.contains(country)?country:'All',items:['All',...countries].map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(),onChanged:(v)=>setState(()=>country=v??'All)),
+          const Spacer(),DropdownButton<String>(value:countries.contains(country)?country:'All',items:['All',...countries].map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(),onChanged:(v)=>setState(()=>country=v??'All')),
           const SizedBox(width:12),
         ])),
         Padding(padding:const EdgeInsets.symmetric(horizontal:10,vertical:4),child:Row(children:[for(final item in <(String,int)>[('Channels',0),('Favorites',1),('History',2)]) Padding(padding:const EdgeInsets.only(right:6),child:ChoiceChip(label:Text(item.$1,style:const TextStyle(fontSize:12)),selected:libraryTab==item.$2,onSelected:(_)=>setState(()=>libraryTab=item.$2))),const Spacer(),PopupMenuButton<String>(tooltip:'Country filter',initialValue:country,itemBuilder:(_)=>['All',...countries].map((v)=>PopupMenuItem(value:v,child:Text(v))).toList(),onSelected:(v)=>setState(()=>country=v),child:const Icon(Icons.public,size:20))])),
@@ -140,7 +140,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
             )));
           },
         )),
-        Container(height:37,padding:const EdgeInsets.symmetric(horizontal:12),decoration:const BoxDecoration(color:Color(0xFF11131D),border:Border(top:BorderSide(color:Colors.white10))),child:Row(children:[const Text('✦ AI picks:',style:TextStyle(color:Colors.white54,fontSize:11)),const SizedBox(width:8),...['General','Entertainment','Kids','News'].map((v)=>Flexible(child:Padding(padding:const EdgeInsets.only(right:5),child:ActionChip(visualDensity:VisualDensity.compact,label:Text(v,style:const TextStyle(fontSize:10)),onPressed:()=>setState(()=>category=v))))])),
+        Container(height:37,padding:const EdgeInsets.symmetric(horizontal:12),decoration:const BoxDecoration(color:Color(0xFF11131D),border:Border(top:BorderSide(color:Colors.white10))),child:Row(children:[const Text('✦ AI picks:',style:TextStyle(color:Colors.white54,fontSize:11)),const SizedBox(width:8),...['General','Entertainment','Kids','News'].map((v)=>Flexible(child:Padding(padding:const EdgeInsets.only(right:5),child:ActionChip(visualDensity:VisualDensity.compact,label:Text(v,style:const TextStyle(fontSize:10)),onPressed:()=>setState(()=>category=v)))]))),
       ]),
     );
   }
