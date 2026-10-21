@@ -48,7 +48,8 @@ class EpgService {
           if (node.getAttribute('channel') != channelId) continue;
           final start = _parseXmltvTime(node.getAttribute('start') ?? '');
           final stop = _parseXmltvTime(node.getAttribute('stop') ?? '');
-          final title = node.findElements('title').firstOrNull?.innerText.trim() ?? '';
+          final titleNodes = node.findElements('title');
+          final title = titleNodes.isEmpty ? '' : titleNodes.first.innerText.trim();
           if (start == null || stop == null || title.isEmpty || stop.isBefore(now)) continue;
           matches.add(EpgProgramme(title, start, stop));
         }
