@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 
 export const PREMIUM_CHANGED = 'tikvtvz:premium-changed';
-const PAYMENT_API_URL = (import.meta.env.VITE_PAYMENT_API_URL as string | undefined || 'https://tikvtv-payment-api.onrender.com').replace(/\/$/, '');
+const PAYMENT_API_URL = ((import.meta.env.VITE_PAYMENT_API_URL as string | undefined) || 'https://tikvtv-payment-api.onrender.com').replace(/\/$/, '');
 
 type PlanCode = 'half_day' | 'day' | 'week' | 'month';
 
