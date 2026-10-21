@@ -25,6 +25,7 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
   bool _backgrounded = false;
   String? _ownedId;
   int _request = 0;
+  bool _showHints = true;
 
   @override
   void initState() {
@@ -41,7 +42,9 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
 
   void _preloadBatch(int index) {
     // Warm images/metadata for a batch of three without playing offscreen audio.
-    for (var i = index; i < index + 3 && i < widget.channels.length; i++) {
+    final first = index > 0 ? index - 1 : index;
+    final last = (index + 1).clamp(0, widget.channels.length - 1);
+    for (var i = first; i <= last; i++) {
       final logo = widget.channels[i].logo;
       if (logo.isNotEmpty) unawaited(precacheImage(NetworkImage(logo), context).catchError((Object _) {}));
     }
@@ -51,13 +54,15 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
     if (!mounted || index < 0 || index >= widget.channels.length) return;
     final channel = widget.channels[index];
     final request = ++_request;
-    setState(() => _index = index);
+    setState(() { _index = index; _showHints = index == 0; });
     _preloadBatch(index);
     _ownedId = channel.id;
     // Reserve ownership before the asynchronous open completes so disposal
     // cannot accidentally stop a newer route's playback.
     _lease = null;
-    unawaited(_library.recordWatch(channel.id));
+    unawaited(_library.recordWatch(channel.id).catchError((Object error) {
+      debugPrint('Could not record channel watch: $error');
+    }));
     unawaited(_player.open(channel).then((_) {
       if (!mounted || request != _request) return;
       _lease = _player.lease;
@@ -73,8 +78,12 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
   void didUpdateWidget(covariant TikChannelFeed oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.channels.isEmpty) {
-      if (_ownedId != null) _player.stopIfCurrent(_ownedId!, lease: _lease);
+      ++_request;
+      if (_ownedId != null && _lease != null) {
+        _player.stopIfCurrent(_ownedId!, lease: _lease);
+      }
       _ownedId = null;
+      _lease = null;
       return;
     }
     if (_index >= widget.channels.length ||
@@ -91,6 +100,7 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
     // a different item while the app is backgrounded.
     _backgrounded = state != AppLifecycleState.resumed;
     _player.setBackgrounded(_backgrounded);
+    _refresh();
   }
 
   @override
@@ -115,6 +125,7 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
     controller: _pages,
     scrollDirection: Axis.vertical,
     itemCount: widget.channels.length,
+    allowImplicitScrolling: true,
     onPageChanged: _focus,
     itemBuilder: (context, index) {
       final channel = widget.channels[index];
@@ -128,6 +139,13 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
           child: ColoredBox(
             color: const Color(0xFF191A20),
             child: Stack(fit: StackFit.expand, children: [
+              if (selected) const IgnorePointer(child: DecoratedBox(
+                decoration: BoxDecoration(gradient: LinearGradient(
+                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                  colors: [Color(0x44000000), Colors.transparent, Color(0x99000000)],
+                  stops: [0, 0.42, 1],
+                )),
+              )),
               if (focused && !_backgrounded && !_gate.locked && controller != null && controller.value.isInitialized)
                 FittedBox(
                   fit: BoxFit.contain,
@@ -153,6 +171,9 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                 decoration: BoxDecoration(color: const Color(0xFFFF315F), borderRadius: BorderRadius.circular(6)),
                 child: const Padding(padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   child: Text('LIVE', style: TextStyle(fontWeight: FontWeight.bold))))),
+              if (selected && _showHints && !_gate.locked)
+                const Positioned(top: 16, right: 14, child: Text('SWIPE ↑',
+                  style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600))),
               Positioned(right: 12, bottom: 70, child: Column(children: [
                 IconButton(tooltip: 'Favorite', onPressed: () => _library.toggleFavorite(channel.id),
                   icon: Icon(_library.isFavorite(channel.id) ? Icons.favorite : Icons.favorite_border,
