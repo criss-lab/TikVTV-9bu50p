@@ -68,3 +68,11 @@ test('payment event history keeps distinct verified status transitions', async (
   assert.ok(server.includes('ipn_status_history_index'));
   assert.ok(migration.includes('ipn_status_history_index'));
 });
+
+test('live checkout fails closed when Pesapal environment is missing or invalid', async () => {
+  const server = await readFile(new URL('../server.js', import.meta.url), 'utf8');
+  assert.ok(server.includes("paymentEnvironment === 'live' || paymentEnvironment === 'sandbox'"));
+  assert.ok(server.includes('environmentConfigured && process.env.PESAPAL_CONSUMER_KEY'));
+  assert.ok(server.includes("reason: !pool ? 'database_missing' : !environmentConfigured ? 'pesapal_environment_invalid'"));
+  assert.ok(server.includes("environment: environmentConfigured ? paymentEnvironment : 'invalid'"));
+});
