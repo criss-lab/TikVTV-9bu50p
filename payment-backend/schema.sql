@@ -48,9 +48,15 @@ CREATE TABLE IF NOT EXISTS pesapal_ipn_events (
   merchant_reference TEXT NOT NULL,
   verification_status TEXT NOT NULL,
   payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-  received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (notification_id, order_tracking_id)
+  received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- The registered Pesapal IPN ID is shared by every callback, so key events by
+-- order and verified status. Repeated callbacks remain idempotent while a later
+-- transition (for example Pending -> Completed) is retained in the audit trail.
+ALTER TABLE pesapal_ipn_events
+  DROP CONSTRAINT IF EXISTS pesapal_ipn_events_notification_id_order_tracking_id_key;
+CREATE UNIQUE INDEX IF NOT EXISTS pesapal_ipn_events_notification_tracking_status_key
+  ON pesapal_ipn_events (notification_id, order_tracking_id, verification_status);
 CREATE INDEX IF NOT EXISTS pesapal_ipn_events_tracking_idx
   ON pesapal_ipn_events (order_tracking_id);
 

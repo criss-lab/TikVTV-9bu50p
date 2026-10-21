@@ -5,12 +5,14 @@ import { plans } from './plans.js';
 
 const { Pool } = pg;
 const port = Number(process.env.PORT || 10000);
-const live = process.env.PESAPAL_ENVIRONMENT === 'live';
+const paymentEnvironment = String(process.env.PESAPAL_ENVIRONMENT || '').trim().toLowerCase();
+const environmentConfigured = paymentEnvironment === 'live' || paymentEnvironment === 'sandbox';
+const live = paymentEnvironment === 'live';
 const base = live ? 'https://pay.pesapal.com/v3' : 'https://cybqa.pesapal.com/pesapalv3';
 const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: true }, max: 5, idleTimeoutMillis: 10000, connectionTimeoutMillis: 10000 }) : null;
 const allowedOrigins = new Set((process.env.CORS_ORIGINS || 'https://streamora.co.ke,https://www.streamora.co.ke').split(',').map(x => x.trim()).filter(Boolean));
 const json = (res, status, data) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); res.end(JSON.stringify(data)); };
-const configured = () => Boolean(process.env.PESAPAL_CONSUMER_KEY && process.env.PESAPAL_CONSUMER_SECRET && process.env.PESAPAL_IPN_ID);
+const configured = () => Boolean(environmentConfigured && process.env.PESAPAL_CONSUMER_KEY && process.env.PESAPAL_CONSUMER_SECRET && process.env.PESAPAL_IPN_ID);
 const authConfigured = () => Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY);
 function requireDb() { if (!pool) throw Object.assign(new Error('Database is not configured'), { status: 503 }); }
 async function readBody(req) {
@@ -69,11 +71,11 @@ async function verifyAndActivate(tracking, suppliedReference = '') {
   const verified = await pesapal('/api/Transactions/GetTransactionStatus?orderTrackingId=' + encodeURIComponent(order.order_tracking_id));
   const status = String(verified.payment_status_description || '').toLowerCase();
   const amount = Number(verified.amount); const currency = String(verified.currency || '').toUpperCase();
-  const complete = status === 'completed' && amount === Number(order.amount_kes) && currency === 'KES' && (!verified.merchant_reference || String(verified.merchant_reference) === order.merchant_reference);
+  const complete = status === 'completed' && amount === Number(order.amount_kes) && currency === 'KES' && String(verified.merchant_reference || '') === order.merchant_reference;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query('INSERT INTO pesapal_ipn_events (notification_id,order_tracking_id,merchant_reference,verification_status,payload) VALUES ($1,$2,$3,$4,$5::jsonb) ON CONFLICT (notification_id,order_tracking_id) DO NOTHING', [process.env.PESAPAL_IPN_ID || 'status-poll', order.order_tracking_id, order.merchant_reference, status || 'unknown', JSON.stringify({ status: verified.payment_status_description, amount: verified.amount, currency: verified.currency, confirmation_code: verified.confirmation_code || null })]);
+    await client.query('INSERT INTO pesapal_ipn_events (notification_id,order_tracking_id,merchant_reference,verification_status,payload) VALUES ($1,$2,$3,$4,$5::jsonb) ON CONFLICT (notification_id,order_tracking_id,verification_status) DO NOTHING', [process.env.PESAPAL_IPN_ID || 'status-poll', order.order_tracking_id, order.merchant_reference, status || 'unknown', JSON.stringify({ status: verified.payment_status_description, amount: verified.amount, currency: verified.currency, confirmation_code: verified.confirmation_code || null })]);
     const locked = await client.query('SELECT * FROM payment_orders WHERE id=$1 FOR UPDATE', [order.id]);
     const current = locked.rows[0];
     if (complete && current.status !== 'completed') {
@@ -95,9 +97,22 @@ async function verifyAndActivate(tracking, suppliedReference = '') {
 }
 async function route(req, res) {
   const url = new URL(req.url, 'http://localhost');
-  if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: 'ok', service: 'tikvtv-payment-backend', database_configured: Boolean(pool), auth_validation_configured: authConfigured(), pesapal_credentials_present: configured(), environment: live ? 'live' : 'sandbox' });
+  // One server-owned catalogue drives both checkout validation and the Premium UI.
+  if (req.method === 'GET' && url.pathname === '/v1/plans') {
+    return json(res, 200, {
+      currency: 'KES',
+      plans: Object.entries(plans).map(([code, plan]) => ({
+        code,
+        amount_kes: plan.amount,
+        label: plan.displayName,
+        duration_label: plan.durationLabel,
+        duration_ms: plan.durationMs,
+      })),
+    });
+  }
+  if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: 'ok', service: 'tikvtv-payment-backend', database_configured: Boolean(pool), auth_validation_configured: authConfigured(), pesapal_credentials_present: configured(), environment: environmentConfigured ? paymentEnvironment : 'invalid' });
   if (req.method === 'GET' && url.pathname === '/pesapal/readiness') {
-    if (!pool || !configured() || !authConfigured()) return json(res, 503, { ready: false, reason: !pool ? 'database_missing' : !configured() ? 'pesapal_configuration_missing' : 'account_validation_configuration_missing' });
+    if (!pool || !configured() || !authConfigured()) return json(res, 503, { ready: false, reason: !pool ? 'database_missing' : !environmentConfigured ? 'pesapal_environment_invalid' : !configured() ? 'pesapal_configuration_missing' : 'account_validation_configuration_missing' });
     try {
       await pool.query('SELECT 1');
       const schema = await pool.query(`
@@ -105,9 +120,11 @@ async function route(req, res) {
           to_regclass('public.payment_orders') IS NOT NULL AS payment_orders,
           to_regclass('public.subscriptions') IS NOT NULL AS subscriptions,
           to_regclass('public.pesapal_ipn_events') IS NOT NULL AS pesapal_ipn_events,
-          to_regclass('public.free_preview_sessions') IS NOT NULL AS free_preview_sessions
+          to_regclass('public.free_preview_sessions') IS NOT NULL AS free_preview_sessions,
+          to_regclass('public.pesapal_ipn_events_notification_tracking_status_key') IS NOT NULL AS ipn_status_history_index,
+          (SELECT is_nullable = 'YES' FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'payment_orders' AND column_name = 'order_tracking_id') AS order_tracking_id_nullable
       `);
-      if (!schema.rows[0]?.payment_orders || !schema.rows[0]?.subscriptions || !schema.rows[0]?.pesapal_ipn_events || !schema.rows[0]?.free_preview_sessions) {
+      if (!schema.rows[0]?.payment_orders || !schema.rows[0]?.subscriptions || !schema.rows[0]?.pesapal_ipn_events || !schema.rows[0]?.free_preview_sessions || !schema.rows[0]?.ipn_status_history_index || schema.rows[0]?.order_tracking_id_nullable !== true) {
         return json(res, 503, { ready: false, reason: 'payment_schema_missing' });
       }
       await token();
