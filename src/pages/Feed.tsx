@@ -145,7 +145,7 @@ export default function Feed() {
             key={`${channel.id}-${category}-${index}`}
             channel={channel}
             isActive={index === activeIndex}
-            shouldLoad={allowed && !accessLoading && index === activeIndex}
+            shouldLoad={allowed && !accessLoading && Math.abs(index - activeIndex) <= PRELOAD_RADIUS}
             index={index}
             user={user}
             onAuthRequired={() => setShowAuth(true)}
