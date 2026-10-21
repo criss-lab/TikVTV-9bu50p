@@ -79,14 +79,16 @@ export type ViewingAccessResponse = {
   ends_at: string | null;
   preview_ends_at: string;
   allowed: boolean;
+  previews_used: number;
+  previews_limit: number;
 };
 
 /** Server-owned preview deadline shared by the web app and its Capacitor APK. */
-export async function getViewingAccess(userId: string): Promise<ViewingAccessResponse> {
+export async function getViewingAccess(userId: string, channelId: string): Promise<ViewingAccessResponse> {
   const { data, error } = await supabase.auth.getSession();
   if (error) throw new Error('Could not restore your sign-in session. Please sign in again.');
   if (!data.session?.access_token || data.session.user.id !== userId) {
     throw new Error('Your account session has changed. Please sign in again.');
   }
-  return paymentRequest<ViewingAccessResponse>('/v1/viewing-access');
+  return paymentRequest<ViewingAccessResponse>('/v1/viewing-access?channel_id=' + encodeURIComponent(channelId));
 }
