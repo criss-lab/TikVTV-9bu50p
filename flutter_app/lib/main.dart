@@ -140,7 +140,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
             )));
           },
         )),
-        Container(height:37,padding:const EdgeInsets.symmetric(horizontal:12),decoration:const BoxDecoration(color:Color(0xFF11131D),border:Border(top:BorderSide(color:Colors.white10))),child:Row(children:[const Text('✦ AI picks:',style:TextStyle(color:Colors.white54,fontSize:11)),const SizedBox(width:8),...['General','Entertainment','Kids','News'].map((v)=>Flexible(child:Padding(padding:const EdgeInsets.only(right:5),child:ActionChip(visualDensity:VisualDensity.compact,label:Text(v,style:const TextStyle(fontSize:10)),onPressed:()=>setState(()=>category=v)))]))),
+        SizedBox(height: 44, child: ListView(scrollDirection: Axis.horizontal, children: [const Padding(padding: EdgeInsets.all(8), child: Text('✦ AI picks:')), ...['General', 'Entertainment', 'Kids', 'News'].map((v) => Padding(padding: const EdgeInsets.only(right: 5), child: ActionChip(label: Text(v), onPressed: () => setState(() => category = v))))])),
       ]),
     );
   }
