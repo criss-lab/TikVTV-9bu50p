@@ -57,3 +57,14 @@ test('Premium activation requires exact server-verified merchant reference, amou
   assert.ok(server.includes("currency === 'KES'"));
   assert.ok(server.includes("String(verified.merchant_reference || '') === order.merchant_reference"));
 });
+
+test('payment event history keeps distinct verified status transitions', async () => {
+  const schema = await readFile(new URL('../schema.sql', import.meta.url), 'utf8');
+  const server = await readFile(new URL('../server.js', import.meta.url), 'utf8');
+  const migration = await readFile(new URL('../migrate.js', import.meta.url), 'utf8');
+  assert.ok(schema.includes('pesapal_ipn_events_notification_tracking_status_key'));
+  assert.ok(schema.includes('DROP CONSTRAINT IF EXISTS pesapal_ipn_events_notification_id_order_tracking_id_key'));
+  assert.ok(server.includes('ON CONFLICT (notification_id,order_tracking_id,verification_status) DO NOTHING'));
+  assert.ok(server.includes('ipn_status_history_index'));
+  assert.ok(migration.includes('ipn_status_history_index'));
+});
