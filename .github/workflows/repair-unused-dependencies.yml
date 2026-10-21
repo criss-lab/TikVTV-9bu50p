@@ -1,0 +1,60 @@
+name: Repair unused vulnerable dependencies
+on:
+  workflow_dispatch:
+  push:
+    branches: [audit/production-readiness-hardening]
+    paths: ['.github/workflows/repair-unused-dependencies.yml']
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Confirm unused packages against tracked application source
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pkg in xlsx jspdf; do
+            if git grep -n -i -E "(from[[:space:]]*['\"]|import[[:space:]]*\\(['\"]|require[[:space:]]*\\(['\"])(xlsx|jspdf)(['\"/]|$)|\\b(XLSX|jsPDF)\\b" -- ':!package.json' ':!package-lock.json' ':!.github/**' ':!README.md' | tee /tmp/dependency-references.txt; then
+              echo "::error::Found potential runtime references. Review before removal."
+              exit 1
+            fi
+          done
+      - name: Remove unused direct packages and regenerate lockfile
+        run: npm uninstall --package-lock-only --ignore-scripts xlsx jspdf
+      - name: Apply non-breaking npm security resolutions
+        run: npm audit fix --package-lock-only --ignore-scripts
+      - name: Verify clean installation
+        run: npm ci --ignore-scripts
+      - name: Verify web build
+        run: npm run build
+      - name: Enforce critical security gate
+        run: npm audit --audit-level=critical
+      - name: Record complete audit
+        if: always()
+        run: npm audit --json > npm-audit-repair.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-repair-evidence
+          path: npm-audit-repair.json
+          if-no-files-found: warn
+      - name: Commit verified dependency and lockfile changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo "No dependency changes needed"
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix: remove unused vulnerable packages and refresh lockfile'
+          git push origin HEAD:audit/production-readiness-hardening
