@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1055173762252",
+    "project_id": "hot-videos-3621f",
+    "storage_bucket": "hot-videos-3621f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1055173762252:android:59c9aa91ad799f39eeb669",
+        "android_client_info": {
+          "package_name": "Com.TikVTVz.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAOtC-VfYGpGIxY6dldyLgMxQ3835gnHg8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
