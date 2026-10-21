@@ -5,12 +5,14 @@ import { plans } from './plans.js';
 
 const { Pool } = pg;
 const port = Number(process.env.PORT || 10000);
-const live = process.env.PESAPAL_ENVIRONMENT === 'live';
+const paymentEnvironment = String(process.env.PESAPAL_ENVIRONMENT || '').trim().toLowerCase();
+const environmentConfigured = paymentEnvironment === 'live' || paymentEnvironment === 'sandbox';
+const live = paymentEnvironment === 'live';
 const base = live ? 'https://pay.pesapal.com/v3' : 'https://cybqa.pesapal.com/pesapalv3';
 const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: true }, max: 5, idleTimeoutMillis: 10000, connectionTimeoutMillis: 10000 }) : null;
 const allowedOrigins = new Set((process.env.CORS_ORIGINS || 'https://streamora.co.ke,https://www.streamora.co.ke').split(',').map(x => x.trim()).filter(Boolean));
 const json = (res, status, data) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); res.end(JSON.stringify(data)); };
-const configured = () => Boolean(process.env.PESAPAL_CONSUMER_KEY && process.env.PESAPAL_CONSUMER_SECRET && process.env.PESAPAL_IPN_ID);
+const configured = () => Boolean(environmentConfigured && process.env.PESAPAL_CONSUMER_KEY && process.env.PESAPAL_CONSUMER_SECRET && process.env.PESAPAL_IPN_ID);
 const authConfigured = () => Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY);
 function requireDb() { if (!pool) throw Object.assign(new Error('Database is not configured'), { status: 503 }); }
 async function readBody(req) {
@@ -108,9 +110,9 @@ async function route(req, res) {
       })),
     });
   }
-  if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: 'ok', service: 'tikvtv-payment-backend', database_configured: Boolean(pool), auth_validation_configured: authConfigured(), pesapal_credentials_present: configured(), environment: live ? 'live' : 'sandbox' });
+  if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: 'ok', service: 'tikvtv-payment-backend', database_configured: Boolean(pool), auth_validation_configured: authConfigured(), pesapal_credentials_present: configured(), environment: environmentConfigured ? paymentEnvironment : 'invalid' });
   if (req.method === 'GET' && url.pathname === '/pesapal/readiness') {
-    if (!pool || !configured() || !authConfigured()) return json(res, 503, { ready: false, reason: !pool ? 'database_missing' : !configured() ? 'pesapal_configuration_missing' : 'account_validation_configuration_missing' });
+    if (!pool || !configured() || !authConfigured()) return json(res, 503, { ready: false, reason: !pool ? 'database_missing' : !environmentConfigured ? 'pesapal_environment_invalid' : !configured() ? 'pesapal_configuration_missing' : 'account_validation_configuration_missing' });
     try {
       await pool.query('SELECT 1');
       const schema = await pool.query(`
