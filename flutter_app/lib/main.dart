@@ -179,6 +179,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   ])));
 
   void _showProfile() {
+    final availableLanguages = catalogue.channels.expand((c) => c.languages).where((v) => v.isNotEmpty).toSet().toList()..sort();
     showModalBottomSheet<void>(context:context,showDragHandle:true,isScrollControlled:true,
       builder:(sheetContext)=>SafeArea(child:Padding(padding:const EdgeInsets.fromLTRB(16,0,16,20),child:Column(mainAxisSize:MainAxisSize.min,children:[
         const CircleAvatar(radius:30,backgroundColor:Color(0xFFDB4773),child:Icon(Icons.person,color:Colors.white,size:30)),
@@ -188,7 +189,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
         ListTile(leading:const Icon(Icons.favorite),title:const Text('Favorites'),onTap:(){Navigator.pop(sheetContext);clearFilters();setState(() {tab=0;libraryTab=1;});}),
         ListTile(leading:const Icon(Icons.history),title:const Text('Watch history'),onTap:(){Navigator.pop(sheetContext);clearFilters();setState(() {tab=0;libraryTab=2;});}),
         ListTile(leading:const Icon(Icons.public),title:const Text('Explore countries'),onTap:(){Navigator.pop(sheetContext);selectTab(2);}),
-        ListTile(leading:const Icon(Icons.translate),title:const Text('Stream language'),subtitle:Text(language=='All'?'All languages':language),onTap:(){Navigator.pop(sheetContext);showModalBottomSheet<void>(context:context,showDragHandle:true,builder:(ctx)=>SafeArea(child:ListView(shrinkWrap:true,children:[for(final lang in ['All',...catalogue.channels.expand((c)=>c.languages).where((v)=>v.isNotEmpty).toSet().toList()..sort()]) ListTile(title:Text(lang=='All'?'All languages':lang),trailing:language==lang?const Icon(Icons.check,color:Color(0xFFFF315F)):null,onTap:(){setState(()=>language=lang);Navigator.pop(ctx);})])));}),
+        ListTile(leading:const Icon(Icons.translate),title:const Text('Stream language'),subtitle:Text(language=='All'?'All languages':language),onTap:(){Navigator.pop(sheetContext);showModalBottomSheet<void>(context:context,showDragHandle:true,builder:(ctx)=>SafeArea(child:ListView(shrinkWrap:true,children:[for(final lang in ['All',...availableLanguages]) ListTile(title:Text(lang=='All'?'All languages':lang),trailing:language==lang?const Icon(Icons.check,color:Color(0xFFFF315F)):null,onTap:(){setState(()=>language=lang);Navigator.pop(ctx);})])));}),
         ListTile(leading:const Icon(Icons.workspace_premium),title:const Text('Premium / subscription'),subtitle:const Text('Manage your Streamora subscription'),onTap:(){Navigator.pop(sheetContext);openWebFeature('premium');}),
         ListTile(leading:const Icon(Icons.account_circle_outlined),title:const Text('Account and sign in'),subtitle:const Text('Open account services'),onTap:(){Navigator.pop(sheetContext);openWebFeature('profile');}),
         ListTile(leading:const Icon(Icons.delete_outline),title:const Text('Clear watch history'),onTap:() async {
