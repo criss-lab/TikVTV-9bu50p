@@ -83,7 +83,7 @@ jobs:
             'DATABASE_URL':os.environ['NEON_DATABASE_URL'],
             'PESAPAL_ENVIRONMENT':'live',
             'APP_URL':'https://streamora.co.ke',
-            'CORS_ORIGINS':'https://streamora.co.ke,https://www.streamora.co.ke'
+            'CORS_ORIGINS':'https://streamora.co.ke,https://www.streamora.co.ke,http://localhost,https://localhost,capacitor://localhost,ionic://localhost'
           })
           if os.environ.get('SUPABASE_URL'): values['SUPABASE_URL']=os.environ['SUPABASE_URL']
           if os.environ.get('SUPABASE_ANON_KEY'): values['SUPABASE_ANON_KEY']=os.environ['SUPABASE_ANON_KEY']
