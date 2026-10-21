@@ -6,20 +6,19 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - name: Check required secrets exist
         env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_API_KEY: ${{ secrets.Render_api_secret }}
           PESAPAL_CONSUMER_KEY: ${{ secrets.PESAPAL_CONSUMER_KEY }}
           PESAPAL_CONSUMER_SECRET: ${{ secrets.PESAPAL_CONSUMER_SECRET }}
         run: |
-          test -n "$RENDER_API_KEY" || { echo 'Missing RENDER_API_KEY'; exit 1; }
+          test -n "$RENDER_API_KEY" || { echo 'Missing GitHub secret Render_api_secret'; exit 1; }
           test -n "$PESAPAL_CONSUMER_KEY" || { echo 'Missing PESAPAL_CONSUMER_KEY'; exit 1; }
           test -n "$PESAPAL_CONSUMER_SECRET" || { echo 'Missing PESAPAL_CONSUMER_SECRET'; exit 1; }
       - name: Merge Pesapal credentials into Render environment
         env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_API_KEY: ${{ secrets.Render_api_secret }}
           PESAPAL_CONSUMER_KEY: ${{ secrets.PESAPAL_CONSUMER_KEY }}
           PESAPAL_CONSUMER_SECRET: ${{ secrets.PESAPAL_CONSUMER_SECRET }}
         run: |
