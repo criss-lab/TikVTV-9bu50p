@@ -38,7 +38,7 @@ class NativeBackend extends ChangeNotifier {
     // Migrate legacy session tokens out of ordinary preferences into Android Keystore-backed storage.
     accessToken = await _secureStorage.read(key: 'native_supabase_access');
     refreshToken = await _secureStorage.read(key: 'native_supabase_refresh');
-    if (accessToken == null) {
+    if (accessToken == null || refreshToken == null) {
       final legacyAccess = prefs.getString('native_supabase_access');
       final legacyRefresh = prefs.getString('native_supabase_refresh');
       if (legacyAccess != null && legacyRefresh != null) {
@@ -48,6 +48,12 @@ class NativeBackend extends ChangeNotifier {
         await prefs.remove('native_supabase_refresh');
         accessToken = legacyAccess;
         refreshToken = legacyRefresh;
+      } else {
+        // Never retain a half-restored session with no refresh credential.
+        await _secureStorage.delete(key: 'native_supabase_access');
+        await _secureStorage.delete(key: 'native_supabase_refresh');
+        accessToken = null;
+        refreshToken = null;
       }
     }
     final rawUser = prefs.getString('native_supabase_user');
