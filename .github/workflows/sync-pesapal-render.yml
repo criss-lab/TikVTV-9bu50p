@@ -31,6 +31,8 @@ jobs:
           test -n "$NEON_DATABASE_URL" || { echo 'Missing NEON_DATABASE_URL'; exit 1; }
           test -n "$SUPABASE_URL" || { echo 'Missing VITE_SUPABASE_URL for bearer-token validation'; exit 1; }
           test -n "$SUPABASE_ANON_KEY" || { echo 'Missing VITE_SUPABASE_ANON_KEY for bearer-token validation'; exit 1; }
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Apply and verify Neon payment schema
         env:
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
