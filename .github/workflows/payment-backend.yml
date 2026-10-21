@@ -6,7 +6,7 @@ on:
       - 'payment-backend/**'
       - '.github/workflows/payment-backend.yml'
   pull_request:
-    branches: [main]
+    branches: [main, feature/pesapal-premium-integration]
     paths:
       - 'payment-backend/**'
       - '.github/workflows/payment-backend.yml'
