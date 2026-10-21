@@ -60,20 +60,6 @@ class _NativeHotScreenState extends State<NativeHotScreen> {
   }
 }
 
-class _NativeChannelPreview extends StatelessWidget {
-  final Channel channel;
-  const _NativeChannelPreview({required this.channel});
-  @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(channel.name)), body: Center(child: Padding(
-    padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
-      if (channel.logo.isNotEmpty) Image.network(channel.logo, width: 100, height: 100, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Icon(Icons.live_tv, size: 70)),
-      const SizedBox(height: 12), Text(channel.name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-      const SizedBox(height: 8), Text(channel.country),
-      const SizedBox(height: 18), const Text('Return to Home to open this channel in the shared live player.', textAlign: TextAlign.center),
-      const SizedBox(height: 12), FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Back to Hot')),
-    ]))));
-}
-
 class NativeAccountScreen extends StatefulWidget {
   const NativeAccountScreen({super.key});
   @override
