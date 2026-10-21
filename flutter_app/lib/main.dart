@@ -154,6 +154,15 @@ class ChannelScreen extends StatefulWidget {
 }
 
 class _ChannelScreenState extends State<ChannelScreen> {
+  bool _landscape = false;
+  Future<void> _setLandscape(bool enabled) async {
+    await SystemChrome.setPreferredOrientations(enabled
+      ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
+      : [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown]);
+    await SystemChrome.setEnabledSystemUIMode(enabled ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge);
+    if (mounted) setState(() => _landscape = enabled);
+  }
+
   late int _playbackLease;
   @override
   void initState() {
@@ -173,6 +182,8 @@ class _ChannelScreenState extends State<ChannelScreen> {
     playback.removeListener(refresh);
     library.removeListener(refresh);
     playback.stopIfCurrent(widget.channel.id, lease: _playbackLease);
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
   @override
@@ -180,7 +191,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
     final controller = playback.controller;
     final selected = playback.channel?.id == widget.channel.id;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.channel.name), actions: [
+      appBar: _landscape ? null : AppBar(title: Text(widget.channel.name), actions: [
         IconButton(tooltip: 'Share channel link', icon: const Icon(Icons.share), onPressed: () async {
           final link = 'https://www.streamora.co.ke/channel/${Uri.encodeComponent(widget.channel.id)}';
           await Clipboard.setData(ClipboardData(text: link));
@@ -192,17 +203,8 @@ class _ChannelScreenState extends State<ChannelScreen> {
         IconButton(tooltip: 'Favorite', onPressed: () => library.toggleFavorite(widget.channel.id),
           icon: Icon(library.isFavorite(widget.channel.id) ? Icons.favorite : Icons.favorite_border)),
       ]),
-      body: SafeArea(child: ListView(children: [
-        AspectRatio(aspectRatio: 16 / 9, child: ColoredBox(color: Colors.black,
-          child: selected && controller != null && controller.value.isInitialized
-            ? Stack(fit: StackFit.expand, children: [
-                VideoPlayer(controller),
-                if (playback.buffering) const Align(alignment: Alignment.center,
-                  child: CircularProgressIndicator()),
-              ])
-            : Center(child: playback.error != null && !playback.loading
-              ? Text(playback.error!, textAlign: TextAlign.center)
-              : const CircularProgressIndicator()))),
+      body: SafeArea(child: _landscape ? Center(child: AspectRatio(aspectRatio: 16 / 9, child: _player(controller, selected))) : ListView(children: [
+        AspectRatio(aspectRatio: 16 / 9, child: _player(controller, selected)),
         if (playback.error != null) TextButton.icon(
           onPressed: _openChannel,
           icon: const Icon(Icons.refresh), label: const Text('Retry stream')),
@@ -216,4 +218,19 @@ class _ChannelScreenState extends State<ChannelScreen> {
       ])),
     );
   }
+
+  Widget _player(VideoPlayerController? controller, bool selected) => ColoredBox(color: Colors.black,
+    child: Stack(fit: StackFit.expand, children: [
+      if (selected && controller != null && controller.value.isInitialized)
+        Center(child: AspectRatio(aspectRatio: controller.value.aspectRatio > 0 ? controller.value.aspectRatio : 16 / 9, child: VideoPlayer(controller)))
+      else Center(child: playback.error != null && !playback.loading
+        ? Text(playback.error!, textAlign: TextAlign.center) : const CircularProgressIndicator()),
+      if (playback.buffering) const Center(child: CircularProgressIndicator()),
+      Positioned(right: 8, bottom: 8, child: IconButton.filledTonal(
+        tooltip: _landscape ? 'Exit landscape fullscreen' : 'Landscape fullscreen',
+        onPressed: () => _setLandscape(!_landscape),
+        icon: Icon(_landscape ? Icons.fullscreen_exit : Icons.fullscreen))),
+      if (_landscape) Positioned(top: 8, left: 8, child: IconButton.filledTonal(
+        tooltip: 'Return to portrait', onPressed: () => _setLandscape(false), icon: const Icon(Icons.arrow_back))),
+    ]));
 }
