@@ -47,3 +47,12 @@ CREATE TABLE IF NOT EXISTS pesapal_ipn_events (
 );
 CREATE INDEX IF NOT EXISTS pesapal_ipn_events_tracking_idx
   ON pesapal_ipn_events (order_tracking_id);
+
+-- One immutable 15-minute preview per account, shared by web and APK clients.
+CREATE TABLE IF NOT EXISTS free_preview_sessions (
+  user_id TEXT PRIMARY KEY,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  CHECK (expires_at > started_at)
+);
+CREATE INDEX IF NOT EXISTS free_preview_sessions_expiry_idx ON free_preview_sessions (expires_at);
