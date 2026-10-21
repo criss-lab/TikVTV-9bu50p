@@ -30,13 +30,16 @@ try {
       to_regclass('public.pesapal_ipn_events_notification_tracking_status_key') IS NOT NULL AS ipn_status_history_index
   `);
   const tables = result.rows[0];
-  if (!tables.payment_orders || !tables.subscriptions || !tables.pesapal_ipn_events || !tables.free_preview_sessions || !tables.ipn_status_history_index) {
+  if (!tables.payment_orders || !tables.subscriptions || !tables.pesapal_ipn_events || !tables.free_preview_sessions) {
     throw new Error('Required payment and viewing-access tables were not created.');
+  }
+  if (!tables.ipn_status_history_index) {
+    throw new Error('Pesapal status-history uniqueness index is missing.');
   }
   if (tables.order_tracking_id_nullable !== true) {
     throw new Error('payment_orders.order_tracking_id must allow NULL before Pesapal returns its tracking ID.');
   }
-  console.log('Neon payment schema migration verified, including nullable pre-checkout tracking ID (no secrets or customer data emitted).');
+  console.log('Neon payment schema migration verified: nullable pre-checkout tracking ID and idempotent status-history index (no secrets or customer data emitted).');
 } finally {
   await pool.end();
 }
