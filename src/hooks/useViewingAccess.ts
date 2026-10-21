@@ -25,7 +25,8 @@ export function useViewingAccess(channelId: string | null) {
         setUsed(result.previews_used);
       } catch (error) {
         console.error('Channel entitlement unavailable', error);
-        if (!cancelled) { setPreviewEnd(null); setServerEnd(null); }
+        // Retain only previously verified deadlines; the clock still expires them.
+        // A network timeout must not turn a paid viewer into a new customer.
       } finally { if (!cancelled) { setNow(Date.now()); setLoading(false); } }
     };
     void check();
