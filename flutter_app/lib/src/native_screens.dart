@@ -138,6 +138,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
   Timer? _paymentTimer;
   Timer? _entitlementTimer;
   bool checking = false;
+  String selectedPlan = 'month';
   bool loading = true, paying = false;
   bool active = false;
   String? endsAt, trackingId, message;
@@ -169,7 +170,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
     }
     setState(() { paying = true; message = null; });
     try {
-      final order = await backend.initiatePremium();
+      final order = await backend.initiatePremium(planCode: selectedPlan);
       if (!mounted) return;
       final url = Uri.tryParse(order['redirect_url'] as String? ?? '');
       final host = url?.host;
@@ -217,7 +218,21 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       ],
       if (loading) const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator())),
       if (!loading && active) Card(color: _panel, child: ListTile(leading: const Icon(Icons.verified, color: Colors.greenAccent), title: const Text('Premium active'), subtitle: Text(endsAt == null ? 'Subscription verified' : 'Access until ${DateTime.tryParse(endsAt!)?.toLocal() ?? endsAt}'))),
-      if (!loading && !active && backend.signedIn) FilledButton.icon(onPressed: paying ? null : checkout, icon: const Icon(Icons.lock), label: Text(paying ? 'Connecting to PesaPal…' : 'Subscribe with PesaPal')),
+      if (!loading && !active && backend.signedIn) ...[
+        const Text('Choose a plan', style: TextStyle(fontWeight: FontWeight.bold)),
+        DropdownButtonFormField<String>(
+          value: selectedPlan,
+          decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Subscription duration'),
+          items: const [
+            DropdownMenuItem(value: 'half_day', child: Text('12 hours — KSh 5')),
+            DropdownMenuItem(value: 'day', child: Text('1 day — KSh 10')),
+            DropdownMenuItem(value: 'week', child: Text('1 week — KSh 40')),
+            DropdownMenuItem(value: 'month', child: Text('1 month — KSh 130')),
+          ],
+          onChanged: paying ? null : (value) { if (value != null) setState(() => selectedPlan = value); },
+        ),
+        FilledButton.icon(onPressed: paying ? null : checkout, icon: const Icon(Icons.lock), label: Text(paying ? 'Connecting to PesaPal…' : 'Subscribe with PesaPal')),
+      ],
       if (message != null) Padding(padding: const EdgeInsets.only(top: 14), child: Text(message!, style: const TextStyle(color: Colors.white70))),
       const SizedBox(height: 12),
       if (trackingId != null) OutlinedButton.icon(onPressed: paying ? null : verifyPayment, icon: const Icon(Icons.verified_user), label: const Text('Verify payment status')),
