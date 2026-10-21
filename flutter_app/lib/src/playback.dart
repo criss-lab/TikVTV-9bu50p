@@ -138,7 +138,8 @@ class SharedPlayback extends ChangeNotifier {
             return;
           }
           final state = candidate.value;
-          if (_backgrounded || !state.isInitialized || state.hasError) {
+          if (_backgrounded || !state.isInitialized || state.hasError ||
+              (!state.isPlaying && !state.isBuffering)) {
             _stalledAt = null;
             _previousPosition = state.position;
             return;
