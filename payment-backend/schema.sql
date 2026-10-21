@@ -62,3 +62,14 @@ CREATE TABLE IF NOT EXISTS free_preview_sessions (
   CHECK (expires_at > started_at)
 );
 CREATE INDEX IF NOT EXISTS free_preview_sessions_expiry_idx ON free_preview_sessions (expires_at);
+
+-- Seven distinct channel previews per signed-in account; deadlines never reset.
+CREATE TABLE IF NOT EXISTS free_channel_previews (
+ user_id TEXT NOT NULL,
+ channel_id TEXT NOT NULL,
+ started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '15 minutes'),
+ PRIMARY KEY (user_id, channel_id),
+ CHECK (expires_at > started_at)
+);
+CREATE INDEX IF NOT EXISTS free_channel_previews_user_idx ON free_channel_previews(user_id);
