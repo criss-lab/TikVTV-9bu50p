@@ -33,3 +33,27 @@ test('database migration verifies tracking ID nullability', async () => {
   const migration = await readFile(new URL('../migrate.js', import.meta.url), 'utf8');
   assert.ok(migration.includes('order_tracking_id_nullable'));
 });
+
+test('public plan catalogue exposes the same server-authoritative amount and duration metadata', async () => {
+  const server = await readFile(new URL('../server.js', import.meta.url), 'utf8');
+  const premiumUi = await readFile(new URL('../../src/pages/Premium.tsx', import.meta.url), 'utf8');
+  const premiumClient = await readFile(new URL('../../src/lib/premium.ts', import.meta.url), 'utf8');
+
+  assert.ok(server.includes("url.pathname === '/v1/plans'"));
+  assert.ok(server.includes('amount_kes: plan.amount'));
+  assert.ok(server.includes('duration_label: plan.durationLabel'));
+  assert.ok(premiumClient.includes("fetch(`${PAYMENT_API_URL}/v1/plans`"));
+  assert.ok(premiumUi.includes('getPaymentPlans()'));
+  assert.ok(!premiumUi.includes("amount: 5"));
+  assert.ok(!premiumUi.includes("amount: 10"));
+  assert.ok(!premiumUi.includes("amount: 40"));
+  assert.ok(!premiumUi.includes("amount: 130"));
+});
+
+test('Premium activation requires exact server-verified merchant reference, amount, and currency', async () => {
+  const server = await readFile(new URL('../server.js', import.meta.url), 'utf8');
+  assert.ok(server.includes("status === 'completed'"));
+  assert.ok(server.includes('amount === Number(order.amount_kes)'));
+  assert.ok(server.includes("currency === 'KES'"));
+  assert.ok(server.includes("String(verified.merchant_reference || '') === order.merchant_reference"));
+});
