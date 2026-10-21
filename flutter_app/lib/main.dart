@@ -115,6 +115,9 @@ class _ChannelScreenState extends State<ChannelScreen> {
     playback.addListener(refresh);
     library.addListener(refresh);
     library.recordWatch(widget.channel.id);
+    _openChannel();
+  }
+  void _openChannel() {
     playback.open(widget.channel);
     _playbackLease = playback.lease;
   }
@@ -141,21 +144,28 @@ class _ChannelScreenState extends State<ChannelScreen> {
         IconButton(tooltip: 'Favorite', onPressed: () => library.toggleFavorite(widget.channel.id),
           icon: Icon(library.isFavorite(widget.channel.id) ? Icons.favorite : Icons.favorite_border)),
       ]),
-      body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      body: SafeArea(child: ListView(children: [
         AspectRatio(aspectRatio: 16 / 9, child: ColoredBox(color: Colors.black,
           child: selected && controller != null && controller.value.isInitialized
-            ? VideoPlayer(controller)
+            ? Stack(fit: StackFit.expand, children: [
+                VideoPlayer(controller),
+                if (playback.buffering) const Align(alignment: Alignment.center,
+                  child: CircularProgressIndicator()),
+              ])
             : Center(child: playback.error != null && !playback.loading
               ? Text(playback.error!, textAlign: TextAlign.center)
               : const CircularProgressIndicator()))),
         if (playback.error != null) TextButton.icon(
-          onPressed: () => playback.open(widget.channel),
+          onPressed: _openChannel,
           icon: const Icon(Icons.refresh), label: const Text('Retry stream')),
         Padding(padding: const EdgeInsets.all(16), child: Text(widget.channel.name,
           style: Theme.of(context).textTheme.headlineSmall)),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text('Source ${playback.sourceIndex + 1} of ${widget.channel.urls.length}')),
-      ]),
+          child: Text('Source ${widget.channel.urls.isEmpty ? 0 : playback.sourceIndex + 1} of ${widget.channel.urls.length}')),
+        if (selected && controller != null && controller.value.isInitialized)
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text('Buffered ahead: ${playback.bufferedAhead.inSeconds}s · Recoveries: ${playback.recoveryCount}')),
+      ])),
     );
   }
 }
