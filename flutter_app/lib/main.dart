@@ -1,3 +1,6 @@
+import 'package:audio_service/audio_service.dart';
+import 'package:flutter/foundation.dart';
+import 'src/media_handler.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,8 +12,19 @@ import 'src/catalogue.dart';
 import 'src/playback.dart';
 import 'src/library.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    await AudioService.init(
+      builder: () => TikVtvMediaHandler(playback),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'ke.co.streamora.tikvtv.playback',
+        androidNotificationChannelName: 'TikVTV live playback',
+        androidNotificationOngoing: true,
+        androidStopForegroundOnPause: true,
+      ),
+    );
+  }
   runApp(const TikVTV());
 }
 
