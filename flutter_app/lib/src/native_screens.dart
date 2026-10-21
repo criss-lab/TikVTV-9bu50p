@@ -164,6 +164,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
     setState(() { paying = true; message = null; });
     try {
       final order = await backend.initiatePremium();
+      if (!mounted) return;
       final url = Uri.tryParse(order['redirect_url'] as String? ?? '');
       final host = url?.host;
       if (url == null || url.scheme != 'https' || !['pay.pesapal.com', 'cybqa.pesapal.com'].contains(host)) {
