@@ -14,21 +14,32 @@ const plans = [
 ] as const;
 
 export default function Premium() {
-  const navigate = useNavigate(); const user = useAuthStore(s => s.user);
+  const navigate = useNavigate();
+  const user = useAuthStore(s => s.user);
   const { active, endsAt, loading, refresh } = usePremiumAccess();
   const [paying, setPaying] = useState(false);
   const [planCode, setPlanCode] = useState<(typeof plans)[number]['code']>('month');
+
   async function checkout() {
     if (!user) { toast.info('Sign in from Profile before subscribing'); navigate('/profile'); return; }
     setPaying(true);
     try {
       const data = await invokePesapal('initiate', undefined, planCode);
-      if (typeof data?.redirect_url !== 'string') throw new Error('Secure checkout URL unavailable');
+      // The status endpoint and checkout endpoint have distinct response types.
+      if (!('redirect_url' in data) || typeof data.redirect_url !== 'string') {
+        throw new Error('Secure checkout URL unavailable');
+      }
       const checkoutUrl = new URL(data.redirect_url);
-      if (checkoutUrl.protocol !== 'https:' || !['pay.pesapal.com', 'cybqa.pesapal.com'].includes(checkoutUrl.hostname)) throw new Error('Unexpected checkout destination');
-      window.location.assign(data.redirect_url);
-    } catch (error) { toast.error(error instanceof Error ? error.message : 'Checkout unavailable'); setPaying(false); }
+      if (checkoutUrl.protocol !== 'https:' || !['pay.pesapal.com', 'cybqa.pesapal.com'].includes(checkoutUrl.hostname)) {
+        throw new Error('Unexpected checkout destination');
+      }
+      window.location.assign(checkoutUrl.toString());
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Checkout unavailable');
+      setPaying(false);
+    }
   }
+
   return <main className="min-h-screen bg-black text-white px-6 pt-16 pb-28"><div className="max-w-md mx-auto space-y-6">
     <Crown className="w-12 h-12 text-primary" /><h1 className="text-3xl font-bold">TikVTVz Premium</h1>
     <p className="text-white/60">Secure checkout through PesaPal. Access activates only after the server verifies your payment and records your subscription.</p>
