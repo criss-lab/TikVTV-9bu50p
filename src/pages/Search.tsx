@@ -37,7 +37,8 @@ export default function Search() {
   const handleQuery = (v: string) => { setQuery(v); runSearch(v, cat); };
   const handleCat   = (c: string) => { setCat(c);   runSearch(query, c); };
 
-  const goToChannel = (ch: IPTVChannel) => navigate(`/channel/${ch.id}`);
+  // Reuse the channel already in memory so the player can initialize without another catalogue lookup.
+  const goToChannel = (ch: IPTVChannel) => navigate(`/channel/${ch.id}`, { state: { channel: ch } });
 
   return (
     <div className="min-h-screen bg-black flex flex-col">

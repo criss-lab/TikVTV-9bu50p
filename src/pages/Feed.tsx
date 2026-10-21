@@ -1,5 +1,5 @@
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Loader2, Wifi } from 'lucide-react';
 import { useChannels } from '@/hooks/useChannels';
@@ -13,9 +13,8 @@ import AuthModal from '@/components/features/AuthModal';
 import { useT } from '@/lib/i18n';
 import { useViewingAccess } from '@/hooks/useViewingAccess';
 
-// Only the user-selected card may initialise a stream. This avoids hidden neighbours
-// competing for manifests, media requests, decoders, and mobile network capacity.
-const PRELOAD_RADIUS = 0;
+// Keep the active stream and immediate neighbours warm without opening five HLS connections.
+const PRELOAD_RADIUS = 1;
 
 export default function Feed() {
   const [searchParams]               = useSearchParams();
@@ -28,108 +27,47 @@ export default function Feed() {
   const [deadIds,     setDeadIds]    = useState<Set<string>>(new Set());
   const [liveIds,     setLiveIds]    = useState<Set<string>>(new Set());
   const t = useT();
-  const { allowed, active, remainingMs, loading: accessLoading } = useViewingAccess();
-
   const { channels, loading, hasMore, loadMore, total, error } = useChannels(category, countryFilter);
   const { user }     = useAuthStore();
   const { addToHistory } = useWatchHistory();
   const containerRef = useRef<HTMLDivElement>(null);
+  const observerRef  = useRef<IntersectionObserver | null>(null);
 
   // Update category if URL param changes
   useEffect(() => {
     if (catParam && catParam !== category) setCategory(catParam);
   }, [catParam, category]);
 
-  const liveChannels = useMemo(() => channels.filter(ch => !deadIds.has(ch.id)), [channels, deadIds]);
+  const liveChannels = channels.filter(ch => !deadIds.has(ch.id));
+  const { allowed, active, remainingMs, loading: accessLoading, previewsUsed } = useViewingAccess(liveChannels[activeIndex]?.id ?? null);
   const liveCount    = liveIds.size;
 
-  // Warm the next channel's DNS/TLS connection without downloading its manifest or segments.
-  // This gives the next swipe a head start without making a second decoder compete for bandwidth.
-  useEffect(() => {
-    const nextChannel = liveChannels[activeIndex + 1];
-    if (!nextChannel?.streamUrl || typeof document === 'undefined') return;
-
-    let origin = '';
-    try {
-      origin = new URL(nextChannel.streamUrl).origin;
-    } catch {
-      return;
-    }
-    if (!origin || origin === window.location.origin) return;
-
-    const link = document.createElement('link');
-    link.rel = 'preconnect';
-    link.href = origin;
-    link.crossOrigin = 'anonymous';
-    link.setAttribute('data-tikvtv-preconnect', 'next-channel');
-    document.head.appendChild(link);
-
-    return () => {
-      link.remove();
-    };
-  }, [activeIndex, liveChannels]);
-
-  // Determine focus from the actual card geometry inside the feed viewport.
-  // Do not infer it from scrollTop / 100dvh: the scroll viewport is shorter than
-  // a card (header, category strip and bottom navigation take space), and mobile
-  // viewport units can change while the browser chrome expands/collapses.
+  // IntersectionObserver: detect active card & load more
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
-    let frame = 0;
-    let lastRecordedId = '';
+    if (!container || liveChannels.length === 0) return;
+    observerRef.current?.disconnect();
 
-    const updateFocusedChannel = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const cards = Array.from(container.querySelectorAll<HTMLElement>('[data-index]'));
-        if (cards.length === 0 || liveChannels.length === 0) return;
-
-        const viewport = container.getBoundingClientRect();
-        const viewportCenter = viewport.top + viewport.height / 2;
-        let focusedIndex = -1;
-        let closestDistance = Number.POSITIVE_INFINITY;
-
-        for (const card of cards) {
-          const rect = card.getBoundingClientRect();
-          const visibleHeight = Math.max(
-            0,
-            Math.min(rect.bottom, viewport.bottom) - Math.max(rect.top, viewport.top),
-          );
-          if (visibleHeight <= 0) continue;
-
-          const index = Number.parseInt(card.dataset.index || '-1', 10);
-          if (index < 0 || index >= liveChannels.length) continue;
-          const distance = Math.abs((rect.top + rect.bottom) / 2 - viewportCenter);
-          if (distance < closestDistance) {
-            closestDistance = distance;
-            focusedIndex = index;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const idx = parseInt(entry.target.getAttribute('data-index') || '0', 10);
+            setActiveIndex(idx);
+            // Add to watch history when active
+            if (liveChannels[idx]) addToHistory(liveChannels[idx]);
+            // Trigger load more near end
+            if (idx >= liveChannels.length - 5 && hasMore) loadMore();
           }
-        }
+        });
+      },
+      { threshold: 0.6, root: container }
+    );
 
-        if (focusedIndex < 0) return;
-        setActiveIndex(previous => previous === focusedIndex ? previous : focusedIndex);
-
-        const channel = liveChannels[focusedIndex];
-        if (channel && channel.id !== lastRecordedId) {
-          lastRecordedId = channel.id;
-          addToHistory(channel);
-        }
-        if (focusedIndex >= liveChannels.length - 5 && hasMore) loadMore();
-      });
-    };
-
-    container.addEventListener('scroll', updateFocusedChannel, { passive: true });
-    window.addEventListener('resize', updateFocusedChannel);
-    updateFocusedChannel();
-    return () => {
-      container.removeEventListener('scroll', updateFocusedChannel);
-      window.removeEventListener('resize', updateFocusedChannel);
-      cancelAnimationFrame(frame);
-    };
-  }, [liveChannels, hasMore, loadMore, addToHistory]);
-
-  const handleAuthRequired = useCallback(() => setShowAuth(true), []);
+    container.querySelectorAll('[data-index]').forEach(c => observer.observe(c));
+    observerRef.current = observer;
+    return () => observer.disconnect();
+  }, [liveChannels.length, hasMore, loadMore, addToHistory, containerRef]);
 
   const handleCategoryChange = useCallback((id: string) => {
     setCategory(id);
@@ -199,18 +137,18 @@ export default function Feed() {
       {/* Feed scroll container — extra padding-bottom for bottom nav */}
       <div
         ref={containerRef}
-        className="flex-1 min-h-0 overflow-y-scroll"
-        style={{ scrollSnapType: 'y mandatory', overscrollBehavior: 'contain', scrollBehavior: 'auto' }}
+        className="flex-1 overflow-y-scroll"
+        style={{ scrollSnapType: 'y mandatory', overscrollBehavior: 'contain' }}
       >
         {liveChannels.map((channel, index) => (
           <ChannelCard
             key={`${channel.id}-${category}-${index}`}
             channel={channel}
             isActive={index === activeIndex}
-            shouldLoad={allowed && !accessLoading && index === activeIndex && Math.abs(index - activeIndex) <= PRELOAD_RADIUS}
+            shouldLoad={allowed && !accessLoading && Math.abs(index - activeIndex) <= PRELOAD_RADIUS}
             index={index}
             user={user}
-            onAuthRequired={handleAuthRequired}
+            onAuthRequired={() => setShowAuth(true)}
             onChannelDead={handleChannelDead}
             onChannelReady={handleChannelReady}
           />
@@ -219,7 +157,7 @@ export default function Feed() {
         {hasMore ? (
           <div
             className="flex items-center justify-center bg-black"
-            style={{ height: '100%', minHeight: '100%', flex: '0 0 100%', scrollSnapAlign: 'start' }}
+            style={{ height: '100dvh', scrollSnapAlign: 'start' }}
           >
             <div className="flex flex-col items-center gap-3">
               <Loader2 className="w-8 h-8 text-white/30 animate-spin" />
@@ -229,7 +167,7 @@ export default function Feed() {
         ) : liveChannels.length > 0 ? (
           <div
             className="flex items-center justify-center bg-black"
-            style={{ height: '50%', minHeight: '50%', flex: '0 0 50%', scrollSnapAlign: 'start' }}
+            style={{ height: '50dvh', scrollSnapAlign: 'start' }}
           >
             <p className="text-white/20 text-sm">
               {t('seenAll')} {total.toLocaleString()} {t('channelsLabel')} 🎉
@@ -239,14 +177,14 @@ export default function Feed() {
       </div>
 
       {!accessLoading && !active && !allowed && (
-        <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-4 bg-black/95 px-6 text-center text-white">
+        <div className="fixed inset-x-3 bottom-24 z-[100] flex flex-col items-center justify-center gap-4 rounded-2xl border border-white/15 bg-zinc-950/95 p-6 text-center text-white shadow-2xl">
           <h2 className="text-2xl font-bold">Free preview ended</h2>
-          <p className="text-white/70">Your 15-minute preview has elapsed. Unlock channels with Premium.</p>
-          <button className="rounded-xl bg-primary px-6 py-3 font-bold" onClick={() => navigate('/premium')}>Unlock Premium</button>
+          <p className="text-white/70">{previewsUsed >= 7 ? 'Your seven channel previews are used. Unlock all channels with Premium.' : 'This channel’s 15-minute preview has ended. Swipe to another channel for a fresh preview, or unlock all channels.'}</p>
+          <button type="button" className="w-full rounded-xl bg-primary px-6 py-3 font-bold" onClick={() => navigate('/premium')}>Unlock all channels — view plans</button>
         </div>
       )}
       {!accessLoading && !active && allowed && (
-        <div className="fixed left-3 top-16 z-30 rounded-lg bg-black/75 px-3 py-2 text-xs font-semibold text-white pointer-events-none">Free preview {String(Math.floor(remainingMs / 60000)).padStart(2, '0')}:{String(Math.floor(remainingMs % 60000 / 1000)).padStart(2, '0')}</div>
+        <div className="fixed left-3 top-16 z-30 rounded-lg bg-black/75 px-3 py-2 text-xs font-semibold text-white pointer-events-none">Channel preview {String(Math.floor(remainingMs / 60000)).padStart(2, '0')}:{String(Math.floor(remainingMs % 60000 / 1000)).padStart(2, '0')}</div>
       )}
       {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
     </div>
