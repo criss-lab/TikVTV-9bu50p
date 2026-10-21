@@ -243,8 +243,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     final availableLanguages = catalogue.channels.expand((c) => c.languages).where((v) => v.isNotEmpty).toSet().toList()..sort();
     showModalBottomSheet<void>(context:context,showDragHandle:true,builder:(ctx)=>SafeArea(child:ListView(shrinkWrap:true,children:[for(final lang in ['All',...availableLanguages]) ListTile(title:Text(lang=='All'?'All languages':lang),trailing:language==lang?const Icon(Icons.check,color:Color(0xFFFF315F)):null,onTap:(){setState(()=>language=lang);Navigator.pop(ctx);})])));
   }
-
-
+}
 
 class ChannelScreen extends StatefulWidget {
   final Channel channel;
