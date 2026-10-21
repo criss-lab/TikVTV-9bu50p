@@ -79,20 +79,33 @@ class NativeBackend extends ChangeNotifier {
     await _saveSession(Map<String, dynamic>.from(jsonDecode(response.body) as Map));
   }
 
-  Future<void> signUp(String email, String password, String username) async {
+  Future<void> requestSignupOtp(String email) async {
     _requireConfig();
-    final response = await http.post(_uri('/auth/v1/signup'),
+    final response = await http.post(_uri('/auth/v1/otp'),
       headers: {'apikey': _key, 'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email.trim(), 'password': password, 'data': {'username': username.trim()}})).timeout(const Duration(seconds: 20));
+      body: jsonEncode({'email': email.trim(), 'create_user': true})).timeout(const Duration(seconds: 20));
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError(_message(response.body, 'Registration failed'));
+      throw StateError(_message(response.body, 'Could not send verification code'));
     }
-    final data = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
-    if (data['access_token'] is String) {
-      await _saveSession(data);
-    } else {
-      throw StateError('Account created. Confirm your email, then sign in.');
+  }
+
+  Future<void> verifySignupOtp(String email, String code, String password, String username) async {
+    _requireConfig();
+    final response = await http.post(_uri('/auth/v1/verify'),
+      headers: {'apikey': _key, 'Content-Type': 'application/json'},
+      body: jsonEncode({'email': email.trim(), 'token': code.trim(), 'type': 'email'})).timeout(const Duration(seconds: 20));
+    if (response.statusCode != 200) throw StateError(_message(response.body, 'Email verification failed'));
+    await _saveSession(Map<String, dynamic>.from(jsonDecode(response.body) as Map));
+    final update = await http.put(_uri('/auth/v1/user'), headers: _headers,
+      body: jsonEncode({'password': password, 'data': {'username': username.trim()}})).timeout(const Duration(seconds: 20));
+    if (update.statusCode < 200 || update.statusCode >= 300) {
+      throw StateError(_message(update.body, 'Email verified but profile setup failed. Sign in and try again.'));
     }
+    final updatedUser = Map<String, dynamic>.from(jsonDecode(update.body) as Map);
+    user = {...?user, ...updatedUser};
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('native_supabase_user', jsonEncode(user));
+    notifyListeners();
   }
 
   Future<void> signOut() async {
