@@ -62,19 +62,38 @@ class ChannelCatalogue extends ChangeNotifier {
         http.get(Uri.parse('https://iptv-org.github.io/api/channels.json'))
           .timeout(const Duration(seconds: 15)),
         http.get(Uri.parse('https://iptv-org.github.io/api/streams.json'))
-          .timeout(const Duration(seconds: 15)),
+          .timeout(const Duration(seconds: 20)),
+        http.get(Uri.parse('https://iptv-org.github.io/api/logos.json'))
+          .timeout(const Duration(seconds: 20)),
+        http.get(Uri.parse('https://iptv-org.github.io/api/blocklist.json'))
+          .timeout(const Duration(seconds: 20)),
       ]);
-      if (results.any((r) => r.statusCode != 200)) {
+      if (results[0].statusCode != 200 || results[1].statusCode != 200) {
         throw StateError('Catalogue HTTP failure');
       }
       final metadata = jsonDecode(results[0].body) as List<dynamic>;
       final streams = jsonDecode(results[1].body) as List<dynamic>;
+      final logos = <String, String>{};
+      if (results[2].statusCode == 200) {
+        for (final item in jsonDecode(results[2].body) as List<dynamic>) {
+          if (item is! Map || item['in_use'] != true) continue;
+          final id = item['channel'], url = item['url'];
+          if (id is String && url is String && Uri.tryParse(url)?.scheme == 'https') {
+            logos.putIfAbsent(id, () => url);
+          }
+        }
+      }
+      final blocked = <String>{};
+      if (results[3].statusCode != 200) throw StateError('Blocklist unavailable; retaining last safe catalogue');
+      for (final item in jsonDecode(results[3].body) as List<dynamic>) {
+        if (item is Map && item['channel'] is String) blocked.add(item['channel'] as String);
+      }
       final sources = <String, List<String>>{};
       for (final item in streams) {
         if (item is! Map) { continue; }
         final id = item['channel'];
         final url = item['url'];
-        if (id is! String || url is! String) { continue; }
+        if (id is! String || url is! String || blocked.contains(id)) { continue; }
         final uri = Uri.tryParse(url.trim());
         if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http') || uri.host.isEmpty) { continue; }
         final list = sources.putIfAbsent(id, () => []);
@@ -84,11 +103,11 @@ class ChannelCatalogue extends ChangeNotifier {
       }
       final parsed = <Channel>[];
       for (final item in metadata) {
-        if (item is! Map || item['is_nsfw'] == true) { continue; }
+        if (item is! Map || item['is_nsfw'] == true || item['closed'] != null || blocked.contains(item['id'])) { continue; }
         final id = item['id'];
         final name = item['name'];
         if (id is! String || name is! String || name.trim().isEmpty || !sources.containsKey(id)) { continue; }
-        parsed.add(Channel(id, name, item['logo'] is String ? item['logo'] : '',
+        parsed.add(Channel(id, name, logos[id] ?? '',
           item['country'] is String ? item['country'] : 'INT',
           List.unmodifiable(sources[id]!), categories: List<String>.from(item['categories'] as List? ?? const []), languages: List<String>.from(item['languages'] as List? ?? const [])));
       }
