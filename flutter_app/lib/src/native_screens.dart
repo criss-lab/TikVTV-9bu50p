@@ -141,7 +141,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
   bool active = false;
   String? endsAt, trackingId, message;
   @override
-  void initState() { super.initState(); WidgetsBinding.instance.addObserver(this); refresh(); _entitlementTimer = Timer.periodic(const Duration(seconds: 3), (_) { if (mounted && backend.signedIn && !loading) refresh(silent: true); }); }
+  void initState() { super.initState(); WidgetsBinding.instance.addObserver(this); refresh(); _entitlementTimer = Timer.periodic(const Duration(seconds: 15), (_) { if (mounted && backend.signedIn && !loading) refresh(silent: true); }); }
   @override
   void dispose() { _paymentTimer?.cancel(); _entitlementTimer?.cancel(); WidgetsBinding.instance.removeObserver(this); super.dispose(); }
   @override
@@ -177,7 +177,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       }
       trackingId = order['order_tracking_id'] as String?;
       _paymentTimer?.cancel();
-      _paymentTimer = Timer.periodic(const Duration(seconds: 2), (_) { if (mounted && !checking && trackingId != null) verifyPayment(silent: true); });
+      _paymentTimer = Timer.periodic(const Duration(seconds: 5), (_) { if (mounted && !checking && trackingId != null) verifyPayment(silent: true); });
       // Keep every TikVTV screen Flutter-native. Hosted PesaPal checkout opens in
       // the device's trusted browser; entitlement is granted only after server verification.
       final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
@@ -192,7 +192,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
     if (!silent) setState(() { paying = true; message = null; });
     try {
       final result = await backend.checkPayment(id);
-      final status = (result['payment_status_description'] ?? 'pending').toString();
+      final status = (result['status'] ?? result['payment_status'] ?? result['payment_status_description'] ?? 'pending').toString();
       if (mounted && !silent) setState(() { message = 'PesaPal reports: $status. Access requires a verified server entitlement.'; paying = false; });
       await refresh(silent: silent);
       if (active || ['failed', 'invalid', 'reversed'].contains(status.toLowerCase())) { _paymentTimer?.cancel(); trackingId = null; }
