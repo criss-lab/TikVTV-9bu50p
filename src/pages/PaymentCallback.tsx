@@ -19,7 +19,7 @@ export default function PaymentCallback() {
         const entitlement = await getPremiumAccess(user.id);
         if (cancelled) return;
         if (entitlement.active) { notifyPremiumChanged(); setMessage('Payment verified. Premium is now unlocked!'); timer = setTimeout(() => { if (!cancelled) navigate('/premium', { replace: true }); }, 1600); return; }
-        if (['Failed', 'Invalid'].includes(result?.payment_status_description)) { setMessage('Payment was not confirmed. Check your transaction before retrying.'); return; }
+        if (['failed', 'invalid', 'reversed', 'cancelled'].includes(String(result?.payment_status_description || '').toLowerCase())) { setMessage('Payment was not confirmed. Check your transaction before retrying.'); return; }
         setMessage(result?.payment_status_description === 'Completed' ? 'Payment received; waiting for subscription activation…' : 'Waiting for payment confirmation…');
       } catch (error) { if (!cancelled) { console.error('Payment verification pending', error); setMessage('Still synchronizing. Please do not pay twice.'); } }
       if (cancelled) return;
