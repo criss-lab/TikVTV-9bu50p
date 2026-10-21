@@ -21,8 +21,20 @@ export function useViewingAccess() {
     setDeadline(null);
     const applyDeadline = (value: string | number | null) => {
       if (cancelled) return;
-      const timestamp = typeof value === 'number' ? value : value ? Date.parse(value) : NaN;
-      setDeadline(Number.isFinite(timestamp) ? timestamp : Date.now());
+      const parsed = typeof value === 'number' ? value : value ? Date.parse(value) : NaN;
+      let timestamp = Number.isFinite(parsed) ? parsed : Date.now();
+      if (userId) {
+        // Preserve the strictest known deadline on this install so signing out does not
+        // immediately grant a fresh guest preview after an account's preview expires.
+        try {
+          const previous = Number(window.localStorage.getItem(key));
+          if (Number.isFinite(previous) && previous > 0) timestamp = Math.min(timestamp, previous);
+          window.localStorage.setItem(key, String(timestamp));
+        } catch {
+          // The account's server deadline remains authoritative even without local storage.
+        }
+      }
+      setDeadline(timestamp);
       setNow(Date.now());
       setGateLoading(false);
     };
