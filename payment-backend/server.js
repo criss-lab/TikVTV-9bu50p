@@ -69,7 +69,7 @@ async function verifyAndActivate(tracking, suppliedReference = '') {
   const verified = await pesapal('/api/Transactions/GetTransactionStatus?orderTrackingId=' + encodeURIComponent(order.order_tracking_id));
   const status = String(verified.payment_status_description || '').toLowerCase();
   const amount = Number(verified.amount); const currency = String(verified.currency || '').toUpperCase();
-  const complete = status === 'completed' && amount === Number(order.amount_kes) && currency === 'KES' && (!verified.merchant_reference || String(verified.merchant_reference) === order.merchant_reference);
+  const complete = status === 'completed' && amount === Number(order.amount_kes) && currency === 'KES' && String(verified.merchant_reference || '') === order.merchant_reference;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -95,6 +95,19 @@ async function verifyAndActivate(tracking, suppliedReference = '') {
 }
 async function route(req, res) {
   const url = new URL(req.url, 'http://localhost');
+  // One server-owned catalogue drives both checkout validation and the Premium UI.
+  if (req.method === 'GET' && url.pathname === '/v1/plans') {
+    return json(res, 200, {
+      currency: 'KES',
+      plans: Object.entries(plans).map(([code, plan]) => ({
+        code,
+        amount_kes: plan.amount,
+        label: plan.displayName,
+        duration_label: plan.durationLabel,
+        duration_ms: plan.durationMs,
+      })),
+    });
+  }
   if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: 'ok', service: 'tikvtv-payment-backend', database_configured: Boolean(pool), auth_validation_configured: authConfigured(), pesapal_credentials_present: configured(), environment: live ? 'live' : 'sandbox' });
   if (req.method === 'GET' && url.pathname === '/pesapal/readiness') {
     if (!pool || !configured() || !authConfigured()) return json(res, 503, { ready: false, reason: !pool ? 'database_missing' : !configured() ? 'pesapal_configuration_missing' : 'account_validation_configuration_missing' });
