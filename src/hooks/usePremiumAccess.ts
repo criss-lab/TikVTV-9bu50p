@@ -29,12 +29,14 @@ export function usePremiumAccess() {
     window.addEventListener(PREMIUM_CHANGED, update);
     window.addEventListener('focus', update);
     document.addEventListener('visibilitychange', visible);
-    const timer = window.setInterval(() => { setNow(Date.now()); if (!document.hidden) void refresh(); }, 15000);
+    const clock = window.setInterval(() => setNow(Date.now()), 1000);
+    const poll = window.setInterval(() => { if (!document.hidden) void refresh(); }, 3000);
     return () => {
       window.removeEventListener(PREMIUM_CHANGED, update);
       window.removeEventListener('focus', update);
       document.removeEventListener('visibilitychange', visible);
-      window.clearInterval(timer);
+      window.clearInterval(clock);
+      window.clearInterval(poll);
     };
   }, [refresh]);
   const active = !!endsAt && Date.parse(endsAt) > now;
