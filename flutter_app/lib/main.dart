@@ -142,7 +142,6 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
       if (ai < 0) return 1; if (bi < 0) return -1; return ai.compareTo(bi);
     })) : filteredChannels;
     const rail = <(String, String)>[('🔥','Hot'),('📰','News'),('⚽','Sports'),('🎬','Movies'),('🎵','Music'),('🎥','Entertainment'),('🧸','Kids'),('🌍','Travel'),('👨‍🍳','Cooking'),('✈️','Lifestyle')];
-    final screenWidth = MediaQuery.of(context).size.width;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF10121B), elevation: 0,
@@ -188,27 +187,8 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
           const SizedBox(width:12),
         ])),
         Padding(padding:const EdgeInsets.symmetric(horizontal:10,vertical:4),child:Row(children:[for(final item in <(String,int)>[('Channels',0),('Favorites',1),('History',2)]) Padding(padding:const EdgeInsets.only(right:6),child:ChoiceChip(label:Text(item.$1,style:const TextStyle(fontSize:12)),selected:libraryTab==item.$2,onSelected:(_)=>setState(()=>libraryTab=item.$2))),const Spacer(),PopupMenuButton<String>(tooltip:'Country filter',initialValue:country,itemBuilder:(_)=>['All',...countries].map((v)=>PopupMenuItem(value:v,child:Text(v))).toList(),onSelected:(v)=>setState(()=>country=v),child:const Icon(Icons.public,size:20))])),
-        Expanded(child:channels.isEmpty?Center(child:Column(mainAxisSize:MainAxisSize.min,children:[Text(catalogue.loading?'Loading channels…':'No matching channels. Try another category or clear filters.',textAlign:TextAlign.center),if(!catalogue.loading) TextButton(onPressed:clearFilters,child:const Text('Clear filters'))])):ListView.builder(
-          padding:EdgeInsets.symmetric(horizontal:screenWidth>600?24:10,vertical:8),
-          itemCount:channels.length,itemBuilder:(context,index){
-            final c=channels[index];
-            return Padding(padding:const EdgeInsets.only(bottom:12),child:Material(color:const Color(0xFF191A20),borderRadius:BorderRadius.circular(18),clipBehavior:Clip.antiAlias,child:InkWell(
-              onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>ChannelScreen(channel:c))),
-              child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-                AspectRatio(aspectRatio:16/9,child:Stack(fit:StackFit.expand,children:[
-                  c.logo.isEmpty?const Center(child:Icon(Icons.live_tv,size:52,color:Colors.white24)):Image.network(c.logo,fit:BoxFit.contain,errorBuilder:(_,__,___)=>const Center(child:Icon(Icons.live_tv,size:52,color:Colors.white24))),
-                  const Align(alignment:Alignment.center,child:Icon(Icons.play_circle_fill,size:54,color:Colors.white70)),
-                  Positioned(top:12,left:12,child:Container(padding:const EdgeInsets.symmetric(horizontal:9,vertical:4),decoration:BoxDecoration(color:const Color(0xFFFF315F),borderRadius:BorderRadius.circular(6)),child:const Text('LIVE',style:TextStyle(fontSize:11,fontWeight:FontWeight.bold)))),
-                ])),
-                Padding(padding:const EdgeInsets.all(12),child:Row(children:[
-                  Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(c.name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontWeight:FontWeight.bold,fontSize:16)),Text(c.country,style:const TextStyle(color:Colors.white54,fontSize:12))])),
-                  IconButton(tooltip:'Favourite',onPressed:()=>library.toggleFavorite(c.id),icon:Icon(library.isFavorite(c.id)?Icons.favorite:Icons.favorite_border,color:library.isFavorite(c.id)?const Color(0xFFFF315F):Colors.white70)),
-                  const Icon(Icons.chevron_right,color:Colors.white38),
-                ])),
-              ]),
-            )));
-          },
-        )),
+        Expanded(child:channels.isEmpty?Center(child:Column(mainAxisSize:MainAxisSize.min,children:[Text(catalogue.loading?'Loading channels…':'No matching channels. Try another category or clear filters.',textAlign:TextAlign.center),if(!catalogue.loading) TextButton(onPressed:clearFilters,child:const Text('Clear filters'))])):TikChannelFeed(channels: channels),
+
         SizedBox(height: 44, child: ListView(scrollDirection: Axis.horizontal, children: [const Padding(padding: EdgeInsets.all(8), child: Text('✦ AI picks:')), ...['General', 'Entertainment', 'Kids', 'News'].map((v) => Padding(padding: const EdgeInsets.only(right: 5), child: ActionChip(label: Text(v), onPressed: () => setState(() => category = v))))])),
       ]),
     );
@@ -315,7 +295,9 @@ class _ChannelScreenState extends State<ChannelScreen> {
     PlaybackGate.instance.onLock = playback.lockForPayment;
     library.addListener(refresh);
     library.recordWatch(widget.channel.id);
-    unawaited(FirebaseAnalytics.instance.logEvent(name: 'channel_open', parameters: {'channel_id': widget.channel.id}));
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      unawaited(FirebaseAnalytics.instance.logEvent(name: 'channel_open', parameters: {'channel_id': widget.channel.id}));
+    }
     _openChannel();
   }
   void _openChannel() {
