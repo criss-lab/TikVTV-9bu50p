@@ -60,9 +60,10 @@ class SharedPlayback extends ChangeNotifier {
     if (current == null) { return; }
     if (value) {
       _stalledAt = null;
-      unawaited(current.pause().catchError((Object e) => debugPrint('$e')));
+      // Keep the selected stream running when the screen locks or the user switches apps.
+      // Android foreground media-service configuration is installed by configure_android.py.
     } else if (channel != null && !current.value.hasError) {
-      unawaited(current.play().catchError((Object e) => debugPrint('$e')));
+      if (!current.value.isPlaying) unawaited(current.play().catchError((Object e) => debugPrint('$e')));
     }
   }
 
@@ -108,7 +109,7 @@ class SharedPlayback extends ChangeNotifier {
         notifyListeners();
         continue;
       }
-      final candidate = VideoPlayerController.networkUrl(uri);
+      final candidate = VideoPlayerController.networkUrl(uri, videoPlayerOptions: VideoPlayerOptions(allowBackgroundPlayback: true));
       _candidate = candidate;
       final settled = Completer<void>();
       _candidateSettled = settled;
@@ -136,7 +137,7 @@ class SharedPlayback extends ChangeNotifier {
           return;
         }
         await candidate.setLooping(false);
-        if (!_backgrounded) { await candidate.play().timeout(const Duration(seconds: 8)); }
+        await candidate.play().timeout(const Duration(seconds: 8));
         if (token != _generation) {
           await _release(candidate);
           return;
@@ -153,7 +154,7 @@ class SharedPlayback extends ChangeNotifier {
             return;
           }
           final state = candidate.value;
-          if (_backgrounded || !state.isInitialized || state.hasError ||
+          if (!state.isInitialized || state.hasError ||
               (!state.isPlaying && !state.isBuffering)) {
             _stalledAt = null;
             _previousPosition = state.position;
