@@ -64,17 +64,19 @@ class ChannelCatalogue extends ChangeNotifier {
         http.get(Uri.parse('https://iptv-org.github.io/api/streams.json'))
           .timeout(const Duration(seconds: 15)),
       ]);
-      if (results.any((r) => r.statusCode != 200)) throw StateError('Catalogue HTTP failure');
+      if (results.any((r) => r.statusCode != 200)) {
+        throw StateError('Catalogue HTTP failure');
+      }
       final metadata = jsonDecode(results[0].body) as List<dynamic>;
       final streams = jsonDecode(results[1].body) as List<dynamic>;
       final sources = <String, List<String>>{};
       for (final item in streams) {
-        if (item is! Map) continue;
+        if (item is! Map) { continue; }
         final id = item['channel'];
         final url = item['url'];
-        if (id is! String || url is! String) continue;
+        if (id is! String || url is! String) { continue; }
         final uri = Uri.tryParse(url.trim());
-        if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http') || uri.host.isEmpty) continue;
+        if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http') || uri.host.isEmpty) { continue; }
         final list = sources.putIfAbsent(id, () => []);
         if (!list.contains(url.trim())) {
           list.add(url.trim());
@@ -82,10 +84,10 @@ class ChannelCatalogue extends ChangeNotifier {
       }
       final parsed = <Channel>[];
       for (final item in metadata) {
-        if (item is! Map || item['is_nsfw'] == true) continue;
+        if (item is! Map || item['is_nsfw'] == true) { continue; }
         final id = item['id'];
         final name = item['name'];
-        if (id is! String || name is! String || name.trim().isEmpty || !sources.containsKey(id)) continue;
+        if (id is! String || name is! String || name.trim().isEmpty || !sources.containsKey(id)) { continue; }
         parsed.add(Channel(id, name, item['logo'] is String ? item['logo'] : '',
           item['country'] is String ? item['country'] : 'INT',
           List.unmodifiable(sources[id]!), categories: List<String>.from(item['categories'] as List? ?? const []), languages: List<String>.from(item['languages'] as List? ?? const [])));
