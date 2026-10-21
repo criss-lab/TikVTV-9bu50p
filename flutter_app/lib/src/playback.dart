@@ -20,10 +20,14 @@ class SharedPlayback extends ChangeNotifier {
   VideoPlayerController? _candidate;
   Completer<void>? _candidateSettled;
   int _lease = 0;
+  static const Duration targetBufferAhead = Duration(seconds: 10);
   Duration bufferedAhead = Duration.zero;
+  bool get bufferBelowTarget => bufferedAhead < targetBufferAhead;
+  double get bufferHealth => (bufferedAhead.inMilliseconds / targetBufferAhead.inMilliseconds).clamp(0.0, 1.0);
   bool buffering = false;
   int recoveryCount = 0;
   int _lastReportedSecond = -1;
+  int _lastReportedBufferSecond = -1;
   bool _lastReportedBuffering = false;
   Timer? _watchdog;
   DateTime? _stalledAt;
@@ -55,6 +59,7 @@ class SharedPlayback extends ChangeNotifier {
     final current = controller;
     if (current == null) { return; }
     if (value) {
+      _stalledAt = null;
       unawaited(current.pause().catchError((Object e) => debugPrint('$e')));
     } else if (channel != null && !current.value.hasError) {
       unawaited(current.play().catchError((Object e) => debugPrint('$e')));
@@ -67,6 +72,7 @@ class SharedPlayback extends ChangeNotifier {
     _cancelWatchdog();
     _sameSourceRetries = 0;
     _lastReportedSecond = -1;
+    _lastReportedBufferSecond = -1;
     bufferedAhead = Duration.zero;
     buffering = false;
     final previous = controller;
@@ -159,7 +165,7 @@ class SharedPlayback extends ChangeNotifier {
             return;
           }
           _stalledAt ??= DateTime.now();
-          if (loading || DateTime.now().difference(_stalledAt!) < const Duration(seconds: 25)) { return; }
+          if (loading || DateTime.now().difference(_stalledAt!) < const Duration(seconds: 12)) { return; }
           _cancelWatchdog();
           stallCount++;
           recoveryCount++;
@@ -197,7 +203,9 @@ class SharedPlayback extends ChangeNotifier {
             }
           }
           final second = candidate.value.position.inSeconds;
-          if (second != _lastReportedSecond || buffering != _lastReportedBuffering) {
+          final bufferSecond = bufferedAhead.inSeconds;
+          if (second != _lastReportedSecond || bufferSecond != _lastReportedBufferSecond || buffering != _lastReportedBuffering) {
+            _lastReportedBufferSecond = bufferSecond;
             _lastReportedSecond = second;
             _lastReportedBuffering = buffering;
             notifyListeners();
