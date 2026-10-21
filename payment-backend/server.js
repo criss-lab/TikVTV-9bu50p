@@ -73,7 +73,7 @@ async function verifyAndActivate(tracking, suppliedReference = '') {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query('INSERT INTO pesapal_ipn_events (notification_id,order_tracking_id,merchant_reference,verification_status,payload) VALUES ($1,$2,$3,$4,$5::jsonb) ON CONFLICT (notification_id,order_tracking_id) DO NOTHING', [process.env.PESAPAL_IPN_ID || 'status-poll', order.order_tracking_id, order.merchant_reference, status || 'unknown', JSON.stringify({ status: verified.payment_status_description, amount: verified.amount, currency: verified.currency, confirmation_code: verified.confirmation_code || null })]);
+    await client.query('INSERT INTO pesapal_ipn_events (notification_id,order_tracking_id,merchant_reference,verification_status,payload) VALUES ($1,$2,$3,$4,$5::jsonb) ON CONFLICT (notification_id,order_tracking_id,verification_status) DO NOTHING', [process.env.PESAPAL_IPN_ID || 'status-poll', order.order_tracking_id, order.merchant_reference, status || 'unknown', JSON.stringify({ status: verified.payment_status_description, amount: verified.amount, currency: verified.currency, confirmation_code: verified.confirmation_code || null })]);
     const locked = await client.query('SELECT * FROM payment_orders WHERE id=$1 FOR UPDATE', [order.id]);
     const current = locked.rows[0];
     if (complete && current.status !== 'completed') {
@@ -118,9 +118,11 @@ async function route(req, res) {
           to_regclass('public.payment_orders') IS NOT NULL AS payment_orders,
           to_regclass('public.subscriptions') IS NOT NULL AS subscriptions,
           to_regclass('public.pesapal_ipn_events') IS NOT NULL AS pesapal_ipn_events,
-          to_regclass('public.free_preview_sessions') IS NOT NULL AS free_preview_sessions
+          to_regclass('public.free_preview_sessions') IS NOT NULL AS free_preview_sessions,
+          to_regclass('public.pesapal_ipn_events_notification_tracking_status_key') IS NOT NULL AS ipn_status_history_index,
+          (SELECT is_nullable = 'YES' FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'payment_orders' AND column_name = 'order_tracking_id') AS order_tracking_id_nullable
       `);
-      if (!schema.rows[0]?.payment_orders || !schema.rows[0]?.subscriptions || !schema.rows[0]?.pesapal_ipn_events || !schema.rows[0]?.free_preview_sessions) {
+      if (!schema.rows[0]?.payment_orders || !schema.rows[0]?.subscriptions || !schema.rows[0]?.pesapal_ipn_events || !schema.rows[0]?.free_preview_sessions || !schema.rows[0]?.ipn_status_history_index || schema.rows[0]?.order_tracking_id_nullable !== true) {
         return json(res, 503, { ready: false, reason: 'payment_schema_missing' });
       }
       await token();
