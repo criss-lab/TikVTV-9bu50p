@@ -16,11 +16,12 @@ export default function PaymentCallback() {
       try {
         // The server must authenticate the user and verify this order with PesaPal.
         const result = await invokePesapal('check_status', trackingId);
+        const paymentStatus = String(result?.payment_status_description || 'pending').trim().toLowerCase();
         const entitlement = await getPremiumAccess(user.id);
         if (cancelled) return;
         if (entitlement.active) { notifyPremiumChanged(); setMessage('Payment verified. Premium is now unlocked!'); timer = setTimeout(() => { if (!cancelled) navigate('/premium', { replace: true }); }, 1600); return; }
-        if (['failed', 'invalid', 'reversed', 'cancelled'].includes(String(result?.payment_status_description || '').toLowerCase())) { setMessage('Payment was not confirmed. Check your transaction before retrying.'); return; }
-        setMessage(result?.payment_status_description === 'Completed' ? 'Payment received; waiting for subscription activation…' : 'Waiting for payment confirmation…');
+        if (['failed', 'invalid', 'reversed', 'cancelled', 'rejected', 'expired'].includes(paymentStatus)) { setMessage('Payment was not confirmed. Check your transaction before retrying.'); return; }
+        setMessage(paymentStatus === 'completed' ? 'Payment received; waiting for subscription activation…' : 'Waiting for payment confirmation…');
       } catch (error) { if (!cancelled) { console.error('Payment verification pending', error); setMessage('Still synchronizing. Please do not pay twice.'); } }
       if (cancelled) return;
       if (attempts < 60) timer = setTimeout(check, 2000);
