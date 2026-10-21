@@ -112,10 +112,10 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
           const Spacer(), Container(padding: const EdgeInsets.symmetric(horizontal: 10,vertical: 5),decoration: BoxDecoration(color: Colors.white.withValues(alpha: .05),borderRadius: BorderRadius.circular(22),border: Border.all(color: Colors.white12)),child: Text('${all.length} ch',style: const TextStyle(fontSize: 11,color: Colors.white54))),
         ]),
         actions: [
-          IconButton(tooltip:'Search channels',onPressed:()=>setState(()=>searchOpen=!searchOpen),icon: const Icon(Icons.search)),
+          IconButton(tooltip:'Search channels',onPressed:(){ if(tab!=1) { selectTab(1); } else { setState(()=>searchOpen=!searchOpen); } },icon: const Icon(Icons.search)),
           IconButton(tooltip:'Refresh channels',onPressed:()=>catalogue.load(force:true),icon:const Icon(Icons.refresh)),
           PopupMenuButton<String>(tooltip:'Language',initialValue:language,itemBuilder:(_)=>['All',...languages].map((v)=>PopupMenuItem(value:v,child:Text(v))).toList(),onSelected:(v)=>setState(()=>language=v),child: Padding(padding:const EdgeInsets.symmetric(horizontal:8),child:Center(child:Text(language=='All'?'All⌄':'${language.toUpperCase()}⌄',style:const TextStyle(fontSize:12))))),
-          IconButton(tooltip:'Open profile',onPressed:_showProfile,icon:const CircleAvatar(radius:17,backgroundColor:Color(0xFFDB4773),child:Icon(Icons.person,color:Colors.white,size:19))),
+          IconButton(tooltip:'Open profile',onPressed:()=>selectTab(6),icon:const CircleAvatar(radius:17,backgroundColor:Color(0xFFDB4773),child:Icon(Icons.person,color:Colors.white,size:19))),
         ],
       ),
       bottomNavigationBar: SafeArea(top:false,child:Container(
