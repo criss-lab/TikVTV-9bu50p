@@ -184,7 +184,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
         await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => NativeCheckoutScreen(url: url)));
         if (mounted) await verifyPayment();
       }
-      if (mounted) setState(() { message = 'PesaPal status checked securely. Premium is enabled only after the server confirms payment.'; paying = false; });
+      if (mounted) setState(() { message = 'Checkout returned. Payment verification continues until the server records your entitlement.'; paying = false; });
     } catch (e) { if (mounted) setState(() { message = e.toString().replaceFirst('Bad state: ', ''); paying = false; }); }
   }
   Future<void> verifyPayment({bool silent = false}) async {
