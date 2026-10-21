@@ -135,7 +135,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
             NavigationDestination(icon:Icon(Icons.person_outline),label:'Profile'),
           ]),
       )),
-      body: tab == 6 ? _profileScreen(all.length) : tab == 4 ? _clipsNotice() : tab == 5 ? _guideScreen(all) : tab == 3 ? NativeHotScreen(channels: all) : Column(children:[
+      body: tab == 6 ? _profileScreen(all.length) : tab == 4 ? _clipsNotice() : tab == 5 ? _guideScreen(all) : tab == 3 ? NativeHotScreen(channels: all, onSelect: (channel) => Navigator.push(context, MaterialPageRoute(builder: (_) => ChannelScreen(channel: channel)))) : Column(children:[
         if(searchOpen || tab==1) Padding(padding:const EdgeInsets.fromLTRB(12,10,12,6),child:TextField(controller:searchController,autofocus:tab==1,decoration:InputDecoration(hintText:'Search channels',prefixIcon:const Icon(Icons.search),suffixIcon:IconButton(tooltip:'Clear search',icon:const Icon(Icons.close),onPressed:(){searchController.clear();setState(()=>query='');}),filled:true,fillColor:const Color(0xFF1B1C24),border:OutlineInputBorder(borderRadius:BorderRadius.circular(18),borderSide:BorderSide.none)),onChanged:(v)=>setState(()=>query=v))),
         SizedBox(height:64,child:ListView(scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:10,vertical:7),children:rail.map((entry){
           final selected=category==entry.$1 || category==entry.$2;
