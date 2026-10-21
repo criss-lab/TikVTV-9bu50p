@@ -121,7 +121,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
       bottomNavigationBar: SafeArea(top:false,child:Container(
         decoration:const BoxDecoration(color:Color(0xFF11131D),border:Border(top:BorderSide(color:Colors.white10))),
         child:NavigationBar(height:66,backgroundColor:const Color(0xFF11131D),indicatorColor:const Color(0xFF4B162A),selectedIndex:tab,labelBehavior:NavigationDestinationLabelBehavior.alwaysShow,
-          onDestinationSelected:(v) { if (v == 6) { _showProfile(); } else { selectTab(v); } },
+          onDestinationSelected:selectTab,
           destinations:const [
             NavigationDestination(icon:Icon(Icons.home_outlined),selectedIcon:Icon(Icons.home,color:Color(0xFFFF315F)),label:'Home'),
             NavigationDestination(icon:Icon(Icons.search),label:'Search'),
@@ -132,7 +132,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
             NavigationDestination(icon:Icon(Icons.person_outline),label:'Profile'),
           ]),
       )),
-      body: tab == 4 ? _clipsNotice() : tab == 5 ? _guideScreen(all) : Column(children:[
+      body: tab == 6 ? _profileScreen(all.length) : tab == 4 ? _clipsNotice() : tab == 5 ? _guideScreen(all) : Column(children:[
         if(searchOpen || tab==1) Padding(padding:const EdgeInsets.fromLTRB(12,10,12,6),child:TextField(controller:searchController,autofocus:tab==1,decoration:InputDecoration(hintText:'Search channels',prefixIcon:const Icon(Icons.search),suffixIcon:IconButton(tooltip:'Clear search',icon:const Icon(Icons.close),onPressed:(){searchController.clear();setState(()=>query='');}),filled:true,fillColor:const Color(0xFF1B1C24),border:OutlineInputBorder(borderRadius:BorderRadius.circular(18),borderSide:BorderSide.none)),onChanged:(v)=>setState(()=>query=v))),
         SizedBox(height:64,child:ListView(scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:10,vertical:7),children:rail.map((entry){
           final selected=category==entry.$1 || category==entry.$2;
@@ -172,6 +172,30 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     );
   }
 
+
+
+  Widget _profileScreen(int total) => ListView(padding:const EdgeInsets.fromLTRB(18,24,18,28),children:[
+    const Center(child:CircleAvatar(radius:38,backgroundColor:Color(0xFFDB4773),child:Icon(Icons.person,color:Colors.white,size:42))),
+    const SizedBox(height:12),const Center(child:Text('My TikVTV',style:TextStyle(fontSize:23,fontWeight:FontWeight.bold))),
+    const SizedBox(height:5),const Center(child:Text('Your local viewing profile',style:TextStyle(color:Colors.white54))),
+    const SizedBox(height:20),
+    Row(children:[
+      Expanded(child:Card(color:const Color(0xFF191A20),child:Padding(padding:const EdgeInsets.all(14),child:Column(children:[const Icon(Icons.live_tv,color:Color(0xFFFF315F)),Text(total.toString(),style:const TextStyle(fontSize:21,fontWeight:FontWeight.bold)),const Text('Channels',style:TextStyle(color:Colors.white54,fontSize:12))])))),
+      Expanded(child:Card(color:const Color(0xFF191A20),child:Padding(padding:const EdgeInsets.all(14),child:Column(children:[const Icon(Icons.favorite,color:Color(0xFFFF315F)),Text(catalogue.channels.where((c)=>library.isFavorite(c.id)).length.toString(),style:const TextStyle(fontSize:21,fontWeight:FontWeight.bold)),const Text('Favorites',style:TextStyle(color:Colors.white54,fontSize:12))])))),
+      Expanded(child:Card(color:const Color(0xFF191A20),child:Padding(padding:const EdgeInsets.all(14),child:Column(children:[const Icon(Icons.history,color:Color(0xFFFF315F)),Text(library.history.length.toString(),style:const TextStyle(fontSize:21,fontWeight:FontWeight.bold)),const Text('History',style:TextStyle(color:Colors.white54,fontSize:12))])))),
+    ]),
+    const SizedBox(height:10),
+    ListTile(leading:const Icon(Icons.favorite),title:const Text('Favorites'),subtitle:const Text('Your saved channels on this device'),trailing:const Icon(Icons.chevron_right),onTap:()=>setState(()=>libraryTab=1)),
+    ListTile(leading:const Icon(Icons.history),title:const Text('Watch history'),subtitle:const Text('Channels watched on this device'),trailing:const Icon(Icons.chevron_right),onTap:()=>setState(()=>libraryTab=2)),
+    ListTile(leading:const Icon(Icons.public),title:const Text('Explore countries'),trailing:const Icon(Icons.chevron_right),onTap:()=>selectTab(2)),
+    ListTile(leading:const Icon(Icons.translate),title:const Text('Stream language'),subtitle:Text(language=='All'?'All languages':language),trailing:const Icon(Icons.chevron_right),onTap:_showProfile),
+    ListTile(leading:const Icon(Icons.workspace_premium),title:const Text('Premium / subscription'),trailing:const Icon(Icons.open_in_new),onTap:()=>openWebFeature('premium')),
+    ListTile(leading:const Icon(Icons.account_circle_outlined),title:const Text('Account and sign in'),subtitle:const Text('Account services open on Streamora'),trailing:const Icon(Icons.open_in_new),onTap:()=>openWebFeature('profile')),
+    ListTile(leading:const Icon(Icons.delete_outline),title:const Text('Clear watch history'),onTap:() async {
+      final confirmed=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('Clear watch history?'),content:const Text('This removes local watch history. Favorites remain saved.'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')),TextButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Clear'))]));
+      if(confirmed==true) await library.clearHistory();
+    }),
+  ]);
 
   Widget _guideScreen(List<Channel> all) {
     const categories = ['all','news','sports','entertainment','music','documentary'];
