@@ -1,10 +1,6 @@
 name: Sync payment secrets to Render
 on:
   workflow_dispatch:
-  push:
-    branches: [feature/pesapal-premium-integration]
-    paths:
-      - '.github/workflows/sync-pesapal-render.yml'
 permissions:
   contents: read
 jobs:
@@ -17,17 +13,13 @@ jobs:
           PESAPAL_CONSUMER_KEY: ${{ secrets.PESAPAL_CONSUMER_KEY }}
           PESAPAL_CONSUMER_SECRET: ${{ secrets.PESAPAL_CONSUMER_SECRET }}
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           set -euo pipefail
           test -n "$RENDER_API_KEY" || { echo 'Missing Render_api_secret'; exit 1; }
           test -n "$PESAPAL_CONSUMER_KEY" || { echo 'Missing PESAPAL_CONSUMER_KEY'; exit 1; }
           test -n "$PESAPAL_CONSUMER_SECRET" || { echo 'Missing PESAPAL_CONSUMER_SECRET'; exit 1; }
           test -n "$NEON_DATABASE_URL" || { echo 'Missing NEON_DATABASE_URL'; exit 1; }
-          test -n "$SUPABASE_URL" || { echo 'Missing VITE_SUPABASE_URL (required only for existing account session validation)'; exit 1; }
-          test -n "$SUPABASE_ANON_KEY" || { echo 'Missing VITE_SUPABASE_ANON_KEY (required only for existing account session validation)'; exit 1; }
-      - name: Merge secrets into Render without printing values
+      - name: Merge environment variables into Render without printing secrets
         env:
           RENDER_API_KEY: ${{ secrets.Render_api_secret }}
           PESAPAL_CONSUMER_KEY: ${{ secrets.PESAPAL_CONSUMER_KEY }}
@@ -38,32 +30,41 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json, os, urllib.request
+          import json, os, urllib.request, urllib.parse
           base='https://api.render.com/v1/services/srv-dbc9m8g473hc73fi9vl0/env-vars'
           headers={'Authorization':'Bearer '+os.environ['RENDER_API_KEY'],'Accept':'application/json'}
-          def req(method,url,payload=None):
+          def request(method,url,payload=None):
               data=None if payload is None else json.dumps(payload).encode()
               h=dict(headers)
               if data is not None: h['Content-Type']='application/json'
               with urllib.request.urlopen(urllib.request.Request(url,data=data,headers=h,method=method),timeout=30) as r:
                   raw=r.read()
                   return json.loads(raw) if raw else None
-          existing=req('GET',base)
+          existing=[]; cursor=None
+          while True:
+              url=base+('?cursor='+urllib.parse.quote(cursor) if cursor else '')
+              page=request('GET',url) or []
+              existing.extend(page)
+              cursor=page[-1].get('cursor') if page else None
+              if not cursor: break
           values={}
-          for item in existing or []:
+          for item in existing:
               env=item.get('envVar',item)
-              if env.get('key') and 'value' in env: values[env['key']]=env['value']
+              key=env.get('key'); value=env.get('value')
+              if key and value is not None:
+                  if value in ('********','••••••••'): raise SystemExit('Render masked an existing variable; refusing unsafe replacement.')
+                  values[key]=value
           values.update({
             'PESAPAL_CONSUMER_KEY':os.environ['PESAPAL_CONSUMER_KEY'],
             'PESAPAL_CONSUMER_SECRET':os.environ['PESAPAL_CONSUMER_SECRET'],
             'PESAPAL_IPN_ID':'14314610-0182-4a20-858a-d9c21fd81890',
             'DATABASE_URL':os.environ['NEON_DATABASE_URL'],
-            'SUPABASE_URL':os.environ['SUPABASE_URL'],
-            'SUPABASE_ANON_KEY':os.environ['SUPABASE_ANON_KEY'],
             'APP_URL':'https://streamora.co.ke'
           })
-          req('PUT',base,[{'key':k,'value':v} for k,v in values.items()])
-          print('Render payment environment synchronized; secret values withheld.')
+          if os.environ.get('SUPABASE_URL'): values['SUPABASE_URL']=os.environ['SUPABASE_URL']
+          if os.environ.get('SUPABASE_ANON_KEY'): values['SUPABASE_ANON_KEY']=os.environ['SUPABASE_ANON_KEY']
+          request('PUT',base,[{'key':k,'value':v} for k,v in values.items()])
+          print('Render payment environment synchronized; values withheld.')
           PY
       - name: Trigger Render deployment
         env:
