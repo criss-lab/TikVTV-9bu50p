@@ -1,49 +1,73 @@
-name: Sync Pesapal secrets to Render
+name: Sync payment secrets to Render
 on:
   workflow_dispatch:
+  push:
+    branches: [feature/pesapal-premium-integration]
+    paths:
+      - '.github/workflows/sync-pesapal-render.yml'
 permissions:
   contents: read
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Check required secrets exist
+      - name: Validate required secrets
         env:
           RENDER_API_KEY: ${{ secrets.Render_api_secret }}
           PESAPAL_CONSUMER_KEY: ${{ secrets.PESAPAL_CONSUMER_KEY }}
           PESAPAL_CONSUMER_SECRET: ${{ secrets.PESAPAL_CONSUMER_SECRET }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
-          test -n "$RENDER_API_KEY" || { echo 'Missing GitHub secret Render_api_secret'; exit 1; }
+          set -euo pipefail
+          test -n "$RENDER_API_KEY" || { echo 'Missing Render_api_secret'; exit 1; }
           test -n "$PESAPAL_CONSUMER_KEY" || { echo 'Missing PESAPAL_CONSUMER_KEY'; exit 1; }
           test -n "$PESAPAL_CONSUMER_SECRET" || { echo 'Missing PESAPAL_CONSUMER_SECRET'; exit 1; }
-      - name: Merge Pesapal credentials into Render environment
+          test -n "$NEON_DATABASE_URL" || { echo 'Missing NEON_DATABASE_URL'; exit 1; }
+          test -n "$SUPABASE_URL" || { echo 'Missing VITE_SUPABASE_URL (required only for existing account session validation)'; exit 1; }
+          test -n "$SUPABASE_ANON_KEY" || { echo 'Missing VITE_SUPABASE_ANON_KEY (required only for existing account session validation)'; exit 1; }
+      - name: Merge secrets into Render without printing values
         env:
           RENDER_API_KEY: ${{ secrets.Render_api_secret }}
           PESAPAL_CONSUMER_KEY: ${{ secrets.PESAPAL_CONSUMER_KEY }}
           PESAPAL_CONSUMER_SECRET: ${{ secrets.PESAPAL_CONSUMER_SECRET }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json, os, urllib.request, urllib.parse
+          import json, os, urllib.request
           base='https://api.render.com/v1/services/srv-dbc9m8g473hc73fi9vl0/env-vars'
           headers={'Authorization':'Bearer '+os.environ['RENDER_API_KEY'],'Accept':'application/json'}
-          def request(method,url,payload=None):
+          def req(method,url,payload=None):
               data=None if payload is None else json.dumps(payload).encode()
               h=dict(headers)
               if data is not None: h['Content-Type']='application/json'
-              with urllib.request.urlopen(urllib.request.Request(url,data=data,headers=h,method=method),timeout=30) as response:
-                  return json.load(response)
-          existing=[]; cursor=None
-          while True:
-              url=base+('?cursor='+urllib.parse.quote(cursor) if cursor else '')
-              page=request('GET',url)
-              existing.extend(page)
-              cursor=page[-1].get('cursor') if page else None
-              if not cursor: break
-          values={entry['envVar']['key']:entry['envVar'].get('value','') for entry in existing}
-          values['PESAPAL_CONSUMER_KEY']=os.environ['PESAPAL_CONSUMER_KEY']
-          values['PESAPAL_CONSUMER_SECRET']=os.environ['PESAPAL_CONSUMER_SECRET']
-          values['PESAPAL_IPN_ID']='14314610-0182-4a20-858a-d9c21fd81890'
-          request('PUT',base,[{'key':k,'value':v} for k,v in values.items()])
-          print('Render environment synchronization request completed (values withheld).')
+              with urllib.request.urlopen(urllib.request.Request(url,data=data,headers=h,method=method),timeout=30) as r:
+                  raw=r.read()
+                  return json.loads(raw) if raw else None
+          existing=req('GET',base)
+          values={}
+          for item in existing or []:
+              env=item.get('envVar',item)
+              if env.get('key') and 'value' in env: values[env['key']]=env['value']
+          values.update({
+            'PESAPAL_CONSUMER_KEY':os.environ['PESAPAL_CONSUMER_KEY'],
+            'PESAPAL_CONSUMER_SECRET':os.environ['PESAPAL_CONSUMER_SECRET'],
+            'PESAPAL_IPN_ID':'14314610-0182-4a20-858a-d9c21fd81890',
+            'DATABASE_URL':os.environ['NEON_DATABASE_URL'],
+            'SUPABASE_URL':os.environ['SUPABASE_URL'],
+            'SUPABASE_ANON_KEY':os.environ['SUPABASE_ANON_KEY'],
+            'APP_URL':'https://streamora.co.ke'
+          })
+          req('PUT',base,[{'key':k,'value':v} for k,v in values.items()])
+          print('Render payment environment synchronized; secret values withheld.')
           PY
+      - name: Trigger Render deployment
+        env:
+          RENDER_API_KEY: ${{ secrets.Render_api_secret }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error -X POST "https://api.render.com/v1/services/srv-dbc9m8g473hc73fi9vl0/deploys" -H "Authorization: Bearer $RENDER_API_KEY" -H "Content-Type: application/json" -d '{}'
