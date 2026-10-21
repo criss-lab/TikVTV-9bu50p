@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { plans } from '../plans.js';
 
 test('server-side plans preserve the approved KSh prices and durations', () => {
@@ -21,4 +22,14 @@ test('plan catalogue is immutable and contains no client-defined price field', (
     assert.equal(typeof plan.amount, 'number');
     assert.equal(typeof plan.durationMs, 'number');
   }
+});
+
+test('checkout migration allows a missing tracking ID before the Pesapal response', async () => {
+  const schema = await readFile(new URL('../schema.sql', import.meta.url), 'utf8');
+  assert.ok(schema.includes('ALTER TABLE payment_orders ALTER COLUMN order_tracking_id DROP NOT NULL'));
+});
+
+test('database migration verifies tracking ID nullability', async () => {
+  const migration = await readFile(new URL('../migrate.js', import.meta.url), 'utf8');
+  assert.ok(migration.includes('order_tracking_id_nullable'));
 });
