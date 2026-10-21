@@ -248,8 +248,7 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
       tooltip: 'Return to TikVTV', icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context, false))),
     body: Column(children: [
       if (progress < 100) LinearProgressIndicator(value: progress / 100, minHeight: 2),
-      const Expanded(child: SizedBox.shrink()),
-      Expanded(flex: 12, child: WebViewWidget(controller: controller)),
+      Expanded(child: WebViewWidget(controller: controller)),
     ]),
   );
 }
