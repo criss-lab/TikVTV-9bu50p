@@ -8,9 +8,9 @@ import { invokePesapal } from '@/lib/premium';
 
 const plans = [
   { id: 'half_day', name: 'Half day', amount: 5, duration: '12 hours' },
-  { id: 'daily', name: 'Daily', amount: 10, duration: '24 hours' },
-  { id: 'weekly', name: 'Weekly', amount: 40, duration: '7 days' },
-  { id: 'monthly', name: 'Monthly', amount: 130, duration: '1 calendar month' },
+  { id: 'day', name: 'Daily', amount: 10, duration: '24 hours' },
+  { id: 'week', name: 'Weekly', amount: 40, duration: '7 days' },
+  { id: 'month', name: 'Monthly', amount: 130, duration: '30 days' },
 ] as const;
 export default function Premium() {
   const navigate = useNavigate();
@@ -25,7 +25,7 @@ export default function Premium() {
       const data = await invokePesapal('initiate', undefined, plan.id);
       if (typeof data?.redirect_url !== 'string') throw new Error('Secure checkout URL unavailable');
       const checkoutUrl = new URL(data.redirect_url);
-      if (checkoutUrl.protocol !== 'https:' || !/(^|\\.)pesapal\\.com$/.test(checkoutUrl.hostname)) throw new Error('Unexpected checkout destination');
+      if (checkoutUrl.protocol !== 'https:' || !['pay.pesapal.com', 'cybqa.pesapal.com'].includes(checkoutUrl.hostname)) throw new Error('Unexpected checkout destination');
       window.location.assign(data.redirect_url);
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Checkout unavailable'); setPaying(null); }
   }
