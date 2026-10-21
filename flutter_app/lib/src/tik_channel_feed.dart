@@ -26,6 +26,37 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
   String? _ownedId;
   int _request = 0;
   bool _showHints = true;
+  bool _likedBurst = false;
+  Timer? _likedBurstTimer;
+
+  Future<void> _togglePlayback(int index) async {
+    if (!mounted || index != _index || _gate.locked || _backgrounded) return;
+    final current = _player.controller;
+    if (current == null || !current.value.isInitialized || _player.channel?.id != widget.channels[index].id) {
+      _focus(index);
+      return;
+    }
+    try {
+      if (current.value.isPlaying) {
+        await current.pause();
+      } else {
+        await current.play();
+      }
+      if (mounted) _refresh();
+    } catch (error) {
+      debugPrint('Playback toggle failed: $error');
+    }
+  }
+
+  void _likeFocused(String channelId) {
+    if (!mounted) return;
+    if (!_library.isFavorite(channelId)) _library.toggleFavorite(channelId);
+    _likedBurstTimer?.cancel();
+    setState(() => _likedBurst = true);
+    _likedBurstTimer = Timer(const Duration(milliseconds: 650), () {
+      if (mounted) setState(() => _likedBurst = false);
+    });
+  }
 
   @override
   void initState() {
@@ -106,6 +137,7 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
   @override
   void dispose() {
     ++_request;
+    _likedBurstTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _player.removeListener(_refresh);
     _library.removeListener(_refresh);
@@ -156,6 +188,22 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                   stops: [0, 0.42, 1],
                 )),
               )),
+              if (selected && !_gate.locked && !_backgrounded)
+                Positioned.fill(child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () => _togglePlayback(index),
+                  onDoubleTap: () => _likeFocused(channel.id),
+                  child: Center(child: AnimatedOpacity(
+                    opacity: focused && controller != null && controller.value.isInitialized && !controller.value.isPlaying ? 1 : 0,
+                    duration: const Duration(milliseconds: 160),
+                    child: const DecoratedBox(
+                      decoration: BoxDecoration(color: Color(0x66000000), shape: BoxShape.circle),
+                      child: Padding(padding: EdgeInsets.all(18), child: Icon(Icons.play_arrow_rounded, size: 54, color: Colors.white)),
+                    ),
+                  )),
+                )),
+              if (selected && _likedBurst)
+                const IgnorePointer(child: Center(child: Icon(Icons.favorite, color: Color(0xFFFF315F), size: 104))),
 
               if (focused && _player.loading && !_gate.locked && !_backgrounded)
                 const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
