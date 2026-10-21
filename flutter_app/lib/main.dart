@@ -107,6 +107,7 @@ class ChannelScreen extends StatefulWidget {
 }
 
 class _ChannelScreenState extends State<ChannelScreen> {
+  late int _playbackLease;
   @override
   void initState() {
     super.initState();
@@ -114,13 +115,14 @@ class _ChannelScreenState extends State<ChannelScreen> {
     library.addListener(refresh);
     library.recordWatch(widget.channel.id);
     playback.open(widget.channel);
+    _playbackLease = playback.lease;
   }
   void refresh() { if (mounted) setState(() {}); }
   @override
   void dispose() {
     playback.removeListener(refresh);
     library.removeListener(refresh);
-    playback.stopIfCurrent(widget.channel.id);
+    playback.stopIfCurrent(widget.channel.id, lease: _playbackLease);
     super.dispose();
   }
   @override
