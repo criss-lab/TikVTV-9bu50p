@@ -216,11 +216,13 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_pendingCheckoutKey, "${backend.user?['id']}|$trackingId|${DateTime.now().toUtc().add(const Duration(hours: 24)).toIso8601String()}");
       }
+      if (!mounted) return;
       _startPaymentPolling();
       if (kIsWeb) {
         final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
         if (!opened) throw StateError('Could not open PesaPal checkout.');
       } else {
+        if (!mounted) return;
         await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => NativeCheckoutScreen(url: url)));
         if (mounted) await verifyPayment();
       }
