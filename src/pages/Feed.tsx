@@ -27,7 +27,15 @@ export default function Feed() {
   const [deadIds,     setDeadIds]    = useState<Set<string>>(new Set());
   const [liveIds,     setLiveIds]    = useState<Set<string>>(new Set());
   const t = useT();
-  const { channels, loading, hasMore, loadMore, total, error } = useChannels(category, countryFilter);
+  // A welcome boost is scoped to a genuinely fresh local profile, not returning viewers.
+  const [traceWelcome] = useState(() => {
+    try {
+      if (localStorage.getItem('tikvtvz:welcome-seen:v1') || localStorage.getItem('tikvtv_history_v2')) return false;
+      localStorage.setItem('tikvtvz:welcome-seen:v1', '1');
+      return true;
+    } catch { return false; }
+  });
+  const { channels, loading, hasMore, loadMore, total, error } = useChannels(category, countryFilter, traceWelcome);
   const { user }     = useAuthStore();
   const { addToHistory } = useWatchHistory();
   const containerRef = useRef<HTMLDivElement>(null);
