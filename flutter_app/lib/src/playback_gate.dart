@@ -18,6 +18,7 @@ class PlaybackGate extends ChangeNotifier {
   bool locked = true;
   bool checking = false;
   bool ready = false;
+  bool verificationUnavailable = false;
   Duration remaining = allowance;
   Future<void> Function()? onLock;
   Future<void>? _inflight;
@@ -50,12 +51,14 @@ class PlaybackGate extends ChangeNotifier {
         final status = await backend.premiumStatus();
         final expiry = DateTime.tryParse(status['ends_at']?.toString() ?? '')?.toUtc();
         if (version != _statusVersion) return;
+        verificationUnavailable = false;
         _verifiedPaidExpiry = status['active'] == true ? expiry : null;
         active = _verifiedPaidExpiry != null && _verifiedPaidExpiry!.isAfter(DateTime.now().toUtc());
       }
       _tick();
     } catch (e) {
       if (version != _statusVersion) return;
+      verificationUnavailable = true;
       debugPrint('Playback entitlement unavailable: $e');
       // Fail closed for paid access; only the already-started preview can apply.
       active = NativeBackend.instance.signedIn && _verifiedPaidExpiry != null && _verifiedPaidExpiry!.isAfter(DateTime.now().toUtc());
@@ -89,6 +92,7 @@ class PlaybackGate extends ChangeNotifier {
 
   void acceptVerifiedStatus(Map<String, dynamic> status) {
     ++_statusVersion;
+    verificationUnavailable = false;
     ready = true;
     final expiry = DateTime.tryParse(status['ends_at']?.toString() ?? '')?.toUtc();
     _verifiedPaidExpiry = status['active'] == true ? expiry : null;
