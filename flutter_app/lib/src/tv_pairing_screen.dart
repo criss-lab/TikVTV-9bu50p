@@ -60,13 +60,17 @@ class _TvPairingScreenState extends State<TvPairingScreen> {
     final challenge = pairing?['challenge'] as String?;
     final url = Uri.https('streamora.co.ke','/tv-pair',{'challenge':challenge ?? ''}).toString();
     return Scaffold(appBar: AppBar(title: const Text('Connect your phone')), body: Center(child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-      const Text('Open TikVTV on your Android phone → Connect TV → Scan QR', style: TextStyle(fontSize: 23)),
+      const Icon(Icons.phonelink, color: Color(0xFF32CED0), size: 45),
+      const SizedBox(height: 12),
+      const Text('Connect your phone', style: TextStyle(fontSize: 29, fontWeight: FontWeight.w800)),
+      const SizedBox(height: 8),
+      const Text('Open TikVTV on your Android phone → Connect TV → Scan QR', style: TextStyle(fontSize: 18, color: Colors.white70)),
       const SizedBox(height: 20),
       if (challenge == null && message == null) const CircularProgressIndicator(),
       if (challenge != null) ...[
-        Container(color: Colors.white, padding: const EdgeInsets.all(14), child: QrImageView(data: url, size: 230)),
+        Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: const [BoxShadow(color: Color(0x4432CED0), blurRadius: 25)]), padding: const EdgeInsets.all(18), child: QrImageView(data: url, size: 260)),
         const SizedBox(height: 14),
-        const Text('Confirm this six-digit code on your phone:', style: TextStyle(fontSize: 18)),
+        const Text('Confirm this six-digit code on your phone:', style: TextStyle(fontSize: 18, color: Colors.white70)),
         SelectableText('${pairing!['display_code']}', style: const TextStyle(fontSize: 42, fontWeight: FontWeight.bold, letterSpacing: 8)),
         Text('Expires in ${secondsLeft ~/ 60}:${(secondsLeft % 60).toString().padLeft(2, '0')}. Do not share this code with strangers.'),
       ],
