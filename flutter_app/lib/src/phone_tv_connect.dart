@@ -30,6 +30,7 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
       if (uri?.scheme != 'https' || !['streamora.co.ke','www.streamora.co.ke'].contains(uri?.host) || uri?.path != '/tv-pair') continue;
       final value = uri!.queryParameters['challenge'];
       if (value == null || !RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(value)) continue;
+      code.clear();
       setState(() { challenge = value; scanning = false; message = null; });
       return;
     }
@@ -75,7 +76,7 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
       const Divider(height: 32),
       const Row(children: [Icon(Icons.devices, color: Color(0xFF32CED0)), SizedBox(width: 10), Text('Connected TVs', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold))]),
       if (devices.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 18), child: Text('No TVs linked yet. Scan the QR code on your TV to get started.', style: TextStyle(color: Colors.white60))),
-      for (final device in devices) ListTile(title: Text('TikVTV TV · ${device['display_code']}'), subtitle: const Text('Tap to use as remote'), onTap: () => setState(() => pairingId = device['id'] as String), trailing: IconButton(tooltip: 'Disconnect TV', icon: const Icon(Icons.link_off), onPressed: () async { await TvPairingApi.revoke(device['id'] as String); if (mounted) { setState(() => pairingId = null); await load(); } })),
+      for (final device in devices) ListTile(title: Text('TikVTV TV · ${device['display_code']}'), subtitle: const Text('Tap to use as remote'), onTap: () => setState(() => pairingId = device['id'] as String), trailing: IconButton(tooltip: 'Disconnect TV', icon: const Icon(Icons.link_off), onPressed: () async { try { await TvPairingApi.revoke(device['id'] as String); if (mounted) { setState(() => pairingId = null); await load(); } } catch (e) { if (mounted) setState(() => message = 'Could not disconnect TV: $e'); } })),
       if (current != null) ...[
         const SizedBox(height: 12),
         const Text('Phone remote', textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
