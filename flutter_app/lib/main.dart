@@ -47,12 +47,26 @@ class TikVTV extends StatelessWidget {
     title: 'TikVTV',
     debugShowCheckedModeBanner: false,
     theme: ThemeData.dark(useMaterial3: true).copyWith(scaffoldBackgroundColor: const Color(0xFF101014), colorScheme: const ColorScheme.dark(primary: Color(0xFFFF315F), surface: Color(0xFF12131B))),
-    home: const ChannelHome(),
+    initialRoute: Uri.base.path.isEmpty ? '/' : Uri.base.path,
+    onGenerateRoute: (settings) {
+      final path = Uri.tryParse(settings.name ?? '/')?.path ?? '/';
+      const tabs = <String, int>{'/': 0, '/search': 1, '/explore': 2, '/trending': 3, '/clips': 4, '/epg': 5, '/profile': 6};
+      if (tabs.containsKey(path)) return MaterialPageRoute<void>(settings: settings, builder: (_) => ChannelHome(initialTab: tabs[path]!));
+      if (path == '/favorites' || path == '/history') return MaterialPageRoute<void>(settings: settings, builder: (_) => ChannelHome(initialLibraryTab: path == '/favorites' ? 1 : 2));
+      if (path == '/premium' || path == '/payment-callback') return MaterialPageRoute<void>(settings: settings, builder: (_) => const NativePremiumScreen());
+      if (path.startsWith('/channel/')) {
+        final id = Uri.decodeComponent(path.substring('/channel/'.length));
+        return MaterialPageRoute<void>(settings: settings, builder: (_) => ChannelRoute(channelId: id));
+      }
+      return MaterialPageRoute<void>(settings: settings, builder: (_) => const Scaffold(body: Center(child: Text('Page not found'))));
+    },
   );
 }
 
 class ChannelHome extends StatefulWidget {
-  const ChannelHome({super.key});
+  final int initialTab;
+  final int initialLibraryTab;
+  const ChannelHome({super.key, this.initialTab = 0, this.initialLibraryTab = 0});
   @override
   State<ChannelHome> createState() => _ChannelHomeState();
 }
@@ -104,6 +118,9 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    tab = widget.initialTab;
+    libraryTab = widget.initialLibraryTab;
+    searchOpen = tab == 1;
     WidgetsBinding.instance.addObserver(this);
     catalogue.load();
     _catalogueRefresh = Timer.periodic(const Duration(hours: 1), (_) => unawaited(catalogue.load()));
@@ -402,4 +419,29 @@ class _ChannelScreenState extends State<ChannelScreen> {
       if (_landscape) Positioned(top: 8, left: 8, child: IconButton.filledTonal(
         tooltip: 'Return to portrait', onPressed: () => _setLandscape(false), icon: const Icon(Icons.arrow_back))),
     ]));
+}
+
+/// Resolves deep-linked channels from the same catalogue and enforces the normal
+/// ChannelScreen playback gate; a URL never grants playback entitlement.
+class ChannelRoute extends StatefulWidget {
+  final String channelId;
+  const ChannelRoute({super.key, required this.channelId});
+  @override
+  State<ChannelRoute> createState() => _ChannelRouteState();
+}
+class _ChannelRouteState extends State<ChannelRoute> {
+  @override
+  void initState() { super.initState(); catalogue.addListener(refresh); unawaited(catalogue.load()); }
+  void refresh() { if (mounted) setState(() {}); }
+  @override
+  void dispose() { catalogue.removeListener(refresh); super.dispose(); }
+  @override
+  Widget build(BuildContext context) {
+    Channel? found;
+    for (final channel in catalogue.channels) { if (channel.id == widget.channelId) { found = channel; break; } }
+    if (found != null) return ChannelScreen(channel: found);
+    return Scaffold(appBar: AppBar(title: const Text('Channel')), body: Center(child: catalogue.loading
+      ? const CircularProgressIndicator()
+      : Column(mainAxisSize: MainAxisSize.min, children: [const Text('Channel unavailable'), const SizedBox(height: 12), FilledButton(onPressed: () => Navigator.pushReplacementNamed(context, '/'), child: const Text('Browse channels'))])));
+  }
 }
