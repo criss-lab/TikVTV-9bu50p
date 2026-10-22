@@ -97,6 +97,6 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
           OutlinedButton(onPressed: () => send('next', current), child: const Text('Next')),
         ]),
       ],
-    ])));
+    ]))));
   }
 }
