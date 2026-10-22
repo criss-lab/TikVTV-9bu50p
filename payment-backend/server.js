@@ -125,10 +125,7 @@ async function tvRoute(req, res, url) {
       const result = await client.query("SELECT id,display_code FROM tv_pairings WHERE challenge_hash=$1 AND approved_at IS NULL AND revoked_at IS NULL AND expires_at>NOW() FOR UPDATE", [digest(body.challenge)]);
       if (!result.rowCount) throw pairingError('Pairing code expired or already used', 410);
       if (body.display_code !== result.rows[0].display_code) throw pairingError('TV confirmation code does not match');
-      const deviceToken = secret();
-      await client.query("UPDATE tv_pairings SET user_id=$1,device_token_hash=$2,approved_at=NOW() WHERE id=$3", [user.id,digest(deviceToken),result.rows[0].id]);
-      // The private polling credential, never displayed in the QR, is required to collect the device token.
-      await client.query("UPDATE tv_pairings SET device_token_hash=$1 WHERE id=$2", [digest(deviceToken),result.rows[0].id]);
+      await client.query("UPDATE tv_pairings SET user_id=$1,approved_at=NOW() WHERE id=$2", [user.id,result.rows[0].id]);
       await client.query('COMMIT');
       return json(res, 200, { connected: true, pairing_id: result.rows[0].id });
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
@@ -136,15 +133,17 @@ async function tvRoute(req, res, url) {
   if (req.method === 'POST' && path === '/v1/tv/pair/status') {
     const body = await readBody(req);
     if (typeof body.poll_token !== 'string' || !/^[A-Za-z0-9_-]{32,}$/.test(body.poll_token)) throw pairingError('Invalid TV polling credential', 401);
-    const result = await pool.query("SELECT id,approved_at,expires_at,revoked_at,device_token_hash FROM tv_pairings WHERE poll_hash=$1", [digest(body.poll_token)]);
+    const result = await pool.query("SELECT id,approved_at,expires_at,revoked_at,claimed_at FROM tv_pairings WHERE poll_hash=$1", [digest(body.poll_token)]);
     if (!result.rowCount || result.rows[0].revoked_at) throw pairingError('Pairing not found or revoked', 410);
     const row = result.rows[0];
     if (!row.approved_at && new Date(row.expires_at).getTime() < Date.now()) throw pairingError('Pairing expired', 410);
     // Polling is only proof of possession of the TV private credential. Issue a new
     // device token atomically once, then retain it via the private poll response.
     if (!row.approved_at) return json(res, 200, { connected: false });
+    if (row.claimed_at) return json(res, 200, { connected: true, already_claimed: true, pairing_id: row.id });
     const token = secret();
-    await pool.query("UPDATE tv_pairings SET device_token_hash=$1,last_seen_at=NOW() WHERE id=$2", [digest(token),row.id]);
+    const claimed = await pool.query("UPDATE tv_pairings SET device_token_hash=$1,claimed_at=NOW(),last_seen_at=NOW() WHERE id=$2 AND claimed_at IS NULL RETURNING id", [digest(token),row.id]);
+    if (!claimed.rowCount) return json(res, 200, { connected: true, already_claimed: true, pairing_id: row.id });
     return json(res, 200, { connected: true, device_token: token, pairing_id: row.id });
   }
   if (req.method === 'GET' && path === '/v1/tv/device/subscription') {
