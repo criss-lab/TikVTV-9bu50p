@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'catalogue.dart';
 import 'native_backend.dart';
 import 'playback_gate.dart';
@@ -138,12 +139,40 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
   Timer? _paymentTimer;
   Timer? _entitlementTimer;
   bool checking = false;
+  static const _pendingCheckoutKey = 'tikvtv_pending_web_checkout_v1';
+  Future<void> restorePendingCheckout() async {
+    if (!kIsWeb) return;
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_pendingCheckoutKey);
+    if (stored == null || !backend.signedIn) return;
+    final parts = stored.split('|');
+    if (parts.length != 3 || parts[0] != backend.user?['id']?.toString() ||
+        DateTime.tryParse(parts[2])?.isBefore(DateTime.now().toUtc()) != false) {
+      await prefs.remove(_pendingCheckoutKey);
+      return;
+    }
+    if (!mounted) return;
+    setState(() { trackingId = parts[1]; message = 'Resuming secure PesaPal payment verification…'; });
+    _startPaymentPolling();
+    await verifyPayment();
+  }
+  void _startPaymentPolling() {
+    _paymentTimer?.cancel();
+    _paymentTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (mounted && !checking && trackingId != null) verifyPayment(silent: true);
+    });
+  }
+  Future<void> _clearPendingCheckout() async {
+    if (!kIsWeb) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_pendingCheckoutKey);
+  }
   String selectedPlan = 'month';
   bool loading = true, paying = false;
   bool active = false;
   String? endsAt, trackingId, message;
   @override
-  void initState() { super.initState(); WidgetsBinding.instance.addObserver(this); refresh(); _entitlementTimer = Timer.periodic(const Duration(seconds: 3), (_) { if (mounted && backend.signedIn && !loading) refresh(silent: true); }); }
+  void initState() { super.initState(); WidgetsBinding.instance.addObserver(this); refresh().then((_) => restorePendingCheckout()); _entitlementTimer = Timer.periodic(const Duration(seconds: 3), (_) { if (mounted && backend.signedIn && !loading) refresh(silent: true); }); }
   @override
   void dispose() { _paymentTimer?.cancel(); _entitlementTimer?.cancel(); WidgetsBinding.instance.removeObserver(this); super.dispose(); }
   @override
@@ -168,6 +197,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       Navigator.push(context, MaterialPageRoute(builder: (_) => const NativeAccountScreen()));
       return;
     }
+    if (paying || trackingId != null) { setState(() => message = 'Finish verifying the current payment before starting another.'); return; }
     setState(() { paying = true; message = null; });
     try {
       final order = await backend.initiatePremium(planCode: selectedPlan);
@@ -178,8 +208,12 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
         throw StateError('Secure PesaPal checkout destination was invalid.');
       }
       trackingId = order['order_tracking_id'] as String?;
-      _paymentTimer?.cancel();
-      _paymentTimer = Timer.periodic(const Duration(seconds: 2), (_) { if (mounted && !checking && trackingId != null) verifyPayment(silent: true); });
+      if (trackingId == null || trackingId!.isEmpty) throw StateError('Payment tracking reference was not returned.');
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_pendingCheckoutKey, "${backend.user?['id']}|$trackingId|${DateTime.now().toUtc().add(const Duration(hours: 24)).toIso8601String()}");
+      }
+      _startPaymentPolling();
       if (kIsWeb) {
         final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
         if (!opened) throw StateError('Could not open PesaPal checkout.');
@@ -200,7 +234,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       final status = (result['payment_status_description'] ?? 'pending').toString();
       if (mounted && !silent) setState(() { message = 'PesaPal reports: $status. Access requires a verified server entitlement.'; paying = false; });
       await refresh(silent: silent);
-      if (active || ['failed', 'invalid', 'reversed'].contains(status.toLowerCase())) { _paymentTimer?.cancel(); trackingId = null; }
+      if (active || ['failed', 'invalid', 'reversed', 'cancelled'].contains(status.toLowerCase())) { _paymentTimer?.cancel(); trackingId = null; await _clearPendingCheckout(); }
     } catch (e) { if (mounted && !silent) setState(() { message = e.toString().replaceFirst('Bad state: ', ''); paying = false; }); }
     finally { checking = false; }
   }
@@ -218,8 +252,8 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       ],
       if (loading) const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator())),
       if (!loading && active) Card(color: _panel, child: ListTile(leading: const Icon(Icons.verified, color: Colors.greenAccent), title: const Text('Premium active'), subtitle: Text(endsAt == null ? 'Subscription verified' : 'Access until ${DateTime.tryParse(endsAt!)?.toLocal() ?? endsAt}'))),
-      if (!loading && !active && backend.signedIn) ...[
-        const Text('Choose a plan', style: TextStyle(fontWeight: FontWeight.bold)),
+      if (!loading && backend.signedIn) ...[
+        Text(active ? 'Extend your subscription' : 'Choose a plan', style: const TextStyle(fontWeight: FontWeight.bold)),
         DropdownButtonFormField<String>(
           initialValue: selectedPlan,
           decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Subscription duration'),
@@ -229,9 +263,9 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
             DropdownMenuItem(value: 'week', child: Text('1 week — KSh 40')),
             DropdownMenuItem(value: 'month', child: Text('1 month — KSh 130')),
           ],
-          onChanged: paying ? null : (value) { if (value != null) setState(() => selectedPlan = value); },
+          onChanged: paying || trackingId != null ? null : (value) { if (value != null) setState(() => selectedPlan = value); },
         ),
-        FilledButton.icon(onPressed: paying ? null : checkout, icon: const Icon(Icons.lock), label: Text(paying ? 'Connecting to PesaPal…' : 'Subscribe with PesaPal')),
+        FilledButton.icon(onPressed: paying || trackingId != null ? null : checkout, icon: const Icon(Icons.lock), label: Text(paying ? 'Connecting to PesaPal…' : trackingId != null ? 'Verifying payment…' : active ? 'Extend with PesaPal' : 'Subscribe with PesaPal')),
       ],
       if (message != null) Padding(padding: const EdgeInsets.only(top: 14), child: Text(message!, style: const TextStyle(color: Colors.white70))),
       const SizedBox(height: 12),
