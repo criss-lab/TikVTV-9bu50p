@@ -346,6 +346,14 @@ async function route(req, res) {
   return json(res, 404, { error: 'Not found' });
 }
 const server = http.createServer((req, res) => {
+  // API responses must not be cached or embedded; TLS terminates at the trusted
+  // HTTPS ingress, while backend-to-Pesapal and backend-to-DB verify TLS.
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
   const origin = req.headers.origin;
   if (origin && allowedOrigins.has(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin');
