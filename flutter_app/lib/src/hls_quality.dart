@@ -9,7 +9,7 @@ class HlsVariant {
 
 List<HlsVariant> parseHlsMaster(Uri master, String content) {
   final result = <HlsVariant>[];
-  final lines = content.split(RegExp(r'\\r?\\n'));
+  final lines = content.split(RegExp(r'\r?\n'));
   Map<String, String>? pending;
   for (final raw in lines) {
     final line = raw.trim();
