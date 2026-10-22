@@ -79,7 +79,7 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
           if (focus?.context != null) Actions.maybeInvoke(focus!.context!, const ActivateIntent());
         } else if (['up','down','left','right'].contains(command)) {
           final direction = <String, TraversalDirection>{'up':TraversalDirection.up,'down':TraversalDirection.down,'left':TraversalDirection.left,'right':TraversalDirection.right}[command]!;
-          FocusManager.instance.primaryFocus?.focusInDirection(direction);
+          FocusScope.of(context).focusInDirection(direction);
         } else if (command == 'play_pause' && player.controller != null) {
           final controller = player.controller!;
           if (controller.value.isPlaying) { await controller.pause(); } else if (!gate.locked) { await controller.play(); }
