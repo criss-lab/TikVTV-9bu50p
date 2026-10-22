@@ -32,6 +32,8 @@ export function usePremiumAccess() {
     void refresh();
     const update = () => { setNow(Date.now()); void refresh(); };
     const visible = () => { if (!document.hidden) update(); };
+    const acrossTabs = (event: StorageEvent) => { if (event.key === PREMIUM_CHANGED) update(); };
+    window.addEventListener('storage', acrossTabs);
     window.addEventListener(PREMIUM_CHANGED, update);
     window.addEventListener('focus', update);
     document.addEventListener('visibilitychange', visible);
@@ -39,6 +41,7 @@ export function usePremiumAccess() {
     const poll = window.setInterval(() => { if (!document.hidden) void refresh(); }, 3000);
     return () => {
       ++generation.current;
+      window.removeEventListener('storage', acrossTabs);
       window.removeEventListener(PREMIUM_CHANGED, update);
       window.removeEventListener('focus', update);
       document.removeEventListener('visibilitychange', visible);
