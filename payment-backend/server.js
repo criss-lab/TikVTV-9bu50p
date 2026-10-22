@@ -257,9 +257,10 @@ async function route(req, res) {
           to_regclass('public.free_preview_sessions') IS NOT NULL AS free_preview_sessions,
           to_regclass('public.free_channel_previews') IS NOT NULL AS free_channel_previews,
           to_regclass('public.pesapal_ipn_events_notification_tracking_status_key') IS NOT NULL AS ipn_status_history_index,
-          (SELECT is_nullable = 'YES' FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'payment_orders' AND column_name = 'order_tracking_id') AS order_tracking_id_nullable
+          (SELECT is_nullable = 'YES' FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'payment_orders' AND column_name = 'order_tracking_id') AS order_tracking_id_nullable,
+          (SELECT COUNT(*)::int FROM information_schema.columns WHERE table_schema='public' AND table_name='payment_orders' AND column_name IN ('pesapal_payment_method','pesapal_confirmation_code','raw_ipn','paid_at')) AS payment_activation_columns
       `);
-      if (!schema.rows[0]?.payment_orders || !schema.rows[0]?.subscriptions || !schema.rows[0]?.pesapal_ipn_events || !schema.rows[0]?.free_preview_sessions || !schema.rows[0]?.free_channel_previews || !schema.rows[0]?.ipn_status_history_index || schema.rows[0]?.order_tracking_id_nullable !== true) {
+      if (!schema.rows[0]?.payment_orders || !schema.rows[0]?.subscriptions || !schema.rows[0]?.pesapal_ipn_events || !schema.rows[0]?.free_preview_sessions || !schema.rows[0]?.free_channel_previews || !schema.rows[0]?.ipn_status_history_index || schema.rows[0]?.order_tracking_id_nullable !== true || schema.rows[0]?.payment_activation_columns !== 4) {
         return json(res, 503, { ready: false, reason: 'payment_schema_missing' });
       }
       await token();
