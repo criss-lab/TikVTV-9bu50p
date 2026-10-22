@@ -8,6 +8,8 @@ import 'src/playback.dart';
 import 'src/playback_gate.dart';
 import 'src/library.dart';
 import 'src/native_screens.dart';
+import 'src/tv_pairing_screen.dart';
+import 'src/tv_pairing_api.dart';
 
 /// Android TV entry point: a remote-first experience using the same catalogue,
 /// account, viewing-access service and shared decoder as the mobile application.
@@ -52,6 +54,41 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
   Channel? selected;
   String query = '';
   bool openingChannel = false;
+  Timer? remoteTimer;
+  bool remotePolling = false;
+  int remoteCursor = 0;
+  Future<void> connectPhone() async {
+    await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => const TvPairingScreen()));
+    if (mounted) { await gate.refresh(); refresh(); }
+  }
+  Future<void> pollRemote() async {
+    final token = NativeBackend.instance.tvDeviceToken;
+    if (remotePolling || token == null) return;
+    remotePolling = true;
+    try {
+      final commands = await TvPairingApi.pollCommands(token, remoteCursor);
+      for (final item in commands) {
+        remoteCursor = (item['id'] as num).toInt();
+        if (!mounted) break;
+        final command = item['command'] as String;
+        if (command == 'home' || command == 'back') {
+          if (Navigator.canPop(context)) Navigator.pop(context);
+          else if (command == 'home') setState(() => section = 0);
+        } else if (command == 'select') {
+          final focus = FocusManager.instance.primaryFocus;
+          if (focus?.context != null) Actions.maybeInvoke(focus!.context!, const ActivateIntent());
+        } else if (['up','down','left','right'].contains(command)) {
+          final direction = <String, TraversalDirection>{'up':TraversalDirection.up,'down':TraversalDirection.down,'left':TraversalDirection.left,'right':TraversalDirection.right}[command]!;
+          FocusManager.instance.primaryFocus?.focusInDirection(direction);
+        } else if (command == 'play_pause' && player.controller != null) {
+          final controller = player.controller!;
+          if (controller.value.isPlaying) { await controller.pause(); } else if (!gate.locked) { await controller.play(); }
+        }
+      }
+    } catch (e) { debugPrint('TV remote polling unavailable: $e'); }
+    finally { remotePolling = false; }
+  }
+
   final firstChannelFocus = FocusNode(debugLabel: 'First TV channel');
 
   @override
@@ -67,6 +104,8 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
     unawaited(library.load());
     unawaited(catalogue.load());
     unawaited(NativeBackend.instance.restore().then((_) => gate.refresh()));
+    unawaited(NativeBackend.instance.restoreTvDevice().then((_) => gate.refresh()));
+    remoteTimer = Timer.periodic(const Duration(seconds: 1), (_) => unawaited(pollRemote()));
   }
 
   void refresh() { if (mounted) setState(() {}); }
@@ -111,6 +150,7 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
     gate.removeListener(refresh);
     library.removeListener(refresh);
     NativeBackend.instance.removeListener(onAccountChanged);
+    remoteTimer?.cancel();
     search.dispose();
     searchFocus.dispose();
     firstChannelFocus.dispose();
@@ -133,6 +173,7 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
           Row(children: [
             const Text('TikVTV  TV', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
             const Spacer(),
+            TextButton.icon(onPressed: connectPhone, icon: const Icon(Icons.qr_code_2), label: Text(NativeBackend.instance.tvPaired ? 'Phone connected' : 'Connect phone')),
             TextButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const NativePremiumScreen())), icon: const Icon(Icons.workspace_premium), label: const Text('Premium')),
             TextButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const NativeAccountScreen())), icon: const Icon(Icons.person), label: Text(NativeBackend.instance.signedIn ? 'Account' : 'Sign in')),
             SizedBox(width: 320, child: TextField(
