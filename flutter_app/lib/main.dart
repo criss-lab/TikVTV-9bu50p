@@ -10,6 +10,7 @@ import 'package:video_player/video_player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'src/native_backend.dart';
 import 'src/native_screens.dart';
+import 'src/phone_tv_connect.dart';
 import 'src/epg_service.dart';
 import 'src/catalogue.dart';
 import 'src/playback.dart';
@@ -53,6 +54,7 @@ class TikVTV extends StatelessWidget {
       const tabs = <String, int>{'/': 0, '/search': 1, '/explore': 2, '/trending': 3, '/clips': 4, '/epg': 5, '/profile': 6};
       if (tabs.containsKey(path)) return MaterialPageRoute<void>(settings: settings, builder: (_) => ChannelHome(initialTab: tabs[path]!));
       if (path == '/favorites' || path == '/history') return MaterialPageRoute<void>(settings: settings, builder: (_) => ChannelHome(initialLibraryTab: path == '/favorites' ? 1 : 2));
+      if (path == '/tv-connect') return MaterialPageRoute<void>(settings: settings, builder: (_) => const PhoneTvConnectScreen());
       if (path == '/premium' || path == '/payment-callback') return MaterialPageRoute<void>(settings: settings, builder: (_) => const NativePremiumScreen());
       if (path.startsWith('/channel/')) {
         final id = Uri.decodeComponent(path.substring('/channel/'.length));
@@ -210,6 +212,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
           IconButton(tooltip:'Search channels',onPressed:(){ if(tab!=1) { selectTab(1); } else { setState(()=>searchOpen=!searchOpen); } },icon: const Icon(Icons.search)),
           IconButton(tooltip:'Refresh channels',onPressed:()=>catalogue.load(force:true),icon:const Icon(Icons.refresh)),
           PopupMenuButton<String>(tooltip:'Language',initialValue:language,itemBuilder:(_)=>['All',...languages].map((v)=>PopupMenuItem(value:v,child:Text(v))).toList(),onSelected:(v)=>setState(()=>language=v),child: Padding(padding:const EdgeInsets.symmetric(horizontal:8),child:Center(child:Text(language=='All'?'All⌄':'${language.toUpperCase()}⌄',style:const TextStyle(fontSize:12))))),
+          IconButton(tooltip:'Connect Android TV',onPressed:()=>Navigator.push(context,MaterialPageRoute<void>(builder:(_)=>const PhoneTvConnectScreen())),icon:const Icon(Icons.connected_tv)),
           IconButton(tooltip:'Open profile',onPressed:()=>selectTab(6),icon:const CircleAvatar(radius:17,backgroundColor:Color(0xFFDB4773),child:Icon(Icons.person,color:Colors.white,size:19))),
         ],
       ),
