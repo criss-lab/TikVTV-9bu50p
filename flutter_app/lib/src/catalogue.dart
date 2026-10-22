@@ -16,6 +16,13 @@ class ChannelCatalogue extends ChangeNotifier {
   // may enter a subscription-backed catalogue. Review distribution rights first.
   static const approvedFreeTvIds = <String>{};
   int discoveredFreeTv = 0;
+  final Map<String, int> discoveredBySource = {};
+  // StreamVault mirrors iptv-org; awesome-iptv is a directory, not a playlist.
+  // Guovin exports require an independently configured and reviewed deployment.
+  static const additionalPlaylists = <String, String>{
+    'free-tv': 'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8',
+    'dearbulut': 'https://dearbulut.github.io/iptv/playlists/online.m3u',
+  };
 
   static final ChannelCatalogue _instance = ChannelCatalogue._();
   factory ChannelCatalogue() => _instance;
@@ -72,8 +79,7 @@ class ChannelCatalogue extends ChangeNotifier {
           .timeout(const Duration(seconds: 20)),
         http.get(Uri.parse('https://iptv-org.github.io/api/blocklist.json'))
           .timeout(const Duration(seconds: 20)),
-        http.get(Uri.parse('https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8'))
-          .timeout(const Duration(seconds: 20)),
+
       ]);
       if (results[0].statusCode != 200 || results[1].statusCode != 200) {
         throw StateError('Catalogue HTTP failure');
@@ -118,32 +124,54 @@ class ChannelCatalogue extends ChangeNotifier {
           item['country'] is String ? item['country'] : 'INT',
           List.unmodifiable(sources[id]!), categories: List<String>.from(item['categories'] as List? ?? const []), languages: List<String>.from(item['languages'] as List? ?? const [])));
       }
-      // Discover Free-TV updates on every refresh. Never auto-monetize a third-party
-      // stream: only attach a reviewed channel when its ID has been approved.
-      discoveredFreeTv = 0;
-      if (results[4].statusCode == 200 && results[4].body.startsWith('#EXTM3U')) {
+      // Optional feeds are discovered independently: a failure never removes
+      // the last known-good primary catalogue. Do not auto-monetize links.
+      discoveredBySource.clear();
+      final known = <String, int>{for (var i = 0; i < parsed.length; i++) parsed[i].id: i};
+      final extra = await Future.wait(additionalPlaylists.entries.map((entry) async {
+        try {
+          final response = await http.get(Uri.parse(entry.value))
+              .timeout(const Duration(seconds: 20));
+          return MapEntry(entry.key, response.statusCode == 200 ? response.body : '');
+        } catch (e) {
+          debugPrint('Optional playlist unavailable: $e');
+          return MapEntry(entry.key, '');
+        }
+      }));
+      for (final entry in extra) {
+        var count = 0;
+        if (!entry.value.startsWith('#EXTM3U')) {
+          discoveredBySource[entry.key] = 0;
+          continue;
+        }
         String? pendingId;
-        for (final line in const LineSplitter().convert(results[4].body)) {
+        final seen = <String>{};
+        for (final raw in const LineSplitter().convert(entry.value)) {
+          final line = raw.trim();
           if (line.startsWith('#EXTINF:')) {
-            final match = RegExp(r'tvg-id="([^"]+)"').firstMatch(line);
-            pendingId = match?.group(1);
+            pendingId = RegExp(r'tvg-id="([^"]+)"').firstMatch(line)?.group(1);
           } else if (line.isNotEmpty && !line.startsWith('#')) {
-            final uri = Uri.tryParse(line.trim());
-            if (pendingId != null && uri != null && (uri.scheme == 'https' || uri.scheme == 'http') && uri.host.isNotEmpty) {
-              discoveredFreeTv++;
-              if (approvedFreeTvIds.contains(pendingId) && !blocked.contains(pendingId)) {
-                final index = parsed.indexWhere((c) => c.id == pendingId);
-                if (index >= 0 && !parsed[index].urls.contains(line.trim())) {
-                  final ch = parsed[index];
-                  parsed[index] = Channel(ch.id, ch.name, ch.logo, ch.country,
-                    List.unmodifiable([...ch.urls, line.trim()]), categories: ch.categories, languages: ch.languages);
-                }
+            final uri = Uri.tryParse(line);
+            if (pendingId != null && uri != null &&
+                (uri.scheme == 'https' || uri.scheme == 'http') &&
+                uri.host.isNotEmpty && !blocked.contains(pendingId) &&
+                seen.add('$pendingId|$line')) {
+              count++;
+              final index = known[pendingId];
+              if (approvedFreeTvIds.contains(pendingId) && index != null &&
+                  !parsed[index].urls.contains(line)) {
+                final ch = parsed[index];
+                parsed[index] = Channel(ch.id, ch.name, ch.logo, ch.country,
+                    List.unmodifiable([...ch.urls, line]),
+                    categories: ch.categories, languages: ch.languages);
               }
             }
             pendingId = null;
           }
         }
+        discoveredBySource[entry.key] = count;
       }
+      discoveredFreeTv = discoveredBySource['free-tv'] ?? 0;
       channels = List.unmodifiable(parsed);
       _loadedAt = DateTime.now();
       try {
