@@ -199,6 +199,10 @@ class TvPlayer extends StatefulWidget {
 
 class _TvPlayerState extends State<TvPlayer> {
   bool retrying = false;
+  Future<void> openPremium() async {
+    await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => const NativePremiumScreen()));
+    if (mounted) await widget.gate.refresh();
+  }
   Future<void> retry() async {
     if (retrying || widget.gate.locked) return;
     setState(() => retrying = true);
@@ -229,7 +233,10 @@ class _TvPlayerState extends State<TvPlayer> {
         ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
             const Icon(Icons.lock_outline, size: 58),
             const SizedBox(height: 12),
-            Text(widget.gate.verificationUnavailable ? 'Unable to verify access. Check your connection.' : 'Sign in or unlock channels on your phone or Web account.', textAlign: TextAlign.center),
+            Text(widget.gate.verificationUnavailable ? 'Unable to verify access. Check your connection.' : 'Unlock all channels with the same TikVTV account and PesaPal plans as the phone app.', textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            FilledButton.icon(onPressed: openPremium, icon: const Icon(Icons.workspace_premium), label: const Text('Open Premium and pay')),
+            const SizedBox(height: 8),
             TextButton(onPressed: widget.gate.checking ? null : () => widget.gate.refresh(), child: Text(widget.gate.checking ? 'Checking access…' : 'Retry access check')),
           ]))
         : controller != null && controller.value.isInitialized
