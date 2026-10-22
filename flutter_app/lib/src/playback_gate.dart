@@ -9,7 +9,7 @@ class PlaybackGate extends ChangeNotifier {
   static final instance = PlaybackGate._();
   static const allowance = Duration(minutes: 15);
   static const _startedKey = 'tikvtv_native_trial_started_at_v1';
-  static const _entitlementRefreshInterval = Duration(seconds: 15);
+  static const _entitlementRefreshInterval = Duration(seconds: 3);
   DateTime? _started;
   Timer? _timer;
   Timer? _entitlementTimer;
