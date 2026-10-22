@@ -26,6 +26,26 @@ class SharedPlayback extends ChangeNotifier {
   double get bufferHealth => (bufferedAhead.inMilliseconds / targetBufferAhead.inMilliseconds).clamp(0.0, 1.0);
   bool buffering = false;
   bool _backgrounded = false;
+  DateTime? _bufferingStartedAt;
+  Duration totalBuffering = Duration.zero;
+  int rebufferEvents = 0;
+  DateTime? _playbackStartedAt;
+  Duration? get playbackUptime => _playbackStartedAt == null ? null : DateTime.now().difference(_playbackStartedAt!);
+  double? get rebufferRatio {
+    final uptime = playbackUptime;
+    if (uptime == null || uptime.inMilliseconds == 0) return null;
+    final active = _bufferingStartedAt == null ? Duration.zero : DateTime.now().difference(_bufferingStartedAt!);
+    return ((totalBuffering + active).inMilliseconds / uptime.inMilliseconds).clamp(0.0, 1.0);
+  }
+  void _updateBuffering(bool next) {
+    if (next == buffering) return;
+    if (next) { rebufferEvents++; _bufferingStartedAt = DateTime.now(); }
+    else if (_bufferingStartedAt != null) {
+      totalBuffering += DateTime.now().difference(_bufferingStartedAt!);
+      _bufferingStartedAt = null;
+    }
+    buffering = next;
+  }
   DateTime? _lastRecoveryAt;
   static const Duration stallRecoveryDelay = Duration(seconds: 18);
   static const Duration recoveryCooldown = Duration(seconds: 5);
@@ -78,7 +98,7 @@ class SharedPlayback extends ChangeNotifier {
     controller = null;
     channel = null;
     loading = false;
-    buffering = false;
+    _updateBuffering(false);
     bufferedAhead = Duration.zero;
     error = null;
     notifyListeners();
@@ -99,7 +119,10 @@ class SharedPlayback extends ChangeNotifier {
     _lastReportedSecond = -1;
     _lastReportedBufferSecond = -1;
     bufferedAhead = Duration.zero;
-    buffering = false;
+    _updateBuffering(false);
+    rebufferEvents = 0;
+    totalBuffering = Duration.zero;
+    _playbackStartedAt = DateTime.now();
     final previous = controller;
     final pending = _candidateSettled?.future;
     controller = null;
@@ -224,7 +247,7 @@ class SharedPlayback extends ChangeNotifier {
             }));
             return;
           }
-          buffering = candidate.value.isBuffering;
+          _updateBuffering(candidate.value.isBuffering);
           bufferedAhead = Duration.zero;
           for (final range in candidate.value.buffered) {
             if (range.start <= candidate.value.position && range.end > candidate.value.position) {
@@ -266,7 +289,7 @@ class SharedPlayback extends ChangeNotifier {
     ++_generation;
     _cancelWatchdog();
     bufferedAhead = Duration.zero;
-    buffering = false;
+    _updateBuffering(false);
     final old = controller;
     controller = null;
     channel = null;
