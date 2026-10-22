@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'src/media_handler.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'src/design_system.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -47,16 +48,7 @@ class TikVTV extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'TikVTV',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData.dark(useMaterial3: true).copyWith(
-      scaffoldBackgroundColor: const Color(0xFF0B0D15),
-      colorScheme: const ColorScheme.dark(primary: Color(0xFFFF315F), secondary: Color(0xFF32CED0), surface: Color(0xFF171A26), onSurface: Color(0xFFF5F5FA)),
-      appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF10121B), foregroundColor: Colors.white, centerTitle: false, elevation: 0),
-      cardTheme: CardThemeData(color: const Color(0xFF171A26), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Color(0xFF303344)))),
-      inputDecorationTheme: InputDecorationTheme(filled: true, fillColor: const Color(0xFF191C29), contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17), border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xFF343748))), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xFF343748))), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xFFFF315F), width: 2))),
-      filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF315F), foregroundColor: Colors.white, minimumSize: const Size(52, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)))),
-      outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFF5F5FA), side: const BorderSide(color: Color(0xFF414558)), minimumSize: const Size(52, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)))),
-      chipTheme: ChipThemeData(backgroundColor: const Color(0xFF191C29), selectedColor: const Color(0xFF542035), side: const BorderSide(color: Color(0xFF353849)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-    ),
+    theme: TikVtvDesign.theme(television: false),
     initialRoute: kIsWeb && Uri.base.scheme.startsWith('http') && Uri.base.path.isNotEmpty ? Uri.base.path : '/',
     onGenerateRoute: (settings) {
       final path = Uri.tryParse(settings.name ?? '/')?.path ?? '/';
