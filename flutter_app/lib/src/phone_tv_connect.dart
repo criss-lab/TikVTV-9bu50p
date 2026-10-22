@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'tv_pairing_api.dart';
 
@@ -53,18 +55,19 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
   @override
   Widget build(BuildContext context) {
     final current = pairingId ?? (devices.isNotEmpty ? devices.first['id'] as String : null);
-    return Scaffold(appBar: AppBar(title: const Text('Connect Android TV')), body: ListView(padding: const EdgeInsets.all(20), children: [
+    return Scaffold(appBar: AppBar(title: const Text('Connect Android TV')), body: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 680), child: ListView(padding: const EdgeInsets.all(20), children: [
       Container(padding: const EdgeInsets.all(22), decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF382039), Color(0xFF172C36)]), borderRadius: BorderRadius.circular(24), border: Border.all(color: const Color(0xFF594253))), child: const Column(children: [Icon(Icons.connected_tv, color: Color(0xFF32CED0), size: 46), SizedBox(height: 12), Text('Your TV, your phone', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800)), SizedBox(height: 8), Text('Open Connect phone on TikVTV TV, scan its QR code and confirm the six-digit number. Your account and remote will be linked securely.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white70, height: 1.4))])),
       const SizedBox(height: 20),
+      if (kIsWeb) const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('On web, allow camera access in your browser. Use HTTPS and a device with a camera.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white70))),
       if (scanning) ...[
-        SizedBox(height: 290, child: MobileScanner(onDetect: scan, errorBuilder: (context, error, child) => Center(child: Padding(padding: const EdgeInsets.all(16), child: Text('Camera unavailable. Allow camera access in Android settings, then retry.', textAlign: TextAlign.center))))),
+        SizedBox(height: 290, child: MobileScanner(onDetect: scan, errorBuilder: (context, error, child) => Center(child: Padding(padding: const EdgeInsets.all(16), child: Text('Camera unavailable. Allow camera access in your browser or Android settings, then retry.', textAlign: TextAlign.center))))),
         TextButton.icon(onPressed: () => setState(() { scanning = false; message = null; }), icon: const Icon(Icons.close), label: const Text('Close scanner')),
       ],
       if (!scanning && challenge == null) FilledButton.icon(onPressed: () => setState(() { scanning = true; message = null; }), icon: const Icon(Icons.qr_code_scanner), label: const Text('Scan TV QR code')),
       if (challenge != null) ...[
         const SizedBox(height: 12),
         const Text('Confirm the six-digit number displayed on your TV before connecting.'),
-        TextField(controller: code, maxLength: 6, keyboardType: TextInputType.number, textInputAction: TextInputAction.done, onSubmitted: (_) => approve(), decoration: const InputDecoration(labelText: 'TV confirmation code')),
+        TextField(controller: code, maxLength: 6, keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly], textInputAction: TextInputAction.done, onSubmitted: (_) => approve(), decoration: const InputDecoration(labelText: 'TV confirmation code')),
         FilledButton(onPressed: busy ? null : approve, child: Text(busy ? 'Connecting…' : 'Confirm and connect TV')),
         TextButton(onPressed: () => setState(() { challenge = null; code.clear(); message = null; }), child: const Text('Cancel')),
       ],
@@ -94,6 +97,6 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
           OutlinedButton(onPressed: () => send('next', current), child: const Text('Next')),
         ]),
       ],
-    ]));
+    ])));
   }
 }
