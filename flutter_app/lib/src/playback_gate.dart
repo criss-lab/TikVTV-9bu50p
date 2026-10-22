@@ -5,7 +5,7 @@ import 'native_backend.dart';
 /// Render/Neon owns all seven distinct fifteen-minute preview allocations.
 /// The device only caches verified deadlines; it never grants a local trial.
 class PlaybackGate extends ChangeNotifier {
-  PlaybackGate._();
+  PlaybackGate._() { _backend.addListener(_identityChanged); }
   static final instance = PlaybackGate._();
   static const _refreshInterval = Duration(seconds: 3);
   static const _stableRefreshInterval = Duration(seconds: 30);
@@ -28,6 +28,19 @@ class PlaybackGate extends ChangeNotifier {
   int previewsUsed = 0;
   static const previewsLimit = 7;
   Future<void> Function()? onLock;
+
+  void _identityChanged() {
+    final account = _backend.signedIn ? _backend.user?['id']?.toString() : (_backend.tvPaired ? 'paired-tv' : null);
+    if (account == _accountId) return;
+    ++_revision;
+    _accountId = account;
+    _paidUntil = null;
+    _previewUntil = null;
+    _lastVerifiedAt = null;
+    ready = false;
+    _apply();
+    if (account != null && _channelId != null) unawaited(refresh());
+  }
 
   bool get _paid => _paidUntil?.isAfter(DateTime.now().toUtc()) ?? false;
   bool get _preview => _previewUntil?.isAfter(DateTime.now().toUtc()) ?? false;
