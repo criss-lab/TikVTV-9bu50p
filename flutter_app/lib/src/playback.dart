@@ -25,6 +25,10 @@ class SharedPlayback extends ChangeNotifier {
   bool get bufferBelowTarget => bufferedAhead < targetBufferAhead;
   double get bufferHealth => (bufferedAhead.inMilliseconds / targetBufferAhead.inMilliseconds).clamp(0.0, 1.0);
   bool buffering = false;
+  bool _backgrounded = false;
+  DateTime? _lastRecoveryAt;
+  static const Duration stallRecoveryDelay = Duration(seconds: 18);
+  static const Duration recoveryCooldown = Duration(seconds: 5);
   int recoveryCount = 0;
   int _lastReportedSecond = -1;
   int _lastReportedBufferSecond = -1;
@@ -57,6 +61,7 @@ class SharedPlayback extends ChangeNotifier {
   void setBackgrounded(bool value) {
     final current = controller;
     if (current == null) { return; }
+    _backgrounded = value;
     if (value) {
       _stalledAt = null;
       // Keep the selected stream running when the screen locks or the user switches apps.
@@ -74,6 +79,7 @@ class SharedPlayback extends ChangeNotifier {
     channel = null;
     loading = false;
     buffering = false;
+    bufferedAhead = Duration.zero;
     error = null;
     notifyListeners();
     await _release(old);
@@ -89,6 +95,7 @@ class SharedPlayback extends ChangeNotifier {
     _lease = token;
     _cancelWatchdog();
     _sameSourceRetries = 0;
+    _lastRecoveryAt = null;
     _lastReportedSecond = -1;
     _lastReportedBufferSecond = -1;
     bufferedAhead = Duration.zero;
@@ -173,7 +180,7 @@ class SharedPlayback extends ChangeNotifier {
             return;
           }
           final state = candidate.value;
-          if (!state.isInitialized || state.hasError ||
+          if (_backgrounded || !state.isInitialized || state.hasError ||
               (!state.isPlaying && !state.isBuffering)) {
             _stalledAt = null;
             _previousPosition = state.position;
@@ -185,12 +192,15 @@ class SharedPlayback extends ChangeNotifier {
             return;
           }
           _stalledAt ??= DateTime.now();
-          if (loading || DateTime.now().difference(_stalledAt!) < const Duration(seconds: 12)) { return; }
+          final now = DateTime.now();
+          if (loading || now.difference(_stalledAt!) < stallRecoveryDelay ||
+              (_lastRecoveryAt != null && now.difference(_lastRecoveryAt!) < recoveryCooldown)) { return; }
+          _lastRecoveryAt = now;
           _cancelWatchdog();
           stallCount++;
           recoveryCount++;
           loading = true;
-          error = 'Source stalled; trying another feed';
+          error = 'Playback stalled; recovering stream';
           controller = null;
           notifyListeners();
           final retryIndex = _sameSourceRetries < maxSameSourceRetries ? i : fallbackIndex;
