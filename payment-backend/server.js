@@ -68,6 +68,11 @@ async function verifyAndActivate(tracking, suppliedReference = '') {
   if (suppliedReference && suppliedReference !== order.merchant_reference) {
     throw Object.assign(new Error('Payment reference does not match the order'), { status: 400 });
   }
+  // An already committed order must remain idempotent even during a Pesapal outage.
+  if (order.status === 'completed') {
+    const existing = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW()', [order.user_id]);
+    return { payment_status_description: 'Completed', active: existing.rowCount > 0, ends_at: existing.rows[0]?.expires_at || null, order_tracking_id: order.order_tracking_id };
+  }
   const verified = await pesapal('/api/Transactions/GetTransactionStatus?orderTrackingId=' + encodeURIComponent(order.order_tracking_id));
   const status = String(verified.payment_status_description || '').toLowerCase();
   const amount = Number(verified.amount); const currency = String(verified.currency || '').toUpperCase();
@@ -85,7 +90,7 @@ async function verifyAndActivate(tracking, suppliedReference = '') {
       const sub = await client.query('SELECT starts_at,expires_at FROM subscriptions WHERE user_id=$1 FOR UPDATE', [current.user_id]);
       const existing = sub.rows[0]; const start = existing && new Date(existing.expires_at) > now ? new Date(existing.expires_at) : now;
       const expires = new Date(start.getTime() + plan.durationMs);
-      await client.query("UPDATE payment_orders SET status='completed',paid_at=NOW(),pesapal_payment_method=$2,pesapal_confirmation_code=$3,raw_ipn=$4::jsonb WHERE id=$1", [current.id, verified.payment_method || null, verified.confirmation_code || null, JSON.stringify(verified)]);
+      await client.query("UPDATE payment_orders SET status='completed',paid_at=NOW(),payment_method=$2,confirmation_code=$3,raw_ipn=$4::jsonb WHERE id=$1", [current.id, verified.payment_method || null, verified.confirmation_code || null, JSON.stringify(verified)]);
       await client.query("INSERT INTO subscriptions (user_id,plan_code,starts_at,expires_at,source_order_id,updated_at) VALUES ($1,$2,$3,$4,$5,NOW()) ON CONFLICT (user_id) DO UPDATE SET plan_code=EXCLUDED.plan_code,starts_at=EXCLUDED.starts_at,expires_at=EXCLUDED.expires_at,source_order_id=EXCLUDED.source_order_id,updated_at=NOW()", [current.user_id, current.plan_code, start, expires, current.id]);
     } else if (['failed','invalid','reversed','cancelled'].includes(status) && current.status === 'pending') {
       await client.query("UPDATE payment_orders SET status='failed',raw_ipn=$2::jsonb WHERE id=$1", [current.id, JSON.stringify(verified)]);
