@@ -9,6 +9,7 @@ visit streamora.co.ke
 
 [![Flutter playback checks](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-playback.yml/badge.svg)](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-playback.yml)
 [![Android APK](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-apk.yml/badge.svg)](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-apk.yml)
+[![Android TV APK](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-tv.yml/badge.svg)](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-tv.yml)
 [![Flutter Web](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-web.yml/badge.svg)](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-web.yml)
 
 </div>
@@ -23,13 +24,21 @@ One place to discover channels, search by name, save favorites, revisit watched 
 
 ## 📥 Download TikVTV for Android
 
-**Direct APK and checksum links stay the same when new successful builds update the rolling preview.** The links only become active after the first successful APK workflow publishes its release; a failed build will not be advertised as a downloadable APK.
+**Phone/tablet and Android TV use separate APKs.** The Android TV preview is available through its own successful workflow's Artifacts section; it is not yet published as a permanent direct-release link.
+
+**Direct mobile APK and checksum links stay the same when new successful builds update the rolling preview.** The links only become active after the first successful APK workflow publishes its release; a failed build will not be advertised as a downloadable APK.
 
 | Download area | What you get |
 | --- | --- |
-| **[⬇️ Direct APK: latest Android preview](https://github.com/criss-lab/TikVTV-9bu50p/releases/download/preview-latest/TikVTV-preview.apk)** | Direct download from the rolling preview release, available after its first successful build. |\n| **[🔐 APK SHA-256 checksum](https://github.com/criss-lab/TikVTV-9bu50p/releases/download/preview-latest/SHA256SUMS.txt)** | Verify the preview APK before installation. |\n| **[📦 All releases](https://github.com/criss-lab/TikVTV-9bu50p/releases)** | Latest preview plus version-tagged builds. |
+| **[⬇️ Direct APK: latest Android preview](https://github.com/criss-lab/TikVTV-9bu50p/releases/download/preview-latest/TikVTV-preview.apk)** | Direct download from the rolling preview release, available after its first successful build. |
+| **[🔐 APK SHA-256 checksum](https://github.com/criss-lab/TikVTV-9bu50p/releases/download/preview-latest/SHA256SUMS.txt)** | Verify the preview APK before installation. |
+| **[📺 Android TV APK — build artifacts](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-tv.yml)** | Open the latest **successful** Android TV run → **Artifacts** → download `TikVTV-TV-preview-<run number>` ZIP → extract `TikVTV-TV-preview.apk` and `TV-SHA256SUMS.txt`. GitHub sign-in may be required. This is a separate remote-first TV build, not the phone APK. |
+| **[🧪 Android TV build status](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-tv.yml)** | Confirm the TV APK compiled and uploaded successfully before installing. |
+| **[📦 All releases](https://github.com/criss-lab/TikVTV-9bu50p/releases)** | Latest preview plus version-tagged builds. |
 | **[⬇️ Latest preview build runs](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-apk.yml)** | Open a successful run → **Artifacts** → download `TikVTV-preview-<run number>` ZIP → extract `TikVTV-preview.apk`. GitHub sign-in may be required. |
 | **[🧪 Android build status](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-apk.yml)** | Check whether the latest APK actually compiled before downloading. |
+
+**TV installation:** Download the TV artifact ZIP on a computer or TV-compatible browser, extract the APK, and transfer it to your Android TV device using a trusted method. TV preview availability depends on a successful build; do not use the mobile APK as a substitute for the dedicated TV interface.
 
 **Signing and installation:** CI preview APKs are signed using Flutter's generated **temporary debug signing key**, not an official persistent production key. Android may show an unknown-app-source prompt; follow Android's own installation and Play Protect guidance. We do not bypass Play Protect or guarantee approval. Because CI signing keys may change between runs, a newer preview may require uninstalling the previous preview first (back up local app data). Check the provided `SHA256SUMS.txt` against your downloaded APK. Only install files from this repository's trusted release or workflow pages.
 
@@ -45,7 +54,7 @@ Want to contribute? Improvements to player reliability, accessible navigation, c
 
 - **Current web fallback:** React, TypeScript, Vite, Tailwind CSS and shadcn/ui.
 - **Flutter migration:** Dart, Flutter, `video_player`, local preferences and remote IPTV catalogue.
-- **CI:** Flutter analysis, tests, web builds and Android APK preview artifacts.
+- **CI:** Flutter analysis, tests, web builds, mobile Android APK and separate Android TV APK preview artifacts.
 
 ```bash
 git clone https://github.com/criss-lab/TikVTV-9bu50p.git
