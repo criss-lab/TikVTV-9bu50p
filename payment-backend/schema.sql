@@ -105,17 +105,3 @@ CREATE TABLE IF NOT EXISTS tv_remote_commands (
 );
 CREATE INDEX IF NOT EXISTS tv_remote_commands_pairing_idx ON tv_remote_commands(pairing_id,id);
 
--- Short-lived TV pairing. Store only SHA-256 digests of bearer secrets.
-CREATE TABLE IF NOT EXISTS tv_pairing_sessions (
- id UUID PRIMARY KEY, tv_secret_hash TEXT NOT NULL, pairing_code_hash TEXT NOT NULL UNIQUE,
- owner_user_id TEXT, status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','linked','revoked')),
- created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), expires_at TIMESTAMPTZ NOT NULL,
- linked_at TIMESTAMPTZ, last_seen_at TIMESTAMPTZ
-);
-CREATE INDEX IF NOT EXISTS tv_pairing_expiry_idx ON tv_pairing_sessions(expires_at);
-CREATE TABLE IF NOT EXISTS tv_remote_commands (
- id BIGSERIAL PRIMARY KEY, pairing_id UUID NOT NULL REFERENCES tv_pairing_sessions(id) ON DELETE CASCADE,
- command TEXT NOT NULL CHECK (command IN ('up','down','left','right','select','back','home','play_pause','next','previous')),
- created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), consumed_at TIMESTAMPTZ
-);
-CREATE INDEX IF NOT EXISTS tv_remote_pending_idx ON tv_remote_commands(pairing_id,id) WHERE consumed_at IS NULL;
