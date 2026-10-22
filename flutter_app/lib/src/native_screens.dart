@@ -168,6 +168,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       Navigator.push(context, MaterialPageRoute(builder: (_) => const NativeAccountScreen()));
       return;
     }
+    if (paying || trackingId != null) { setState(() => message = 'Finish or verify the current checkout before starting another payment.'); return; }
     setState(() { paying = true; message = null; });
     try {
       final order = await backend.initiatePremium(planCode: selectedPlan);
@@ -200,7 +201,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       final status = (result['payment_status_description'] ?? 'pending').toString();
       if (mounted && !silent) setState(() { message = 'PesaPal reports: $status. Access requires a verified server entitlement.'; paying = false; });
       await refresh(silent: silent);
-      if (active || ['failed', 'invalid', 'reversed'].contains(status.toLowerCase())) { _paymentTimer?.cancel(); trackingId = null; }
+      if (status.toLowerCase() == 'completed' || ['failed', 'invalid', 'reversed', 'cancelled'].contains(status.toLowerCase())) { _paymentTimer?.cancel(); trackingId = null; }
     } catch (e) { if (mounted && !silent) setState(() { message = e.toString().replaceFirst('Bad state: ', ''); paying = false; }); }
     finally { checking = false; }
   }
@@ -218,8 +219,8 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       ],
       if (loading) const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator())),
       if (!loading && active) Card(color: _panel, child: ListTile(leading: const Icon(Icons.verified, color: Colors.greenAccent), title: const Text('Premium active'), subtitle: Text(endsAt == null ? 'Subscription verified' : 'Access until ${DateTime.tryParse(endsAt!)?.toLocal() ?? endsAt}'))),
-      if (!loading && !active && backend.signedIn) ...[
-        const Text('Choose a plan', style: TextStyle(fontWeight: FontWeight.bold)),
+      if (!loading && backend.signedIn) ...[
+        Text(active ? 'Extend your existing subscription' : 'Choose a plan', style: const TextStyle(fontWeight: FontWeight.bold)),
         DropdownButtonFormField<String>(
           initialValue: selectedPlan,
           decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Subscription duration'),
@@ -229,9 +230,9 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
             DropdownMenuItem(value: 'week', child: Text('1 week — KSh 40')),
             DropdownMenuItem(value: 'month', child: Text('1 month — KSh 130')),
           ],
-          onChanged: paying ? null : (value) { if (value != null) setState(() => selectedPlan = value); },
+          onChanged: paying || trackingId != null ? null : (value) { if (value != null) setState(() => selectedPlan = value); },
         ),
-        FilledButton.icon(onPressed: paying ? null : checkout, icon: const Icon(Icons.lock), label: Text(paying ? 'Connecting to PesaPal…' : 'Subscribe with PesaPal')),
+        FilledButton.icon(onPressed: paying || trackingId != null ? null : checkout, icon: const Icon(Icons.lock), label: Text(paying ? 'Connecting to PesaPal…' : trackingId != null ? 'Payment verification in progress' : active ? 'Extend with PesaPal' : 'Subscribe with PesaPal')),
       ],
       if (message != null) Padding(padding: const EdgeInsets.only(top: 14), child: Text(message!, style: const TextStyle(color: Colors.white70))),
       const SizedBox(height: 12),
