@@ -15,6 +15,7 @@ class ChannelCatalogue extends ChangeNotifier {
   // Additional sources are discovered but only explicitly approved channel IDs
   // may enter a subscription-backed catalogue. Review distribution rights first.
   static const approvedFreeTvIds = <String>{};
+  static const maxOptionalPlaylistBytes = 8 * 1024 * 1024;
   int discoveredFreeTv = 0;
   final Map<String, int> discoveredBySource = {};
   // StreamVault mirrors iptv-org; awesome-iptv is a directory, not a playlist.
@@ -102,6 +103,7 @@ class ChannelCatalogue extends ChangeNotifier {
         if (item is Map && item['channel'] is String) blocked.add(item['channel'] as String);
       }
       final sources = <String, List<String>>{};
+      final sourceUrls = <String, Set<String>>{};
       for (final item in streams) {
         if (item is! Map) { continue; }
         final id = item['channel'];
@@ -110,7 +112,7 @@ class ChannelCatalogue extends ChangeNotifier {
         final uri = Uri.tryParse(url.trim());
         if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http') || uri.host.isEmpty) { continue; }
         final list = sources.putIfAbsent(id, () => []);
-        if (!list.contains(url.trim())) {
+        if (sourceUrls.putIfAbsent(id, () => <String>{}).add(url.trim())) {
           list.add(url.trim());
         }
       }
@@ -132,12 +134,17 @@ class ChannelCatalogue extends ChangeNotifier {
         try {
           final response = await http.get(Uri.parse(entry.value))
               .timeout(const Duration(seconds: 20));
-          return MapEntry(entry.key, response.statusCode == 200 ? response.body : '');
+          if (response.statusCode != 200 || response.bodyBytes.length > maxOptionalPlaylistBytes) {
+            debugPrint('Optional playlist rejected: ${entry.key} (HTTP ${response.statusCode}, ${response.bodyBytes.length} bytes)');
+            return MapEntry(entry.key, '');
+          }
+          return MapEntry(entry.key, response.body);
         } catch (e) {
           debugPrint('Optional playlist unavailable: $e');
           return MapEntry(entry.key, '');
         }
       }));
+      final approvedUrls = <String, Set<String>>{};
       for (final entry in extra) {
         var count = 0;
         if (!entry.value.startsWith('#EXTM3U')) {
@@ -159,7 +166,7 @@ class ChannelCatalogue extends ChangeNotifier {
               count++;
               final index = known[pendingId];
               if (approvedFreeTvIds.contains(pendingId) && index != null &&
-                  !parsed[index].urls.contains(line)) {
+                  approvedUrls.putIfAbsent(pendingId, () => parsed[index].urls.toSet()).add(line)) {
                 final ch = parsed[index];
                 parsed[index] = Channel(ch.id, ch.name, ch.logo, ch.country,
                     List.unmodifiable([...ch.urls, line]),
