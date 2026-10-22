@@ -52,6 +52,7 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
   Channel? selected;
   String query = '';
   bool openingChannel = false;
+  final firstChannelFocus = FocusNode(debugLabel: 'First TV channel');
 
   @override
   void initState() {
@@ -112,6 +113,7 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
     NativeBackend.instance.removeListener(onAccountChanged);
     search.dispose();
     searchFocus.dispose();
+    firstChannelFocus.dispose();
     final current = selected;
     if (current != null) player.stopIfCurrent(current.id, lease: player.lease);
     super.dispose();
@@ -161,7 +163,8 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
                 itemBuilder: (context, index) {
                   final channel = channels[index];
                   return OutlinedButton(
-                    autofocus: false,
+                    focusNode: index == 0 ? firstChannelFocus : null,
+                    autofocus: index == 0,
                     style: OutlinedButton.styleFrom(padding: const EdgeInsets.all(12)),
                     onPressed: () => tune(channel),
                     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
