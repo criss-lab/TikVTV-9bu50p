@@ -157,6 +157,8 @@ async function tvRoute(req, res, url) {
     if (!channelId || channelId.length > 200) throw pairingError('Valid channel_id is required');
     const paid = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1',[device.user_id]);
     if (paid.rowCount) return json(res,200,{active:true,allowed:true,ends_at:paid.rows[0].expires_at,preview_ends_at:null,previews_used:0,previews_limit:7});
+    const prior = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 LIMIT 1',[device.user_id]);
+    if (prior.rowCount) return json(res,200,{active:false,allowed:false,expired:true,ends_at:prior.rows[0].expires_at,preview_ends_at:null,previews_used:7,previews_limit:7});
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -269,6 +271,9 @@ async function route(req, res) {
       // Check the paid entitlement first: every paid plan unlocks every channel.
       const paid = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1', [user.id]);
       if (paid.rowCount) return json(res, 200, { active: true, allowed: true, ends_at: paid.rows[0].expires_at, preview_ends_at: null, previews_used: 0, previews_limit: 7 });
+      // A previously paid account must lock immediately at expiry, not silently fall back to a new free preview.
+      const prior = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 LIMIT 1', [user.id]);
+      if (prior.rowCount) return json(res, 200, { active: false, allowed: false, expired: true, ends_at: prior.rows[0].expires_at, preview_ends_at: null, previews_used: 7, previews_limit: 7 });
       // Serialize allocations per account, including simultaneous web/APK requests.
       const client = await pool.connect();
       try {
