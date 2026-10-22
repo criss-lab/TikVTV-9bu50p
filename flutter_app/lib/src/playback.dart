@@ -80,7 +80,7 @@ class SharedPlayback extends ChangeNotifier {
   }
 
   Future<void> open(Channel next) async {
-    await PlaybackGate.instance.start();
+    await PlaybackGate.instance.focus(next.id);
     if (PlaybackGate.instance.locked) {
       await lockForPayment();
       return;
