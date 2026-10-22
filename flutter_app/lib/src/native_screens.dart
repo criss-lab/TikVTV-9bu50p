@@ -223,10 +223,15 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
         if (!opened) throw StateError('Could not open PesaPal checkout.');
       } else {
         if (!mounted) return;
-        await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => NativeCheckoutScreen(url: url)));
+        // Prefer the system browser for M-Pesa/app handoffs outside embedded WebViews.
+        final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+        if (!opened) {
+          if (!mounted) return;
+          await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => NativeCheckoutScreen(url: url)));
+        }
         if (mounted) await verifyPayment();
       }
-      if (mounted) setState(() { message = 'Checkout returned. Payment verification continues until the server records your entitlement.'; paying = false; });
+      if (mounted) setState(() { message = 'PesaPal checkout opened. Complete payment there; TikVTV will verify the server-confirmed transaction automatically.'; paying = false; });
     } catch (e) { if (mounted) setState(() { message = e.toString().replaceFirst('Bad state: ', ''); paying = false; }); }
   }
   Future<void> verifyPayment({bool silent = false}) async {
