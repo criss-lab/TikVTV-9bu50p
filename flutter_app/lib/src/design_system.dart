@@ -5,6 +5,14 @@ import 'package:flutter/material.dart';
 class TikVtvDesign {
   static ThemeData theme({bool television = false}) => ThemeData.dark(useMaterial3: true).copyWith(
       scaffoldBackgroundColor: const Color(0xFF0B0D15),
+      focusColor: const Color(0x4432CED0),
+      splashColor: const Color(0x33FF315F),
+      dividerColor: const Color(0xFF303344),
+      visualDensity: television ? VisualDensity.comfortable : VisualDensity.standard,
+      textSelectionTheme: const TextSelectionThemeData(cursorColor: Color(0xFF32CED0), selectionColor: Color(0x6632CED0), selectionHandleColor: Color(0xFF32CED0)),
+      progressIndicatorTheme: const ProgressIndicatorThemeData(color: Color(0xFF32CED0), linearTrackColor: Color(0xFF303344)),
+      navigationBarTheme: const NavigationBarThemeData(backgroundColor: Color(0xFF10121B), indicatorColor: Color(0xFF542035), height: 72, labelBehavior: NavigationDestinationLabelBehavior.alwaysShow),
+      snackBarTheme: SnackBarThemeData(behavior: SnackBarBehavior.floating, backgroundColor: const Color(0xFF242839), contentTextStyle: const TextStyle(color: Colors.white), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
       colorScheme: const ColorScheme.dark(primary: Color(0xFFFF315F), secondary: Color(0xFF32CED0), surface: Color(0xFF171A26), onSurface: Color(0xFFF5F5FA)),
       appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF10121B), foregroundColor: Colors.white, centerTitle: false, elevation: 0),
       cardTheme: CardThemeData(color: const Color(0xFF171A26), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Color(0xFF303344)))),
