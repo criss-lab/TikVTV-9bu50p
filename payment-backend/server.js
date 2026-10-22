@@ -120,6 +120,22 @@ async function reconcileRecentOrders() {
 const recoveryTimer = setInterval(() => { void reconcileRecentOrders(); }, 60_000);
 recoveryTimer.unref();
 
+// All access surfaces use the same verified account entitlement. Never trust a
+// client-side payment result; reconcile only known orders owned by this account.
+async function activeEntitlement(userId, reconcile = true) {
+  let paid = await pool.query('SELECT plan_code,starts_at,expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1', [userId]);
+  if (!paid.rowCount && reconcile && configured()) {
+    const pending = await pool.query("SELECT order_tracking_id FROM payment_orders WHERE user_id=$1 AND order_tracking_id IS NOT NULL AND status IN ('pending','failed') AND created_at > NOW()-INTERVAL '2 days' ORDER BY created_at DESC LIMIT 5", [userId]);
+    for (const order of pending.rows) {
+      try { await verifyAndActivate(order.order_tracking_id); }
+      catch (error) { console.error('Entitlement reconciliation failed:', error.message); }
+      paid = await pool.query('SELECT plan_code,starts_at,expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1', [userId]);
+      if (paid.rowCount) break;
+    }
+  }
+  return paid.rows[0] || null;
+}
+
 const secret = () => crypto.randomBytes(32).toString('base64url');
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 const pairingError = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -174,8 +190,8 @@ async function tvRoute(req, res, url) {
     const device = await tvDevice(req);
     const channelId = url.searchParams.get('channel_id')?.trim();
     if (!channelId || channelId.length > 200) throw pairingError('Valid channel_id is required');
-    const paid = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1',[device.user_id]);
-    if (paid.rowCount) return json(res,200,{active:true,allowed:true,ends_at:paid.rows[0].expires_at,preview_ends_at:null,previews_used:0,previews_limit:7});
+    const paid = await activeEntitlement(device.user_id);
+    if (paid) return json(res,200,{active:true,allowed:true,ends_at:paid.expires_at,preview_ends_at:null,previews_used:0,previews_limit:7});
     const prior = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 LIMIT 1',[device.user_id]);
     if (prior.rowCount) return json(res,200,{active:false,allowed:false,expired:true,ends_at:prior.rows[0].expires_at,preview_ends_at:null,previews_used:7,previews_limit:7});
     const client = await pool.connect();
@@ -193,8 +209,8 @@ async function tvRoute(req, res, url) {
   }
   if (req.method === 'GET' && path === '/v1/tv/device/subscription') {
     const device = await tvDevice(req);
-    const result = await pool.query("SELECT plan_code,expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() LIMIT 1", [device.user_id]);
-    return json(res, 200, { active: result.rowCount>0, plan_code: result.rows[0]?.plan_code || null, ends_at: result.rows[0]?.expires_at || null });
+    const entitlement = await activeEntitlement(device.user_id);
+    return json(res, 200, { active: Boolean(entitlement), plan_code: entitlement?.plan_code || null, ends_at: entitlement?.expires_at || null });
   }
   if (req.method === 'GET' && path === '/v1/tv/remote/poll') {
     const device = await tvDevice(req);
@@ -289,13 +305,8 @@ async function route(req, res) {
       const channelId = url.searchParams.get('channel_id')?.trim();
       if (!channelId || channelId.length > 200) return json(res, 400, { error: 'Valid channel_id is required' });
       // Check the paid entitlement first: every paid plan unlocks every channel.
-      let paid = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1', [user.id]);
-      if (!paid.rowCount) {
-        const candidates = await pool.query("SELECT order_tracking_id FROM payment_orders WHERE user_id=$1 AND order_tracking_id IS NOT NULL AND status IN ('pending','failed') AND created_at > NOW() - INTERVAL '2 days' ORDER BY created_at DESC LIMIT 5", [user.id]);
-        for (const candidate of candidates.rows) { try { await verifyAndActivate(candidate.order_tracking_id); } catch (error) { console.error('Viewing access recovery failed:', error.message); } }
-        paid = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1', [user.id]);
-      }
-      if (paid.rowCount) return json(res, 200, { active: true, allowed: true, ends_at: paid.rows[0].expires_at, preview_ends_at: null, previews_used: 0, previews_limit: 7 });
+      const paid = await activeEntitlement(user.id);
+      if (paid) return json(res, 200, { active: true, allowed: true, ends_at: paid.expires_at, preview_ends_at: null, previews_used: 0, previews_limit: 7 });
       // A previously paid account must lock immediately at expiry, not silently fall back to a new free preview.
       const prior = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 LIMIT 1', [user.id]);
       if (prior.rowCount) return json(res, 200, { active: false, allowed: false, expired: true, ends_at: prior.rows[0].expires_at, preview_ends_at: null, previews_used: 7, previews_limit: 7 });
@@ -320,7 +331,7 @@ async function route(req, res) {
     }
   }
   if (req.method === 'GET' && url.pathname === '/v1/subscription') {
-    try { const user = await authenticate(req); requireDb(); let result = await pool.query('SELECT plan_code,starts_at,expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW()', [user.id]); if (!result.rowCount) { const pending = await pool.query("SELECT order_tracking_id FROM payment_orders WHERE user_id=$1 AND order_tracking_id IS NOT NULL AND status IN ('pending','failed') AND created_at > NOW() - INTERVAL '2 days' ORDER BY created_at DESC LIMIT 20", [user.id]); for (const candidate of pending.rows) { try { await verifyAndActivate(candidate.order_tracking_id); } catch (verificationError) { console.error('Subscription reconciliation pending:', verificationError.message); } } result = await pool.query('SELECT plan_code,starts_at,expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW()', [user.id]); } const row = result.rows[0]; return json(res, 200, { active: Boolean(row), plan_code: row?.plan_code || null, starts_at: row?.starts_at || null, ends_at: row?.expires_at || null }); }
+    try { const user = await authenticate(req); requireDb(); const row = await activeEntitlement(user.id); return json(res, 200, { active: Boolean(row), plan_code: row?.plan_code || null, starts_at: row?.starts_at || null, ends_at: row?.expires_at || null }); }
     catch (e) { console.error('Subscription lookup failed:', e.message); return json(res, e.status || 503, { error: e.message || 'Subscription lookup failed' }); }
   }
   return json(res, 404, { error: 'Not found' });
