@@ -70,7 +70,7 @@ async function verifyAndActivate(tracking, suppliedReference = '') {
   }
   // An already committed order must remain idempotent even during a Pesapal outage.
   if (order.status === 'completed') {
-    const existing = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW()', [order.user_id]);
+    const existing = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1', [order.user_id]);
     return { payment_status_description: 'Completed', active: existing.rowCount > 0, ends_at: existing.rows[0]?.expires_at || null, order_tracking_id: order.order_tracking_id };
   }
   const verified = await pesapal('/api/Transactions/GetTransactionStatus?orderTrackingId=' + encodeURIComponent(order.order_tracking_id));
@@ -119,7 +119,7 @@ async function reconcileRecentOrders() {
       candidates = await pool.query(query, [recoveryCursor]);
     }
     for (const row of candidates.rows) {
-      recoveryCursor = row.id;
+      recoveryCursor = Number(row.id);
       try { await verifyAndActivate(row.order_tracking_id); }
       catch (error) { console.error('Payment recovery retry failed:', error.message); }
     }
