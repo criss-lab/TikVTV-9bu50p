@@ -13,8 +13,8 @@ import AuthModal from '@/components/features/AuthModal';
 import { useT } from '@/lib/i18n';
 import { useViewingAccess } from '@/hooks/useViewingAccess';
 
-// Keep the active stream and immediate neighbours warm without opening five HLS connections.
-const PRELOAD_RADIUS = 1;
+// Never initialize a neighboring stream using the focused channel's entitlement.
+// Each channel must receive its own server-verified access before playback.
 
 export default function Feed() {
   const [searchParams]               = useSearchParams();
@@ -168,7 +168,7 @@ export default function Feed() {
             key={`${channel.id}-${category}-${index}`}
             channel={channel}
             isActive={index === activeIndex}
-            shouldLoad={allowed && !accessLoading && Math.abs(index - activeIndex) <= PRELOAD_RADIUS}
+            shouldLoad={allowed && !accessLoading && index === activeIndex}
             index={index}
             user={user}
             onAuthRequired={() => setShowAuth(true)}
