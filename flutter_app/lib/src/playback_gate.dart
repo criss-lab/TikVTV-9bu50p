@@ -54,6 +54,7 @@ class PlaybackGate extends ChangeNotifier {
       }
       _tick();
     } catch (e) {
+      if (version != _statusVersion) return;
       debugPrint('Playback entitlement unavailable: $e');
       // Fail closed for paid access; only the already-started preview can apply.
       active = NativeBackend.instance.signedIn && _verifiedPaidExpiry != null && _verifiedPaidExpiry!.isAfter(DateTime.now().toUtc());
