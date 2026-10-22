@@ -198,6 +198,16 @@ class TvPlayer extends StatefulWidget {
 }
 
 class _TvPlayerState extends State<TvPlayer> {
+  bool retrying = false;
+  Future<void> retry() async {
+    if (retrying || widget.gate.locked) return;
+    setState(() => retrying = true);
+    try {
+      await widget.player.open(widget.channel);
+    } finally {
+      if (mounted) setState(() => retrying = false);
+    }
+  }
   @override
   void initState() {
     super.initState();
@@ -220,7 +230,7 @@ class _TvPlayerState extends State<TvPlayer> {
             const Icon(Icons.lock_outline, size: 58),
             const SizedBox(height: 12),
             Text(widget.gate.verificationUnavailable ? 'Unable to verify access. Check your connection.' : 'Sign in or unlock channels on your phone or Web account.', textAlign: TextAlign.center),
-            TextButton(onPressed: () => widget.gate.refresh(), child: const Text('Retry access check')),
+            TextButton(onPressed: widget.gate.checking ? null : () => widget.gate.refresh(), child: Text(widget.gate.checking ? 'Checking access…' : 'Retry access check')),
           ]))
         : controller != null && controller.value.isInitialized
           ? Center(child: AspectRatio(aspectRatio: controller.value.aspectRatio, child: VideoPlayer(controller)))
@@ -228,7 +238,7 @@ class _TvPlayerState extends State<TvPlayer> {
               if (widget.player.loading) const CircularProgressIndicator(),
               const SizedBox(height: 14),
               Text(widget.player.error ?? 'Connecting to live channel…', textAlign: TextAlign.center),
-              if (!widget.player.loading) TextButton.icon(onPressed: () => widget.player.open(widget.channel), icon: const Icon(Icons.refresh), label: const Text('Retry channel')),
+              if (!widget.player.loading) TextButton.icon(onPressed: retrying ? null : retry, icon: const Icon(Icons.refresh), label: Text(retrying ? 'Retrying…' : 'Retry channel')),
             ]))),
       Positioned(left: 24, top: 24, child: Text(widget.channel.name, style: const TextStyle(fontSize: 22, shadows: [Shadow(blurRadius: 8)]))),
       if (!widget.gate.locked && widget.player.buffering) const Positioned(right: 24, top: 24, child: Chip(avatar: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)), label: Text('Buffering'))),
