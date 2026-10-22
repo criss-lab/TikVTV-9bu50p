@@ -82,8 +82,12 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
     await player.open(channel); // Server entitlement is checked before opening.
     if (!mounted) return;
     if (!gate.locked && player.controller != null) unawaited(library.recordWatch(channel.id));
+    final playbackLease = player.lease;
     await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => TvPlayer(channel: channel, player: player, gate: gate)));
-    if (mounted) setState(() {});
+    // The fullscreen route owns this lease. Returning to the grid must not
+    // leave a hidden decoder playing or stop a newer channel selection.
+    player.stopIfCurrent(channel.id, lease: playbackLease);
+    if (mounted) setState(() => selected = null);
   }
 
   @override
