@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'src/media_handler.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'src/design_system.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -47,7 +48,7 @@ class TikVTV extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'TikVTV',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData.dark(useMaterial3: true).copyWith(scaffoldBackgroundColor: const Color(0xFF101014), colorScheme: const ColorScheme.dark(primary: Color(0xFFFF315F), surface: Color(0xFF12131B))),
+    theme: TikVtvDesign.theme(television: false),
     initialRoute: kIsWeb && Uri.base.scheme.startsWith('http') && Uri.base.path.isNotEmpty ? Uri.base.path : '/',
     onGenerateRoute: (settings) {
       final path = Uri.tryParse(settings.name ?? '/')?.path ?? '/';

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'src/design_system.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'src/catalogue.dart';
@@ -27,10 +28,7 @@ class TikVtvTelevision extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'TikVTV TV',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData.dark(useMaterial3: true).copyWith(
-      scaffoldBackgroundColor: const Color(0xFF101014),
-      colorScheme: const ColorScheme.dark(primary: Color(0xFFFF315F)),
-    ),
+    theme: TikVtvDesign.theme(television: true),
     home: const TvHome(),
   );
 }
@@ -168,10 +166,10 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
     if (section == 2) channels.sort((a,b) => library.history.indexOf(a.id).compareTo(library.history.indexOf(b.id)));
     return Scaffold(
       body: SafeArea(child: Padding(
-        padding: const EdgeInsets.all(28),
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 22),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            const Text('TikVTV  TV', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+            Row(mainAxisSize: MainAxisSize.min, children: [Container(width: 43, height: 43, decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [Color(0xFFFF315F), Color(0xFF32CED0)])), child: const Icon(Icons.live_tv, color: Colors.white)), const SizedBox(width: 12), const Text('TikVTV', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: -.8)), const Padding(padding: EdgeInsets.only(left: 7, top: 11), child: Text('TV', style: TextStyle(color: Color(0xFF32CED0), fontSize: 13, fontWeight: FontWeight.bold)))]),
             const Spacer(),
             TextButton.icon(onPressed: connectPhone, icon: const Icon(Icons.qr_code_2), label: Text(NativeBackend.instance.tvPaired ? 'Phone connected' : 'Connect phone')),
             TextButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const NativePremiumScreen())), icon: const Icon(Icons.workspace_premium), label: const Text('Premium')),
@@ -187,26 +185,26 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
             const SizedBox(width: 16),
             IconButton(tooltip: 'Refresh catalogue', onPressed: () => catalogue.load(force: true), icon: const Icon(Icons.refresh)),
           ]),
-          const SizedBox(height: 12),
-          Wrap(spacing: 8, children: [for (var i = 0; i < 4; i++) ChoiceChip(label: Text(const ['Channels','Favorites','History','Hot'][i]), selected: section == i, onSelected: (_) => setState(() => section = i))]),
+          const SizedBox(height: 22),
+          Wrap(spacing: 12, runSpacing: 8, children: [for (var i = 0; i < 4; i++) ChoiceChip(label: Text(const ['Channels','Favorites','History','Hot'][i]), selected: section == i, onSelected: (_) => setState(() => section = i))]),
           Row(children: [const Text('Country  '), DropdownButton<String>(value: countries.contains(country) ? country : 'All', items: ['All',...countries].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setState(() => country = v ?? 'All')), const SizedBox(width: 18), const Text('Category  '), DropdownButton<String>(value: categories.contains(category) ? category : 'All', items: ['All',...categories].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setState(() => category = v ?? 'All'))]),
           const SizedBox(height: 12),
           if (catalogue.loading) const LinearProgressIndicator(),
           if (catalogue.error != null) Text('Catalogue unavailable: ${catalogue.error}', style: const TextStyle(color: Colors.orange)),
-          Padding(padding: const EdgeInsets.symmetric(vertical: 14), child: Text('Live channels · ${channels.length}', style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w600))),
+          Padding(padding: const EdgeInsets.symmetric(vertical: 18), child: Row(children: [const Icon(Icons.sensors, color: Color(0xFF32CED0), size: 22), const SizedBox(width: 10), Text('Live channels', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800)), const SizedBox(width: 12), Text('${channels.length} available', style: const TextStyle(color: Colors.white60, fontSize: 15))])),
           Expanded(child: section == 3 ? NativeHotScreen(channels: all, onSelect: tune) : channels.isEmpty
             ? const Center(child: Text('No channels available. Refresh or change your search.'))
-            : GridView.builder(
+            : LayoutBuilder(builder: (context, constraints) => GridView.builder(
                 itemCount: channels.length,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 5, childAspectRatio: 1.7, crossAxisSpacing: 16, mainAxisSpacing: 16,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: (constraints.maxWidth / 230).floor().clamp(2, 6), childAspectRatio: 1.55, crossAxisSpacing: 16, mainAxisSpacing: 16,
                 ),
                 itemBuilder: (context, index) {
                   final channel = channels[index];
                   return OutlinedButton(
                     focusNode: index == 0 ? firstChannelFocus : null,
                     autofocus: index == 0,
-                    style: OutlinedButton.styleFrom(padding: const EdgeInsets.all(12)),
+                    style: OutlinedButton.styleFrom(padding: const EdgeInsets.all(14), backgroundColor: const Color(0xFF191C29), side: BorderSide(color: library.isFavorite(channel.id) ? const Color(0xFF85364E) : const Color(0xFF343748)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
                     onPressed: () => tune(channel),
                     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                       if (channel.logo.isNotEmpty) Expanded(child: Image.network(channel.logo, errorBuilder: (_, __, ___) => const Icon(Icons.live_tv, size: 40))),
@@ -216,7 +214,7 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
                     ]),
                   );
                 },
-              )),
+              ))),
         ]),
       )),
       floatingActionButton: selected == null || openingChannel ? null : FloatingActionButton.extended(
