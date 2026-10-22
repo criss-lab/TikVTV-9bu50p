@@ -7,6 +7,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'src/native_backend.dart';
 import 'src/native_screens.dart';
 import 'src/epg_service.dart';
@@ -58,6 +59,7 @@ class ChannelHome extends StatefulWidget {
 
 class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   Timer? _catalogueRefresh;
+  bool _traceWelcome = false;
   String query = '';
   final TextEditingController searchController = TextEditingController();
   bool searchOpen = false;
@@ -104,7 +106,12 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     catalogue.load();
     _catalogueRefresh = Timer.periodic(const Duration(hours: 1), (_) => unawaited(catalogue.load()));
-    library.load();
+    unawaited(library.load().then((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      final seen = prefs.getBool('trace_welcome_seen_v1') ?? false;
+      if (!seen) await prefs.setBool('trace_welcome_seen_v1', true);
+      if (mounted) setState(() => _traceWelcome = !seen && library.history.isEmpty);
+    }));
     nativeBackend.addListener(_onAccountChanged);
     unawaited(nativeBackend.restore().then((_) => PlaybackGate.instance.refresh()).catchError((Object error) {
       debugPrint('Session restore / entitlement refresh failed: $error');
@@ -151,6 +158,11 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
       if (ai < 0 && bi < 0) return a.name.toLowerCase().compareTo(b.name.toLowerCase());
       if (ai < 0) return 1; if (bi < 0) return -1; return ai.compareTo(bi);
     })) : filteredChannels;
+    if (_traceWelcome && tab == 0 && libraryTab == 0 && q.isEmpty && category == '🔥' && country == 'All' && language == 'All') {
+      final original = List<Channel>.from(channels);
+      final trace = original.where((item) => item.name.toLowerCase().startsWith('trace ')).toList();
+      channels.setAll(0, [...trace, ...original.where((item) => !trace.contains(item))]);
+    }
     const rail = <(String, String)>[('🔥','Hot'),('📰','News'),('⚽','Sports'),('🎬','Movies'),('🎵','Music'),('🎥','Entertainment'),('🧸','Kids'),('🌍','Travel'),('👨‍🍳','Cooking'),('✈️','Lifestyle')];
     return Scaffold(
       appBar: AppBar(
