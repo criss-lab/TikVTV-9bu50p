@@ -101,6 +101,25 @@ async function verifyAndActivate(tracking, suppliedReference = '') {
   return { payment_status_description: verified.payment_status_description || 'Pending', active: entitlement.rows.length > 0, ends_at: entitlement.rows[0]?.expires_at || null, order_tracking_id: order.order_tracking_id };
 }
 
+// Recover completed payments even when the browser closes or Pesapal's IPN is delayed.
+// A single worker tick is bounded; verifyAndActivate locks the order and account
+// transactionally so IPN, status polling and this worker cannot double-credit.
+let reconciliationRunning = false;
+async function reconcileRecentOrders() {
+  if (reconciliationRunning || !pool || !configured()) return;
+  reconciliationRunning = true;
+  try {
+    const candidates = await pool.query("SELECT order_tracking_id FROM payment_orders WHERE order_tracking_id IS NOT NULL AND status IN ('pending','failed') AND created_at > NOW() - INTERVAL '2 days' ORDER BY created_at ASC LIMIT 10");
+    for (const row of candidates.rows) {
+      try { await verifyAndActivate(row.order_tracking_id); }
+      catch (error) { console.error('Payment recovery retry failed:', error.message); }
+    }
+  } catch (error) { console.error('Payment recovery scan failed:', error.message); }
+  finally { reconciliationRunning = false; }
+}
+const recoveryTimer = setInterval(() => { void reconcileRecentOrders(); }, 60_000);
+recoveryTimer.unref();
+
 const secret = () => crypto.randomBytes(32).toString('base64url');
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 const pairingError = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -269,7 +288,12 @@ async function route(req, res) {
       const channelId = url.searchParams.get('channel_id')?.trim();
       if (!channelId || channelId.length > 200) return json(res, 400, { error: 'Valid channel_id is required' });
       // Check the paid entitlement first: every paid plan unlocks every channel.
-      const paid = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1', [user.id]);
+      let paid = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1', [user.id]);
+      if (!paid.rowCount) {
+        const candidates = await pool.query("SELECT order_tracking_id FROM payment_orders WHERE user_id=$1 AND order_tracking_id IS NOT NULL AND status IN ('pending','failed') AND created_at > NOW() - INTERVAL '2 days' ORDER BY created_at DESC LIMIT 5", [user.id]);
+        for (const candidate of candidates.rows) { try { await verifyAndActivate(candidate.order_tracking_id); } catch (error) { console.error('Viewing access recovery failed:', error.message); } }
+        paid = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1', [user.id]);
+      }
       if (paid.rowCount) return json(res, 200, { active: true, allowed: true, ends_at: paid.rows[0].expires_at, preview_ends_at: null, previews_used: 0, previews_limit: 7 });
       // A previously paid account must lock immediately at expiry, not silently fall back to a new free preview.
       const prior = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 LIMIT 1', [user.id]);
