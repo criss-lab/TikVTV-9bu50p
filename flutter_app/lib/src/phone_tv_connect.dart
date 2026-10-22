@@ -57,7 +57,7 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
       const Text('On your TV, choose Connect phone. Scan its QR code here, then enter the six-digit code shown on the TV.', textAlign: TextAlign.center),
       const SizedBox(height: 18),
       if (scanning) ...[
-        SizedBox(height: 290, child: MobileScanner(onDetect: scan, errorBuilder: (context, error) => Center(child: Padding(padding: const EdgeInsets.all(16), child: Text('Camera unavailable. Allow camera access in Android settings, then retry.', textAlign: TextAlign.center))))),
+        SizedBox(height: 290, child: MobileScanner(onDetect: scan, errorBuilder: (context, error, child) => Center(child: Padding(padding: const EdgeInsets.all(16), child: Text('Camera unavailable. Allow camera access in Android settings, then retry.', textAlign: TextAlign.center))))),
         TextButton.icon(onPressed: () => setState(() { scanning = false; message = null; }), icon: const Icon(Icons.close), label: const Text('Close scanner')),
       ],
       if (!scanning && challenge == null) FilledButton.icon(onPressed: () => setState(() { scanning = true; message = null; }), icon: const Icon(Icons.qr_code_scanner), label: const Text('Scan TV QR code')),
