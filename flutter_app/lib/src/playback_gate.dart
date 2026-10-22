@@ -17,6 +17,7 @@ class PlaybackGate extends ChangeNotifier {
   bool active = false;
   bool locked = true;
   bool checking = false;
+  bool ready = false;
   Duration remaining = allowance;
   Future<void> Function()? onLock;
   Future<void>? _inflight;
@@ -60,6 +61,7 @@ class PlaybackGate extends ChangeNotifier {
       active = NativeBackend.instance.signedIn && _verifiedPaidExpiry != null && _verifiedPaidExpiry!.isAfter(DateTime.now().toUtc());
       _tick();
     } finally {
+      ready = true;
       checking = false;
       _timer ??= Timer.periodic(const Duration(seconds: 1), (_) => _tick());
       // Re-check server entitlement while a channel remains focused. Without
@@ -87,6 +89,7 @@ class PlaybackGate extends ChangeNotifier {
 
   void acceptVerifiedStatus(Map<String, dynamic> status) {
     ++_statusVersion;
+    ready = true;
     final expiry = DateTime.tryParse(status['ends_at']?.toString() ?? '')?.toUtc();
     _verifiedPaidExpiry = status['active'] == true ? expiry : null;
     active = NativeBackend.instance.signedIn && _verifiedPaidExpiry != null && _verifiedPaidExpiry!.isAfter(DateTime.now().toUtc());
