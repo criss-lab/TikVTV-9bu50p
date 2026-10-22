@@ -57,14 +57,16 @@ class _TvHomeState extends State<TvHome> {
     catalogue.addListener(refresh);
     player.addListener(refresh);
     gate.addListener(refresh);
+    gate.onLock = player.lockForPayment;
     library.addListener(refresh);
-    NativeBackend.instance.addListener(refresh);
+    NativeBackend.instance.addListener(onAccountChanged);
     unawaited(library.load());
     unawaited(catalogue.load());
     unawaited(NativeBackend.instance.restore().then((_) => gate.refresh()));
   }
 
   void refresh() { if (mounted) setState(() {}); }
+  void onAccountChanged() { refresh(); unawaited(gate.refresh()); }
 
   Future<void> tune(Channel channel) async {
     setState(() => selected = channel);
@@ -81,7 +83,7 @@ class _TvHomeState extends State<TvHome> {
     player.removeListener(refresh);
     gate.removeListener(refresh);
     library.removeListener(refresh);
-    NativeBackend.instance.removeListener(refresh);
+    NativeBackend.instance.removeListener(onAccountChanged);
     search.dispose();
     final current = selected;
     if (current != null) player.stopIfCurrent(current.id, lease: player.lease);
