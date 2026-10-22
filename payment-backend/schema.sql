@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS payment_orders (
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
   pesapal_redirect_url TEXT,
   paid_at TIMESTAMPTZ,
-  payment_method TEXT,
-  confirmation_code TEXT,
+  pesapal_payment_method TEXT,
+  pesapal_confirmation_code TEXT,
   raw_ipn JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS payment_orders (
 -- until that response is saved. CREATE TABLE IF NOT EXISTS does not repair
 -- existing databases; this ALTER is intentionally safe to rerun.
 ALTER TABLE payment_orders ALTER COLUMN order_tracking_id DROP NOT NULL;
+ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS pesapal_payment_method TEXT;
+ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS pesapal_confirmation_code TEXT;
+ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS raw_ipn JSONB;
 
 CREATE INDEX IF NOT EXISTS payment_orders_user_created_idx
   ON payment_orders (user_id, created_at DESC);
