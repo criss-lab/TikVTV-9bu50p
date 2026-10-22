@@ -159,7 +159,7 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
       final status = await backend.premiumStatus();
       if (!mounted) return;
       setState(() { active = status['active'] == true; endsAt = status['ends_at'] as String?; loading = false; });
-      if (active) await PlaybackGate.instance.refresh();
+      PlaybackGate.instance.acceptVerifiedStatus(status);
     } catch (e) { if (mounted) setState(() { message = e.toString().replaceFirst('Bad state: ', ''); loading = false; }); }
   }
   Future<void> checkout() async {

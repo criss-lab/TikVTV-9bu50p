@@ -260,7 +260,24 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                 Center(child: Padding(padding: const EdgeInsets.all(20),
                   child: FilledButton.icon(onPressed: () => _focus(index),
                     icon: const Icon(Icons.refresh), label: const Text('Retry stream')))),
-              if (selected && _gate.locked)
+              if (selected && _gate.locked && !_gate.ready)
+                const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  CircularProgressIndicator(), SizedBox(height: 12),
+                  Text('Checking your access…', style: TextStyle(color: Colors.white70)),
+                ])),
+              if (selected && _gate.locked && _gate.ready && _gate.verificationUnavailable)
+                Center(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 28), child: Column(
+                  mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.wifi_off_rounded, size: 36, color: Colors.white70),
+                    const SizedBox(height: 12),
+                    const Text('Could not check access yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    const Text('We are retrying automatically. You do not need to pay again.', textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(onPressed: () => unawaited(_gate.refresh()), icon: const Icon(Icons.refresh), label: const Text('Retry now')),
+                  ],
+                ))),
+              if (selected && _gate.locked && _gate.ready && !_gate.verificationUnavailable)
                 Center(child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 28),
                   child: Column(mainAxisSize: MainAxisSize.min, children: [

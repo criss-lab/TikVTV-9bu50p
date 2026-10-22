@@ -105,12 +105,16 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     catalogue.load();
     _catalogueRefresh = Timer.periodic(const Duration(hours: 1), (_) => unawaited(catalogue.load()));
     library.load();
-    nativeBackend.addListener(refresh);
+    nativeBackend.addListener(_onAccountChanged);
     unawaited(nativeBackend.restore().then((_) => PlaybackGate.instance.refresh()).catchError((Object error) {
       debugPrint('Session restore / entitlement refresh failed: $error');
     }));
     library.addListener(refresh);
     catalogue.addListener(refresh);
+  }
+  void _onAccountChanged() {
+    refresh();
+    unawaited(PlaybackGate.instance.refresh());
   }
   void refresh() { if (mounted) { setState(() {}); } }
   @override
@@ -128,7 +132,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     searchController.dispose();
     catalogue.removeListener(refresh);
     library.removeListener(refresh);
-    nativeBackend.removeListener(refresh);
+    nativeBackend.removeListener(_onAccountChanged);
     super.dispose();
   }
   @override
