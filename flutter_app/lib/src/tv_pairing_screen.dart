@@ -13,6 +13,9 @@ class _TvPairingScreenState extends State<TvPairingScreen> {
   Map<String, dynamic>? pairing;
   Timer? timer;
   bool polling = false;
+  DateTime? expiresAt;
+  int generation = 0;
+  int get secondsLeft => expiresAt == null ? 0 : expiresAt!.difference(DateTime.now()).inSeconds.clamp(0, 300);
   String? message;
   @override
   void initState() { super.initState(); unawaited(start()); }
@@ -20,20 +23,27 @@ class _TvPairingScreenState extends State<TvPairingScreen> {
   void dispose() { timer?.cancel(); super.dispose(); }
   Future<void> start() async {
     timer?.cancel();
-    if (mounted) setState(() { pairing = null; message = null; });
+    final current = ++generation;
+    if (mounted) setState(() { pairing = null; message = null; expiresAt = null; });
     try {
       final data = await TvPairingApi.start();
-      if (!mounted) return;
-      setState(() => pairing = data);
-      timer = Timer.periodic(const Duration(seconds: 3), (_) => unawaited(poll()));
+      if (!mounted || current != generation) return;
+      setState(() { pairing = data; expiresAt = DateTime.now().add(Duration(seconds: (data['expires_in_seconds'] as num?)?.toInt() ?? 300)); });
+      timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        if (secondsLeft == 0) { timer?.cancel(); setState(() { pairing = null; message = 'Pairing expired. Generate a fresh QR code.'; }); return; }
+        setState(() {});
+        if (secondsLeft % 3 == 0) unawaited(poll());
+      });
     } catch(e) { if (mounted) setState(() => message = e.toString()); }
   }
   Future<void> poll() async {
-    if (polling || pairing == null) return;
+    if (polling || pairing == null || secondsLeft == 0) return;
+    final current = generation;
     polling = true;
     try {
       final result = await TvPairingApi.status(pairing!['poll_token'] as String);
-      if (!mounted) return;
+      if (!mounted || current != generation) return;
       if (result['device_token'] is String) {
         timer?.cancel();
         await NativeBackend.instance.setTvDeviceToken(result['device_token'] as String);
@@ -42,7 +52,7 @@ class _TvPairingScreenState extends State<TvPairingScreen> {
         timer?.cancel();
         setState(() => message = 'This pairing was already claimed. Generate a new QR code.');
       }
-    } catch(e) { timer?.cancel(); if (mounted) setState(() => message = e.toString()); }
+    } catch(e) { if (mounted && current == generation) { timer?.cancel(); setState(() { pairing = null; message = e.toString(); }); } }
     finally { polling = false; }
   }
   @override
@@ -58,7 +68,7 @@ class _TvPairingScreenState extends State<TvPairingScreen> {
         const SizedBox(height: 14),
         const Text('Confirm this six-digit code on your phone:', style: TextStyle(fontSize: 18)),
         SelectableText('${pairing!['display_code']}', style: const TextStyle(fontSize: 42, fontWeight: FontWeight.bold, letterSpacing: 8)),
-        const Text('Expires after 5 minutes. Do not share this code with strangers.'),
+        Text('Expires in ${secondsLeft ~/ 60}:${(secondsLeft % 60).toString().padLeft(2, '0')}. Do not share this code with strangers.'),
       ],
       if (message != null) Text(message!, style: const TextStyle(color: Colors.orangeAccent)),
       const SizedBox(height: 18),
