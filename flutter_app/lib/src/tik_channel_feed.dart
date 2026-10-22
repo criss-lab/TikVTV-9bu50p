@@ -260,7 +260,12 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                 Center(child: Padding(padding: const EdgeInsets.all(20),
                   child: FilledButton.icon(onPressed: () => _focus(index),
                     icon: const Icon(Icons.refresh), label: const Text('Retry stream')))),
-              if (selected && _gate.locked)
+              if (selected && _gate.locked && !_gate.ready)
+                const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  CircularProgressIndicator(), SizedBox(height: 12),
+                  Text('Checking your access…', style: TextStyle(color: Colors.white70)),
+                ])),
+              if (selected && _gate.locked && _gate.ready)
                 Center(child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 28),
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
