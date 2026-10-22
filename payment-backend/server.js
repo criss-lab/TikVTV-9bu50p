@@ -105,12 +105,21 @@ async function verifyAndActivate(tracking, suppliedReference = '') {
 // A single worker tick is bounded; verifyAndActivate locks the order and account
 // transactionally so IPN, status polling and this worker cannot double-credit.
 let reconciliationRunning = false;
+let recoveryCursor = 0;
+// Rotate through outstanding orders rather than repeatedly checking the oldest
+// ten: an unresolved checkout must never starve newer customers' payments.
 async function reconcileRecentOrders() {
   if (reconciliationRunning || !pool || !configured()) return;
   reconciliationRunning = true;
   try {
-    const candidates = await pool.query("SELECT order_tracking_id FROM payment_orders WHERE order_tracking_id IS NOT NULL AND status IN ('pending','failed') AND created_at > NOW() - INTERVAL '2 days' ORDER BY created_at ASC LIMIT 10");
+    const query = "SELECT id,order_tracking_id FROM payment_orders WHERE order_tracking_id IS NOT NULL AND status IN ('pending','failed') AND created_at > NOW() - INTERVAL '2 days' AND id > $1 ORDER BY id ASC LIMIT 10";
+    let candidates = await pool.query(query, [recoveryCursor]);
+    if (!candidates.rowCount && recoveryCursor) {
+      recoveryCursor = 0;
+      candidates = await pool.query(query, [recoveryCursor]);
+    }
     for (const row of candidates.rows) {
+      recoveryCursor = row.id;
       try { await verifyAndActivate(row.order_tracking_id); }
       catch (error) { console.error('Payment recovery retry failed:', error.message); }
     }
