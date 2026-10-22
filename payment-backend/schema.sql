@@ -85,6 +85,7 @@ CREATE INDEX IF NOT EXISTS free_channel_previews_user_idx ON free_channel_previe
 CREATE TABLE IF NOT EXISTS tv_pairings (
   id UUID PRIMARY KEY,
   challenge_hash TEXT NOT NULL UNIQUE,
+  poll_hash TEXT NOT NULL UNIQUE,
   display_code TEXT NOT NULL,
   device_token_hash TEXT UNIQUE,
   user_id TEXT,
