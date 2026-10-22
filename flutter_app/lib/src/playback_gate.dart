@@ -20,10 +20,12 @@ class PlaybackGate extends ChangeNotifier {
   Duration remaining = allowance;
   Future<void> Function()? onLock;
   Future<void>? _inflight;
+  int _statusVersion = 0;
 
   Future<void> start() => _inflight ??= _check().whenComplete(() => _inflight = null);
 
   Future<void> _check() async {
+    final version = _statusVersion;
     checking = true;
     notifyListeners();
     try {
@@ -46,6 +48,7 @@ class PlaybackGate extends ChangeNotifier {
       } else {
         final status = await backend.premiumStatus();
         final expiry = DateTime.tryParse(status['ends_at']?.toString() ?? '')?.toUtc();
+        if (version != _statusVersion) return;
         _verifiedPaidExpiry = status['active'] == true ? expiry : null;
         active = _verifiedPaidExpiry != null && _verifiedPaidExpiry!.isAfter(DateTime.now().toUtc());
       }
@@ -82,6 +85,7 @@ class PlaybackGate extends ChangeNotifier {
   }
 
   void acceptVerifiedStatus(Map<String, dynamic> status) {
+    ++_statusVersion;
     final expiry = DateTime.tryParse(status['ends_at']?.toString() ?? '')?.toUtc();
     _verifiedPaidExpiry = status['active'] == true ? expiry : null;
     active = NativeBackend.instance.signedIn && _verifiedPaidExpiry != null && _verifiedPaidExpiry!.isAfter(DateTime.now().toUtc());
