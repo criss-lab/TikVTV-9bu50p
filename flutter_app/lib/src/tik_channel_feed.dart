@@ -278,12 +278,15 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                   ],
                 ))),
               if (selected && _gate.locked && _gate.ready && !_gate.verificationUnavailable)
-                Center(child: Padding(
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: widget.onUnlockPremium,
+                  child: Center(child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 28),
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
                     const CircleAvatar(radius: 28, backgroundColor: Color(0x33FF315F), child: Icon(Icons.lock_open_rounded, size: 29, color: Color(0xFFFF315F))),
                     const SizedBox(height: 12),
-                    const Text('Unlock live TV', textAlign: TextAlign.center,
+                    const Text('Preview finished · Tap to unlock', textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     const Text('One subscription opens every channel. Already paid? Check your access without paying again.',
@@ -292,12 +295,12 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                     FilledButton.icon(
                       onPressed: widget.onUnlockPremium,
                       icon: const Icon(Icons.workspace_premium),
-                      label: const Text('View Premium / pay securely'),
+                      label: const Text('Choose a plan · Pay securely'),
                     ),
                     const SizedBox(height: 8),
                     OutlinedButton.icon(onPressed: () => unawaited(_gate.refresh()), icon: const Icon(Icons.refresh), label: const Text('Already paid? Check access')),
                   ]),
-                )),
+                ))),
               Positioned(top: 14, left: 14, child: DecoratedBox(
                 decoration: BoxDecoration(color: const Color(0xFFFF315F), borderRadius: BorderRadius.circular(6)),
                 child: const Padding(padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
