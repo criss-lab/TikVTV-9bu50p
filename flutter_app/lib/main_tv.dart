@@ -194,10 +194,10 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
           Padding(padding: const EdgeInsets.symmetric(vertical: 18), child: Row(children: [const Icon(Icons.sensors, color: Color(0xFF32CED0), size: 22), const SizedBox(width: 10), Text('Live channels', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800)), const SizedBox(width: 12), Text('${channels.length} available', style: const TextStyle(color: Colors.white60, fontSize: 15))])),
           Expanded(child: section == 3 ? NativeHotScreen(channels: all, onSelect: tune) : channels.isEmpty
             ? const Center(child: Text('No channels available. Refresh or change your search.'))
-            : GridView.builder(
+            : LayoutBuilder(builder: (context, constraints) => GridView.builder(
                 itemCount: channels.length,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 5, childAspectRatio: 1.55, crossAxisSpacing: 16, mainAxisSpacing: 16,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: (constraints.maxWidth / 230).floor().clamp(2, 6), childAspectRatio: 1.55, crossAxisSpacing: 16, mainAxisSpacing: 16,
                 ),
                 itemBuilder: (context, index) {
                   final channel = channels[index];
@@ -214,7 +214,7 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
                     ]),
                   );
                 },
-              )),
+              ))),
         ]),
       )),
       floatingActionButton: selected == null || openingChannel ? null : FloatingActionButton.extended(
