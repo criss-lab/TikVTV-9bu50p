@@ -24,6 +24,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     const videoRef    = useRef<HTMLVideoElement>(null);
     const hlsRef      = useRef<unknown>(null);
     const timerRef    = useRef<ReturnType<typeof setTimeout>>();
+    const stallTimerRef = useRef<ReturnType<typeof setTimeout>>();
     const preloadTimerRef = useRef<ReturnType<typeof setTimeout>>();
     const readyRef    = useRef(false);
     const retryCount  = useRef(0);
@@ -105,9 +106,20 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         }
       };
 
-      const onWaiting = () => { if (!disposed && activeRef.current && readyRef.current) setBuffering(true); };
-      const onPlaying = () => { markReady(); if (!disposed) setBuffering(false); };
-      const onCanPlay = () => { if (!disposed) { markReady(); setBuffering(false); if (activeRef.current) video.play().catch(() => {}); } };
+      const clearStall = () => { clearTimeout(stallTimerRef.current); };
+      const onWaiting = () => {
+        if (disposed || !activeRef.current || !readyRef.current) return;
+        setBuffering(true);
+        clearStall();
+        stallTimerRef.current = setTimeout(() => {
+          if (disposed || !activeRef.current || video.paused || video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return;
+          const hls = hlsRef.current as { nextAutoLevel: number; startLoad: (position?: number) => void } | null;
+          if (hls) { hls.nextAutoLevel = 0; hls.startLoad(-1); }
+          else video.play().catch(() => {});
+        }, 6000);
+      };
+      const onPlaying = () => { clearStall(); markReady(); if (!disposed) setBuffering(false); };
+      const onCanPlay = () => { clearStall(); if (!disposed) { markReady(); setBuffering(false); if (activeRef.current) video.play().catch(() => {}); } };
       video.addEventListener('waiting', onWaiting);
       video.addEventListener('stalled', onWaiting);
       video.addEventListener('playing', onPlaying);
@@ -124,11 +136,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             const hls = new Hls({
               enableWorker:           true,
               lowLatencyMode:         false,
-              maxBufferLength:        20,
-              maxMaxBufferLength:     35,
-              maxBufferSize:          32 * 1000 * 1000,
-              startLevel:             -1,
-              abrEwmaDefaultEstimate: 1_000_000,
+              maxBufferLength:        30,
+              maxMaxBufferLength:     45,
+              maxBufferSize:          40 * 1000 * 1000,
+              startLevel:             0,
+              capLevelToPlayerSize:  true,
+              abrBandWidthFactor:    0.7,
+              abrBandWidthUpFactor:  0.55,
+              abrEwmaDefaultEstimate: 650_000,
               progressive:            true,
               // Faster segment load retry
               manifestLoadingMaxRetry: 3,
@@ -192,6 +207,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       return () => {
         disposed = true;
         clearTimeout(timerRef.current);
+        clearStall();
         clearTimeout(preloadTimerRef.current);
         clearTimeout(teaserTimerRef.current);
         video.removeEventListener('waiting', onWaiting);
