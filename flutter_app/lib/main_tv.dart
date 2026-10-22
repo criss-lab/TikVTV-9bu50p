@@ -44,6 +44,7 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
   final player = SharedPlayback();
   final gate = PlaybackGate.instance;
   final search = TextEditingController();
+  final searchFocus = FocusNode(debugLabel: 'TV channel search');
   final library = ChannelLibrary();
   int section = 0;
   String country = 'All';
@@ -99,6 +100,7 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
     library.removeListener(refresh);
     NativeBackend.instance.removeListener(onAccountChanged);
     search.dispose();
+    searchFocus.dispose();
     final current = selected;
     if (current != null) player.stopIfCurrent(current.id, lease: player.lease);
     super.dispose();
@@ -122,6 +124,9 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
             TextButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const NativeAccountScreen())), icon: const Icon(Icons.person), label: Text(NativeBackend.instance.signedIn ? 'Account' : 'Sign in')),
             SizedBox(width: 320, child: TextField(
               controller: search,
+              focusNode: searchFocus,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => searchFocus.unfocus(),
               onChanged: (value) => setState(() => query = value),
               decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Search channels', border: OutlineInputBorder()),
             )),
@@ -145,7 +150,7 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
                 itemBuilder: (context, index) {
                   final channel = channels[index];
                   return OutlinedButton(
-                    autofocus: index == 0,
+                    autofocus: false,
                     style: OutlinedButton.styleFrom(padding: const EdgeInsets.all(12)),
                     onPressed: () => tune(channel),
                     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
