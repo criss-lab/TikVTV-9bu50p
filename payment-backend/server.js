@@ -51,7 +51,7 @@ async function initOrder(user, body) {
       callback_url: appUrl + '/payment-callback', notification_id: process.env.PESAPAL_IPN_ID,
       billing_address: { email_address: user.email || '', first_name: user.user_metadata?.first_name || user.email?.split('@')[0] || 'TikVTV', last_name: user.user_metadata?.last_name || 'Customer' }
     });
-    if (!result.order_tracking_id || !result.redirect_url || !['pay.pesapal.com', 'cybqa.pesapal.com'].includes(new URL(result.redirect_url).hostname) || new URL(result.redirect_url).protocol !== 'https:') throw new Error('Pesapal did not return a valid secure checkout order');
+    if (!result.order_tracking_id || !result.redirect_url || !(new URL(result.redirect_url).hostname === 'pesapal.com' || new URL(result.redirect_url).hostname.endsWith('.pesapal.com')) || new URL(result.redirect_url).protocol !== 'https:') throw new Error('Pesapal did not return a valid secure checkout order');
     await pool.query('UPDATE payment_orders SET order_tracking_id=$1,pesapal_redirect_url=$2 WHERE id=$3', [result.order_tracking_id, result.redirect_url, order.id]);
     return { order_tracking_id: result.order_tracking_id, merchant_reference: merchantReference, redirect_url: result.redirect_url, amount_kes: plan.amount, plan_code: planCode };
   } catch (error) {
