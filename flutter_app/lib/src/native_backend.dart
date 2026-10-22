@@ -145,6 +145,16 @@ class NativeBackend extends ChangeNotifier {
     if (response.statusCode < 200 || response.statusCode >= 300) throw StateError(_message(response.body, 'Payment verification failed'));
     return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
   }
+  Future<Map<String, dynamic>> tvRequest(String path, Map<String, dynamic> body, {String? tvSecret, bool authenticated = false}) async {
+    if (authenticated) _requireSignedIn();
+    final response = await http.post(_paymentUri('/v1/tv/$path'), headers: {
+      'Content-Type': 'application/json', 'Accept': 'application/json',
+      if (authenticated && accessToken != null) 'Authorization': 'Bearer $accessToken',
+      if (tvSecret != null) 'X-TV-Pairing-Secret': tvSecret,
+    }, body: jsonEncode(body)).timeout(const Duration(seconds: 15));
+    if (response.statusCode < 200 || response.statusCode >= 300) throw StateError(_message(response.body, 'TV connection unavailable'));
+    return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+  }
   void _requireConfig() { if (!configured) throw StateError('Native account services are not configured in this APK build.'); }
   void _requireSignedIn() { _requireConfig(); if (!signedIn) throw StateError('Sign in to your TikVTV account first.'); }
   String _message(String body, String fallback) {
