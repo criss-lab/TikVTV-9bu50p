@@ -47,7 +47,7 @@ class TikVTV extends StatelessWidget {
     title: 'TikVTV',
     debugShowCheckedModeBanner: false,
     theme: ThemeData.dark(useMaterial3: true).copyWith(scaffoldBackgroundColor: const Color(0xFF101014), colorScheme: const ColorScheme.dark(primary: Color(0xFFFF315F), surface: Color(0xFF12131B))),
-    initialRoute: Uri.base.path.isEmpty ? '/' : Uri.base.path,
+    initialRoute: kIsWeb && Uri.base.scheme.startsWith('http') && Uri.base.path.isNotEmpty ? Uri.base.path : '/',
     onGenerateRoute: (settings) {
       final path = Uri.tryParse(settings.name ?? '/')?.path ?? '/';
       const tabs = <String, int>{'/': 0, '/search': 1, '/explore': 2, '/trending': 3, '/clips': 4, '/epg': 5, '/profile': 6};
