@@ -62,7 +62,7 @@ jobs:
           for attempt in 1 2 3; do
             echo "Installing Android NDK $NDK_VERSION (attempt $attempt/3)"
             rm -rf "$NDK_PATH" "$ANDROID_HOME/.temp"/*
-            if yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" && \
+            if "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" < /dev/null && \
                test -f "$NDK_PATH/source.properties" && \
                grep -q "Pkg.Revision = $NDK_VERSION" "$NDK_PATH/source.properties"; then
               echo "Android NDK verified"
