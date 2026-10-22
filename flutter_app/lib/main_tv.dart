@@ -191,8 +191,14 @@ class _TvPlayerState extends State<TvPlayer> {
           ]))
         : controller != null && controller.value.isInitialized
           ? Center(child: AspectRatio(aspectRatio: controller.value.aspectRatio, child: VideoPlayer(controller)))
-          : Center(child: Text(widget.player.error ?? 'Connecting to live channel…'))),
+          : Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+              if (widget.player.loading) const CircularProgressIndicator(),
+              const SizedBox(height: 14),
+              Text(widget.player.error ?? 'Connecting to live channel…', textAlign: TextAlign.center),
+              if (!widget.player.loading) TextButton.icon(onPressed: () => widget.player.open(widget.channel), icon: const Icon(Icons.refresh), label: const Text('Retry channel')),
+            ]))),
       Positioned(left: 24, top: 24, child: Text(widget.channel.name, style: const TextStyle(fontSize: 22, shadows: [Shadow(blurRadius: 8)]))),
+      if (!widget.gate.locked && widget.player.buffering) const Positioned(right: 24, top: 24, child: Chip(avatar: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)), label: Text('Buffering'))),
       Positioned(left: 24, bottom: 24, child: ElevatedButton.icon(
         autofocus: true,
         onPressed: () => Navigator.pop(context),
