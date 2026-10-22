@@ -79,9 +79,9 @@ class SharedPlayback extends ChangeNotifier {
   }
 
   void setBackgrounded(bool value) {
+    _backgrounded = value;
     final current = controller;
     if (current == null) { return; }
-    _backgrounded = value;
     if (value) {
       _stalledAt = null;
       // Keep the selected stream running when the screen locks or the user switches apps.
@@ -147,6 +147,7 @@ class SharedPlayback extends ChangeNotifier {
     for (var i = start; i < selected.urls.length; i++) {
       if (PlaybackGate.instance.locked) { await lockForPayment(); return; }
       if (token != _generation) { return; }
+      _updateBuffering(false);
       sourceIndex = i;
       error = null;
       loading = true;
@@ -223,6 +224,7 @@ class SharedPlayback extends ChangeNotifier {
           stallCount++;
           recoveryCount++;
           loading = true;
+          _updateBuffering(false);
           error = 'Playback stalled; recovering stream';
           controller = null;
           notifyListeners();
@@ -239,6 +241,7 @@ class SharedPlayback extends ChangeNotifier {
             recoveryCount++;
             error = candidate.value.errorDescription ?? 'Stream playback failed';
             loading = true;
+            _updateBuffering(false);
             controller = null;
             notifyListeners();
             _sameSourceRetries = 0;
