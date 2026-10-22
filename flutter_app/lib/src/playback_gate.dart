@@ -63,7 +63,7 @@ class PlaybackGate extends ChangeNotifier {
 
   /// Called on focus, including swipes. Allocations are keyed by account/channel on Render.
   Future<void> focus(String channelId) async {
-    final account = _backend.signedIn ? _backend.user?['id']?.toString() : (_backend.tvPaired ? 'paired-tv' : null);
+    final account = _backend.signedIn ? (_backend.user?['id']?.toString()) : (_backend.tvPaired ? 'paired-tv' : null);
     if (_channelId != channelId || _accountId != account) {
       ++_revision;
       _channelId = channelId;
@@ -105,7 +105,7 @@ class PlaybackGate extends ChangeNotifier {
         verificationUnavailable = false;
       } else {
         final status = _backend.signedIn ? await _backend.viewingAccess(channel) : await _backend.tvViewingAccess(channel);
-        if (revision != _revision || account != (_backend.signedIn ? _backend.user?['id']?.toString() : (_backend.tvPaired ? 'paired-tv' : null))) return;
+        if (revision != _revision || account != (_backend.signedIn ? (_backend.user?['id']?.toString()) : (_backend.tvPaired ? 'paired-tv' : null))) return;
         _paidUntil = status['active'] == true ? _parse(status['ends_at']) : null;
         _previewUntil = status['allowed'] == true && status['active'] != true ? _parse(status['preview_ends_at']) : null;
         previewsUsed = (status['previews_used'] as num?)?.toInt() ?? previewsUsed;
