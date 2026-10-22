@@ -54,7 +54,7 @@ class PlaybackGate extends ChangeNotifier {
   void _ensureTimers() {
     _timer ??= Timer.periodic(const Duration(seconds: 1), (_) => _apply());
     _poll ??= Timer.periodic(_refreshInterval, (_) {
-      if (checking || !_backend.signedIn || _channelId == null) return;
+      if (checking || (!_backend.signedIn && !_backend.tvPaired) || _channelId == null) return;
       final interval = !locked && !verificationUnavailable ? _stableRefreshInterval : _refreshInterval;
       if (_lastVerifiedAt != null && DateTime.now().difference(_lastVerifiedAt!) < interval) return;
       unawaited(refresh());
@@ -63,13 +63,13 @@ class PlaybackGate extends ChangeNotifier {
 
   /// Called on focus, including swipes. Allocations are keyed by account/channel on Render.
   Future<void> focus(String channelId) async {
-    final account = _backend.user?['id']?.toString();
+    final account = _backend.signedIn ? _backend.user?['id']?.toString() : (_backend.tvPaired ? 'paired-tv' : null);
     if (_channelId != channelId || _accountId != account) {
       ++_revision;
       _channelId = channelId;
       _accountId = account;
       _previewUntil = null;
-      if (!_backend.signedIn || account == null) _paidUntil = null;
+      if ((!_backend.signedIn && !_backend.tvPaired) || account == null) _paidUntil = null;
       ready = false;
       verificationUnavailable = false;
       _apply();
@@ -98,14 +98,14 @@ class PlaybackGate extends ChangeNotifier {
     checking = true;
     notifyListeners();
     try {
-      if (!_backend.signedIn || account == null) {
+      if ((!_backend.signedIn && !_backend.tvPaired) || account == null) {
         if (revision != _revision) return;
         _paidUntil = null;
         _previewUntil = null;
         verificationUnavailable = false;
       } else {
-        final status = await _backend.viewingAccess(channel);
-        if (revision != _revision || account != _backend.user?['id']?.toString()) return;
+        final status = _backend.signedIn ? await _backend.viewingAccess(channel) : await _backend.tvViewingAccess(channel);
+        if (revision != _revision || account != (_backend.signedIn ? _backend.user?['id']?.toString() : (_backend.tvPaired ? 'paired-tv' : null))) return;
         _paidUntil = status['active'] == true ? _parse(status['ends_at']) : null;
         _previewUntil = status['allowed'] == true && status['active'] != true ? _parse(status['preview_ends_at']) : null;
         previewsUsed = (status['previews_used'] as num?)?.toInt() ?? previewsUsed;
@@ -129,7 +129,7 @@ class PlaybackGate extends ChangeNotifier {
   /// The Premium screen can immediately publish a server-verified paid result.
   void acceptVerifiedStatus(Map<String, dynamic> status) {
     ++_revision;
-    _paidUntil = status['active'] == true && _backend.signedIn ? _parse(status['ends_at']) : null;
+    _paidUntil = status['active'] == true && (_backend.signedIn || _backend.tvPaired) ? _parse(status['ends_at']) : null;
     verificationUnavailable = false;
     _lastVerifiedAt = DateTime.now();
     ready = true;
