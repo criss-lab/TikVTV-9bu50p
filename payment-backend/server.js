@@ -180,12 +180,69 @@ async function tvRoute(req, res, url) {
   throw pairingError('TV endpoint not found', 404);
 }
 
+
+const digest = value => crypto.createHash('sha256').update(value).digest('hex');
+const bearer = () => crypto.randomBytes(32).toString('base64url');
+async function tvSession(req, body) {
+  requireDb();
+  const id = String(body.pairing_id || '');
+  const secret = String(req.headers['x-tv-pairing-secret'] || '');
+  if (!/^[0-9a-f-]{36}$/i.test(id) || !secret || secret.length > 128) throw Object.assign(new Error('Invalid TV pairing credentials'), {status:401});
+  const result = await pool.query("SELECT * FROM tv_pairing_sessions WHERE id=$1 AND tv_secret_hash=$2 AND status<>'revoked' AND (expires_at>NOW() OR status='linked')",[id,digest(secret)]);
+  if (!result.rowCount) throw Object.assign(new Error('TV pairing expired or invalid'),{status:401});
+  return result.rows[0];
+}
+async function tvRoute(req,res,url) {
+  if (req.method === 'POST' && url.pathname === '/v1/tv/pair/start') {
+    requireDb(); const id=crypto.randomUUID(), secret=bearer(), code=bearer();
+    await pool.query("INSERT INTO tv_pairing_sessions(id,tv_secret_hash,pairing_code_hash,expires_at) VALUES($1,$2,$3,NOW()+INTERVAL '5 minutes')",[id,digest(secret),digest(code)]);
+    return json(res,201,{pairing_id:id,tv_secret:secret,pairing_code:code,expires_in_seconds:300});
+  }
+  if (req.method === 'POST' && url.pathname === '/v1/tv/pair/claim') {
+    const user=await authenticate(req); requireDb(); const body=await readBody(req);
+    const code=String(body.pairing_code || ''); if(code.length<30 || code.length>128) return json(res,400,{error:'Invalid pairing code'});
+    const result=await pool.query("UPDATE tv_pairing_sessions SET owner_user_id=$1,status='linked',linked_at=NOW(),last_seen_at=NOW() WHERE pairing_code_hash=$2 AND status='pending' AND expires_at>NOW() RETURNING id",[user.id,digest(code)]);
+    if(!result.rowCount) return json(res,410,{error:'Pairing code expired or already used'});
+    return json(res,200,{connected:true,pairing_id:result.rows[0].id});
+  }
+  if (req.method === 'POST' && url.pathname === '/v1/tv/pair/status') {
+    const body=await readBody(req), session=await tvSession(req,body);
+    await pool.query('UPDATE tv_pairing_sessions SET last_seen_at=NOW() WHERE id=$1',[session.id]);
+    return json(res,200,{connected:session.status==='linked',pairing_id:session.id});
+  }
+  if (req.method === 'POST' && url.pathname === '/v1/tv/remote/send') {
+    const user=await authenticate(req); requireDb(); const body=await readBody(req);
+    const command=String(body.command || ''), id=String(body.pairing_id || '');
+    if(!['up','down','left','right','select','back','home','play_pause','next','previous'].includes(command) || !/^[0-9a-f-]{36}$/i.test(id)) return json(res,400,{error:'Invalid remote command'});
+    const result=await pool.query("INSERT INTO tv_remote_commands(pairing_id,command) SELECT id,$3 FROM tv_pairing_sessions WHERE id=$1 AND owner_user_id=$2 AND status='linked' AND last_seen_at>NOW()-INTERVAL '2 minutes' RETURNING id",[id,user.id,command]);
+    if(!result.rowCount) return json(res,403,{error:'TV not connected or remote session expired'});
+    return json(res,202,{queued:true});
+  }
+  if (req.method === 'POST' && url.pathname === '/v1/tv/remote/poll') {
+    const body=await readBody(req), session=await tvSession(req,body);
+    if(session.status!=='linked') return json(res,403,{error:'TV not linked'});
+    const client=await pool.connect();
+    try { await client.query('BEGIN');
+      const commands=await client.query("SELECT id,command FROM tv_remote_commands WHERE pairing_id=$1 AND consumed_at IS NULL AND created_at>NOW()-INTERVAL '30 seconds' ORDER BY id LIMIT 10 FOR UPDATE SKIP LOCKED",[session.id]);
+      if(commands.rowCount) await client.query('UPDATE tv_remote_commands SET consumed_at=NOW() WHERE id=ANY($1::bigint[])',[commands.rows.map(x=>x.id)]);
+      await client.query('UPDATE tv_pairing_sessions SET last_seen_at=NOW() WHERE id=$1',[session.id]); await client.query('COMMIT');
+      return json(res,200,{commands:commands.rows.map(x=>x.command)});
+    } catch(e){await client.query('ROLLBACK');throw e;} finally {client.release();}
+  }
+  if (req.method === 'POST' && url.pathname === '/v1/tv/pair/revoke') {
+    const user=await authenticate(req); requireDb(); const body=await readBody(req);
+    const result=await pool.query("UPDATE tv_pairing_sessions SET status='revoked' WHERE id=$1 AND owner_user_id=$2 RETURNING id",[body.pairing_id,user.id]);
+    return json(res,result.rowCount?200:404,{revoked:Boolean(result.rowCount)});
+  }
+  return json(res,404,{error:'Unknown TV pairing endpoint'});
+}
 async function route(req, res) {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname.startsWith('/v1/tv/')) {
     try { return await tvRoute(req,res,url); }
     catch(e) { console.error('TV pairing request failed:', e.message); return json(res,e.status || 503,{error:e.message || 'TV pairing unavailable'}); }
   }
+  if (url.pathname.startsWith('/v1/tv/')) { try { return await tvRoute(req,res,url); } catch(e) { return json(res,e.status || 503,{error:e.message || 'TV pairing unavailable'}); } }
   // One server-owned catalogue drives both checkout validation and the Premium UI.
   if (req.method === 'GET' && url.pathname === '/v1/plans') {
     return json(res, 200, {
@@ -275,7 +332,7 @@ const server = http.createServer((req, res) => {
   const origin = req.headers.origin;
   if (origin && allowedOrigins.has(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin');
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type'); res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-TV-Pairing-Secret'); res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   } else if (origin && !allowedOrigins.has(origin)) return json(res, 403, { error: 'Origin not allowed' });
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   route(req, res).catch(error => { console.error('Unhandled payment API error:', error.message); if (!res.headersSent) json(res, 500, { error: 'Internal server error' }); });
