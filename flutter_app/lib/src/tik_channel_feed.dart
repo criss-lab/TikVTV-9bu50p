@@ -397,10 +397,6 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
           ? 'Viewing access ended. Return to the feed to unlock.'
           : widget.player.error ?? 'Connecting to live channel…',
           textAlign: TextAlign.center)),
-        Positioned(top: 8, left: 8, child: IconButton.filledTonal(
-          tooltip: 'Return to portrait', onPressed: () => Navigator.of(context).pop(),
-          icon: const Icon(Icons.fullscreen_exit),
-        )),
         if (playable) Center(child: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () async {
@@ -409,6 +405,10 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
             _refresh();
           },
           child: const SizedBox.expand(),
+        )),
+        Positioned(top: 8, left: 8, child: IconButton.filledTonal(
+          tooltip: 'Return to portrait', onPressed: () => Navigator.of(context).pop(),
+          icon: const Icon(Icons.fullscreen_exit),
         )),
       ])),
     );
