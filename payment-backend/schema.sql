@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS tv_pairings (
   user_id TEXT,
   expires_at TIMESTAMPTZ NOT NULL,
   approved_at TIMESTAMPTZ,
+  claimed_at TIMESTAMPTZ,
   revoked_at TIMESTAMPTZ,
   last_seen_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
