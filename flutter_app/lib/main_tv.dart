@@ -51,6 +51,7 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
   String category = 'All';
   Channel? selected;
   String query = '';
+  bool openingChannel = false;
 
   @override
   void initState() {
@@ -79,16 +80,26 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
   }
 
   Future<void> tune(Channel channel) async {
+    // A remote can deliver repeated OK events before navigation completes.
+    // Keep one decoder/open attempt and one fullscreen route at a time.
+    if (openingChannel) return;
+    openingChannel = true;
     setState(() => selected = channel);
-    await player.open(channel); // Server entitlement is checked before opening.
-    if (!mounted) return;
-    if (!gate.locked && player.controller != null) unawaited(library.recordWatch(channel.id));
-    final playbackLease = player.lease;
-    await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => TvPlayer(channel: channel, player: player, gate: gate)));
-    // The fullscreen route owns this lease. Returning to the grid must not
-    // leave a hidden decoder playing or stop a newer channel selection.
-    player.stopIfCurrent(channel.id, lease: playbackLease);
-    if (mounted) setState(() => selected = null);
+    try {
+      await player.open(channel); // The shared player enforces the access gate.
+      if (!mounted) return;
+      if (!gate.locked && player.controller != null) {
+        unawaited(library.recordWatch(channel.id));
+      }
+      final playbackLease = player.lease;
+      await Navigator.push(context, MaterialPageRoute<void>(
+        builder: (_) => TvPlayer(channel: channel, player: player, gate: gate),
+      ));
+      player.stopIfCurrent(channel.id, lease: playbackLease);
+    } finally {
+      openingChannel = false;
+      if (mounted) setState(() => selected = null);
+    }
   }
 
   @override
@@ -139,7 +150,7 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
           const SizedBox(height: 12),
           if (catalogue.loading) const LinearProgressIndicator(),
           if (catalogue.error != null) Text('Catalogue unavailable: ${catalogue.error}', style: const TextStyle(color: Colors.orange)),
-          const Padding(padding: EdgeInsets.symmetric(vertical: 14), child: Text('Live channels', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w600))),
+          Padding(padding: const EdgeInsets.symmetric(vertical: 14), child: Text('Live channels · ${channels.length}', style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w600))),
           Expanded(child: section == 3 ? NativeHotScreen(channels: all, onSelect: tune) : channels.isEmpty
             ? const Center(child: Text('No channels available. Refresh or change your search.'))
             : GridView.builder(
@@ -164,7 +175,7 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
               )),
         ]),
       )),
-      floatingActionButton: selected == null ? null : FloatingActionButton.extended(
+      floatingActionButton: selected == null || openingChannel ? null : FloatingActionButton.extended(
         onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
           builder: (_) => TvPlayer(channel: selected!, player: player, gate: gate),
         )),
