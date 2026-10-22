@@ -6,6 +6,8 @@ import 'src/catalogue.dart';
 import 'src/native_backend.dart';
 import 'src/playback.dart';
 import 'src/playback_gate.dart';
+import 'src/library.dart';
+import 'src/native_screens.dart';
 
 /// Android TV entry point: a remote-first experience using the same catalogue,
 /// account, viewing-access service and shared decoder as the mobile application.
@@ -42,6 +44,10 @@ class _TvHomeState extends State<TvHome> {
   final player = SharedPlayback();
   final gate = PlaybackGate.instance;
   final search = TextEditingController();
+  final library = ChannelLibrary();
+  int section = 0;
+  String country = 'All';
+  String category = 'All';
   Channel? selected;
   String query = '';
 
@@ -51,6 +57,9 @@ class _TvHomeState extends State<TvHome> {
     catalogue.addListener(refresh);
     player.addListener(refresh);
     gate.addListener(refresh);
+    library.addListener(refresh);
+    NativeBackend.instance.addListener(refresh);
+    unawaited(library.load());
     unawaited(catalogue.load());
     unawaited(NativeBackend.instance.restore().then((_) => gate.refresh()));
   }
@@ -60,6 +69,9 @@ class _TvHomeState extends State<TvHome> {
   Future<void> tune(Channel channel) async {
     setState(() => selected = channel);
     await player.open(channel); // Server entitlement is checked before opening.
+    if (!mounted) return;
+    if (!gate.locked && player.controller != null) unawaited(library.recordWatch(channel.id));
+    await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => TvPlayer(channel: channel, player: player, gate: gate)));
     if (mounted) setState(() {});
   }
 
@@ -68,6 +80,8 @@ class _TvHomeState extends State<TvHome> {
     catalogue.removeListener(refresh);
     player.removeListener(refresh);
     gate.removeListener(refresh);
+    library.removeListener(refresh);
+    NativeBackend.instance.removeListener(refresh);
     search.dispose();
     final current = selected;
     if (current != null) player.stopIfCurrent(current.id, lease: player.lease);
@@ -76,7 +90,11 @@ class _TvHomeState extends State<TvHome> {
 
   @override
   Widget build(BuildContext context) {
-    final channels = catalogue.channels.where((c) => c.name.toLowerCase().contains(query.toLowerCase())).toList();
+    final all = catalogue.channels;
+    final countries = (all.map((c) => c.country).where((v) => v.isNotEmpty).toSet().toList()..sort());
+    final categories = (all.expand((c) => c.categories).where((v) => v.isNotEmpty).toSet().toList()..sort());
+    final channels = all.where((c) => (section != 1 || library.isFavorite(c.id)) && (section != 2 || library.wasWatched(c.id)) && (country == 'All' || c.country == country) && (category == 'All' || c.categories.contains(category)) && [c.name,c.country,...c.categories,...c.languages].any((v) => v.toLowerCase().contains(query.toLowerCase()))).toList();
+    if (section == 2) channels.sort((a,b) => library.history.indexOf(a.id).compareTo(library.history.indexOf(b.id)));
     return Scaffold(
       body: SafeArea(child: Padding(
         padding: const EdgeInsets.all(28),
@@ -84,6 +102,8 @@ class _TvHomeState extends State<TvHome> {
           Row(children: [
             const Text('TikVTV  TV', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
             const Spacer(),
+            TextButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const NativePremiumScreen())), icon: const Icon(Icons.workspace_premium), label: const Text('Premium')),
+            TextButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const NativeAccountScreen())), icon: const Icon(Icons.person), label: Text(NativeBackend.instance.signedIn ? 'Account' : 'Sign in')),
             SizedBox(width: 320, child: TextField(
               controller: search,
               onChanged: (value) => setState(() => query = value),
@@ -92,11 +112,14 @@ class _TvHomeState extends State<TvHome> {
             const SizedBox(width: 16),
             IconButton(tooltip: 'Refresh catalogue', onPressed: () => catalogue.load(force: true), icon: const Icon(Icons.refresh)),
           ]),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, children: [for (var i = 0; i < 4; i++) ChoiceChip(label: Text(const ['Channels','Favorites','History','Hot'][i]), selected: section == i, onSelected: (_) => setState(() => section = i))]),
+          Row(children: [const Text('Country  '), DropdownButton<String>(value: countries.contains(country) ? country : 'All', items: ['All',...countries].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setState(() => country = v ?? 'All')), const SizedBox(width: 18), const Text('Category  '), DropdownButton<String>(value: categories.contains(category) ? category : 'All', items: ['All',...categories].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setState(() => category = v ?? 'All'))]),
+          const SizedBox(height: 12),
           if (catalogue.loading) const LinearProgressIndicator(),
           if (catalogue.error != null) Text('Catalogue unavailable: ${catalogue.error}', style: const TextStyle(color: Colors.orange)),
           const Padding(padding: EdgeInsets.symmetric(vertical: 14), child: Text('Live channels', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w600))),
-          Expanded(child: channels.isEmpty
+          Expanded(child: section == 3 ? NativeHotScreen(channels: all, onSelect: tune) : channels.isEmpty
             ? const Center(child: Text('No channels available. Refresh or change your search.'))
             : GridView.builder(
                 itemCount: channels.length,
@@ -113,6 +136,7 @@ class _TvHomeState extends State<TvHome> {
                       if (channel.logo.isNotEmpty) Expanded(child: Image.network(channel.logo, errorBuilder: (_, __, ___) => const Icon(Icons.live_tv, size: 40))),
                       const SizedBox(height: 8),
                       Text(channel.name, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
+                      IconButton(tooltip: 'Toggle favorite', onPressed: () => library.toggleFavorite(channel.id), icon: Icon(library.isFavorite(channel.id) ? Icons.favorite : Icons.favorite_border, size: 20)),
                     ]),
                   );
                 },
