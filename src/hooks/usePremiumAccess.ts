@@ -1,27 +1,32 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { getPremiumAccess, PREMIUM_CHANGED } from '@/lib/premium';
 
 export function usePremiumAccess() {
-  const user = useAuthStore(s => s.user);
+  const userId = useAuthStore(s => s.user?.id);
   const [endsAt, setEndsAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
+  // Reject responses from a previous account and out-of-order requests.
+  const generation = useRef(0);
   const refresh = useCallback(async () => {
-    if (!user) { setEndsAt(null); setLoading(false); return false; }
+    const request = ++generation.current;
+    if (!userId) { setEndsAt(null); setLoading(false); return false; }
     try {
-      const result = await getPremiumAccess(user.id);
-      setEndsAt(result.active ? result.endsAt : null);
+      const result = await getPremiumAccess(userId);
+      if (request !== generation.current) return false;
+      const deadline = result.active && result.endsAt && Date.parse(result.endsAt) > Date.now() ? result.endsAt : null;
+      setEndsAt(deadline);
       setNow(Date.now());
-      return result.active;
+      return !!deadline;
     } catch (error) {
-      console.error('Premium status unavailable', error);
-      // A temporary API failure is not proof that an already verified paid
-      // entitlement was revoked. Its server-issued expiry still bounds access.
+      if (request === generation.current) console.error('Premium status unavailable', error);
+      // A transient API failure cannot extend a server-issued deadline.
       return false;
-    } finally { setLoading(false); }
-  }, [user?.id]);
+    } finally { if (request === generation.current) setLoading(false); }
+  }, [userId]);
   useEffect(() => {
+    ++generation.current;
     setLoading(true);
     setEndsAt(null);
     void refresh();
@@ -30,9 +35,10 @@ export function usePremiumAccess() {
     window.addEventListener(PREMIUM_CHANGED, update);
     window.addEventListener('focus', update);
     document.addEventListener('visibilitychange', visible);
-    const clock = window.setInterval(() => setNow(Date.now()), 1000);
+    const clock = window.setInterval(() => setNow(Date.now()), 250);
     const poll = window.setInterval(() => { if (!document.hidden) void refresh(); }, 3000);
     return () => {
+      ++generation.current;
       window.removeEventListener(PREMIUM_CHANGED, update);
       window.removeEventListener('focus', update);
       document.removeEventListener('visibilitychange', visible);
@@ -40,6 +46,6 @@ export function usePremiumAccess() {
       window.clearInterval(poll);
     };
   }, [refresh]);
-  const active = !!endsAt && Date.parse(endsAt) > now;
+  const active = !!userId && !!endsAt && Date.parse(endsAt) > now;
   return { active, endsAt: active ? endsAt : null, loading, refresh };
 }
