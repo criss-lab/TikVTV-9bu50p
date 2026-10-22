@@ -39,7 +39,7 @@ class TvHome extends StatefulWidget {
   State<TvHome> createState() => _TvHomeState();
 }
 
-class _TvHomeState extends State<TvHome> {
+class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
   final catalogue = ChannelCatalogue();
   final player = SharedPlayback();
   final gate = PlaybackGate.instance;
@@ -54,6 +54,7 @@ class _TvHomeState extends State<TvHome> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     catalogue.addListener(refresh);
     player.addListener(refresh);
     gate.addListener(refresh);
@@ -67,6 +68,14 @@ class _TvHomeState extends State<TvHome> {
 
   void refresh() { if (mounted) setState(() {}); }
   void onAccountChanged() { refresh(); unawaited(gate.refresh()); }
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    player.setBackgrounded(state != AppLifecycleState.resumed);
+    if (state == AppLifecycleState.resumed) {
+      unawaited(gate.refresh());
+      unawaited(catalogue.load());
+    }
+  }
 
   Future<void> tune(Channel channel) async {
     setState(() => selected = channel);
@@ -79,6 +88,7 @@ class _TvHomeState extends State<TvHome> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     catalogue.removeListener(refresh);
     player.removeListener(refresh);
     gate.removeListener(refresh);
