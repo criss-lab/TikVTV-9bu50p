@@ -79,3 +79,26 @@ CREATE TABLE IF NOT EXISTS free_channel_previews (
  CHECK (expires_at > started_at)
 );
 CREATE INDEX IF NOT EXISTS free_channel_previews_user_idx ON free_channel_previews(user_id);
+
+-- QR pairing: a short-lived challenge contains no credentials. Only a signed-in
+-- phone can approve it; the TV receives a separate revocable device credential.
+CREATE TABLE IF NOT EXISTS tv_pairings (
+  id UUID PRIMARY KEY,
+  challenge_hash TEXT NOT NULL UNIQUE,
+  display_code TEXT NOT NULL,
+  device_token_hash TEXT UNIQUE,
+  user_id TEXT,
+  expires_at TIMESTAMPTZ NOT NULL,
+  approved_at TIMESTAMPTZ,
+  revoked_at TIMESTAMPTZ,
+  last_seen_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS tv_pairings_user_idx ON tv_pairings(user_id) WHERE revoked_at IS NULL;
+CREATE TABLE IF NOT EXISTS tv_remote_commands (
+  id BIGSERIAL PRIMARY KEY,
+  pairing_id UUID NOT NULL REFERENCES tv_pairings(id) ON DELETE CASCADE,
+  command TEXT NOT NULL CHECK (command IN ('up','down','left','right','select','back','home','play_pause','next','previous')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS tv_remote_commands_pairing_idx ON tv_remote_commands(pairing_id,id);
