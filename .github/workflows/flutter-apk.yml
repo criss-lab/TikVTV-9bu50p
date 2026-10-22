@@ -1,7 +1,7 @@
 name: Flutter Android APK
 on:
   push:
-    branches: [main]
+    branches: [main, feature/pesapal-premium-integration]
     paths:
       - 'flutter_app/**'
       - '.github/workflows/flutter-apk.yml'
