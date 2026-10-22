@@ -23,6 +23,10 @@ jobs:
     env:
       SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     timeout-minutes: 45
     defaults:
       run:
@@ -48,8 +52,20 @@ jobs:
       - run: flutter test
       - name: Configure Android network access
         run: python3 tool/configure_android.py
+      - name: Configure persistent signing when provisioned
+        run: python3 tool/configure_signing.py
       - name: Build obfuscated Flutter release APK
         run: flutter build apk --release --obfuscate --split-debug-info=build/symbols --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+      - name: Verify APK signature and package metadata
+        run: |
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          test -s "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            CERT="$("$APKSIGNER" verify --print-certs "$APK")"
+            echo "$CERT" | grep -q 'Signer #1 certificate SHA-256 digest:'
+          fi
       - name: Verify and label preview APK
         run: |
           test -s build/app/outputs/flutter-apk/app-release.apk
