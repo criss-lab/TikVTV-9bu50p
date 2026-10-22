@@ -24,7 +24,7 @@ One place to discover channels, search by name, save favorites, revisit watched 
 
 ## 📥 Download TikVTV for Android
 
-**Phone/tablet and Android TV use separate APKs.** The Android TV preview has a separate direct APK download, just like the phone preview. The TV release link becomes active after its first successful publishing run.
+**Phone/tablet and Android TV use separate APKs.** The Android TV preview has its own rolling GitHub Release with a direct APK link, separate from the phone APK. The direct link becomes available once a successful TV workflow publishes the release.
 
 **Direct mobile APK and checksum links stay the same when new successful builds update the rolling preview.** The links only become active after the first successful APK workflow publishes its release; a failed build will not be advertised as a downloadable APK.
 
@@ -32,13 +32,13 @@ One place to discover channels, search by name, save favorites, revisit watched 
 | --- | --- |
 | **[⬇️ Direct APK: latest Android preview](https://github.com/criss-lab/TikVTV-9bu50p/releases/download/preview-latest/TikVTV-preview.apk)** | Direct download from the rolling preview release, available after its first successful build. |
 | **[🔐 APK SHA-256 checksum](https://github.com/criss-lab/TikVTV-9bu50p/releases/download/preview-latest/SHA256SUMS.txt)** | Verify the preview APK before installation. |
-| **[📺 ⬇️ Direct Android TV APK download](https://github.com/criss-lab/TikVTV-9bu50p/releases/download/preview-tv-latest/TikVTV-TV-preview.apk)** | Direct download of the dedicated Android TV APK, without visiting Actions or extracting an artifact ZIP. |
-| **[🔐 Android TV APK SHA-256 checksum](https://github.com/criss-lab/TikVTV-9bu50p/releases/download/preview-tv-latest/TV-SHA256SUMS.txt)** | Verify the TV APK before installing. |\n| **[🧪 Android TV build status](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-tv.yml)** | Confirm the TV APK compiled and uploaded successfully before installing. |
+| **[📺 ⬇️ Direct Android TV APK download](https://github.com/criss-lab/TikVTV-9bu50p/releases/download/preview-tv-latest/TikVTV-TV-preview.apk)** | Downloads the dedicated Android TV APK directly after the first successful TV release-publishing run. No Actions ZIP extraction needed. |
+| **[🔐 Android TV SHA-256 checksum](https://github.com/criss-lab/TikVTV-9bu50p/releases/download/preview-tv-latest/TV-SHA256SUMS.txt)** | Check the TV APK download before installation. |\n| **[🧪 Android TV build status](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-tv.yml)** | Confirm the TV APK compiled and uploaded successfully before installing. |
 | **[📦 All releases](https://github.com/criss-lab/TikVTV-9bu50p/releases)** | Latest preview plus version-tagged builds. |
 | **[⬇️ Latest preview build runs](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-apk.yml)** | Open a successful run → **Artifacts** → download `TikVTV-preview-<run number>` ZIP → extract `TikVTV-preview.apk`. GitHub sign-in may be required. |
 | **[🧪 Android build status](https://github.com/criss-lab/TikVTV-9bu50p/actions/workflows/flutter-apk.yml)** | Check whether the latest APK actually compiled before downloading. |
 
-**TV installation:** Download the dedicated TV APK directly above and transfer it to your Android TV using a trusted method. If the TV release has not been published yet, use the latest successful TV Actions run → Artifacts temporarily. Do not use the phone APK in place of the TV APK.
+**TV installation:** Use the direct Android TV APK link above and transfer the APK to your Android TV device using a trusted method. If the direct link returns 404 before its first successful publication, use the successful TV Actions run → Artifacts as a temporary fallback. Do not use the mobile APK as a substitute for the dedicated TV interface.
 
 **Signing and installation:** CI preview APKs are signed using Flutter's generated **temporary debug signing key**, not an official persistent production key. Android may show an unknown-app-source prompt; follow Android's own installation and Play Protect guidance. We do not bypass Play Protect or guarantee approval. Because CI signing keys may change between runs, a newer preview may require uninstalling the previous preview first (back up local app data). Check the provided `SHA256SUMS.txt` against your downloaded APK. Only install files from this repository's trusted release or workflow pages.
 

@@ -25,6 +25,30 @@ class SharedPlayback extends ChangeNotifier {
   bool get bufferBelowTarget => bufferedAhead < targetBufferAhead;
   double get bufferHealth => (bufferedAhead.inMilliseconds / targetBufferAhead.inMilliseconds).clamp(0.0, 1.0);
   bool buffering = false;
+  bool _backgrounded = false;
+  DateTime? _bufferingStartedAt;
+  Duration totalBuffering = Duration.zero;
+  int rebufferEvents = 0;
+  DateTime? _playbackStartedAt;
+  Duration? get playbackUptime => _playbackStartedAt == null ? null : DateTime.now().difference(_playbackStartedAt!);
+  double? get rebufferRatio {
+    final uptime = playbackUptime;
+    if (uptime == null || uptime.inMilliseconds == 0) return null;
+    final active = _bufferingStartedAt == null ? Duration.zero : DateTime.now().difference(_bufferingStartedAt!);
+    return ((totalBuffering + active).inMilliseconds / uptime.inMilliseconds).clamp(0.0, 1.0);
+  }
+  void _updateBuffering(bool next) {
+    if (next == buffering) return;
+    if (next) { rebufferEvents++; _bufferingStartedAt = DateTime.now(); }
+    else if (_bufferingStartedAt != null) {
+      totalBuffering += DateTime.now().difference(_bufferingStartedAt!);
+      _bufferingStartedAt = null;
+    }
+    buffering = next;
+  }
+  DateTime? _lastRecoveryAt;
+  static const Duration stallRecoveryDelay = Duration(seconds: 18);
+  static const Duration recoveryCooldown = Duration(seconds: 5);
   int recoveryCount = 0;
   int _lastReportedSecond = -1;
   int _lastReportedBufferSecond = -1;
@@ -55,6 +79,7 @@ class SharedPlayback extends ChangeNotifier {
   }
 
   void setBackgrounded(bool value) {
+    _backgrounded = value;
     final current = controller;
     if (current == null) { return; }
     if (value) {
@@ -73,7 +98,8 @@ class SharedPlayback extends ChangeNotifier {
     controller = null;
     channel = null;
     loading = false;
-    buffering = false;
+    _updateBuffering(false);
+    bufferedAhead = Duration.zero;
     error = null;
     notifyListeners();
     await _release(old);
@@ -89,10 +115,14 @@ class SharedPlayback extends ChangeNotifier {
     _lease = token;
     _cancelWatchdog();
     _sameSourceRetries = 0;
+    _lastRecoveryAt = null;
     _lastReportedSecond = -1;
     _lastReportedBufferSecond = -1;
     bufferedAhead = Duration.zero;
-    buffering = false;
+    _updateBuffering(false);
+    rebufferEvents = 0;
+    totalBuffering = Duration.zero;
+    _playbackStartedAt = DateTime.now();
     final previous = controller;
     final pending = _candidateSettled?.future;
     controller = null;
@@ -117,6 +147,7 @@ class SharedPlayback extends ChangeNotifier {
     for (var i = start; i < selected.urls.length; i++) {
       if (PlaybackGate.instance.locked) { await lockForPayment(); return; }
       if (token != _generation) { return; }
+      _updateBuffering(false);
       sourceIndex = i;
       error = null;
       loading = true;
@@ -173,7 +204,7 @@ class SharedPlayback extends ChangeNotifier {
             return;
           }
           final state = candidate.value;
-          if (!state.isInitialized || state.hasError ||
+          if (_backgrounded || !state.isInitialized || state.hasError ||
               (!state.isPlaying && !state.isBuffering)) {
             _stalledAt = null;
             _previousPosition = state.position;
@@ -185,12 +216,16 @@ class SharedPlayback extends ChangeNotifier {
             return;
           }
           _stalledAt ??= DateTime.now();
-          if (loading || DateTime.now().difference(_stalledAt!) < const Duration(seconds: 12)) { return; }
+          final now = DateTime.now();
+          if (loading || now.difference(_stalledAt!) < stallRecoveryDelay ||
+              (_lastRecoveryAt != null && now.difference(_lastRecoveryAt!) < recoveryCooldown)) { return; }
+          _lastRecoveryAt = now;
           _cancelWatchdog();
           stallCount++;
           recoveryCount++;
           loading = true;
-          error = 'Source stalled; trying another feed';
+          _updateBuffering(false);
+          error = 'Playback stalled; recovering stream';
           controller = null;
           notifyListeners();
           final retryIndex = _sameSourceRetries < maxSameSourceRetries ? i : fallbackIndex;
@@ -206,6 +241,7 @@ class SharedPlayback extends ChangeNotifier {
             recoveryCount++;
             error = candidate.value.errorDescription ?? 'Stream playback failed';
             loading = true;
+            _updateBuffering(false);
             controller = null;
             notifyListeners();
             _sameSourceRetries = 0;
@@ -214,7 +250,7 @@ class SharedPlayback extends ChangeNotifier {
             }));
             return;
           }
-          buffering = candidate.value.isBuffering;
+          _updateBuffering(candidate.value.isBuffering);
           bufferedAhead = Duration.zero;
           for (final range in candidate.value.buffered) {
             if (range.start <= candidate.value.position && range.end > candidate.value.position) {
@@ -256,7 +292,7 @@ class SharedPlayback extends ChangeNotifier {
     ++_generation;
     _cancelWatchdog();
     bufferedAhead = Duration.zero;
-    buffering = false;
+    _updateBuffering(false);
     final old = controller;
     controller = null;
     channel = null;

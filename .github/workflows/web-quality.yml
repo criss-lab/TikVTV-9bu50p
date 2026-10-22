@@ -1,33 +1,39 @@
-name: Web quality gate
+name: Web quality gate (Flutter only)
 on:
   workflow_dispatch:
   push:
-    branches: [main, polish/foundation-and-security, feature/pesapal-premium-integration]
-    paths: ['src/**', 'public/**', 'package*.json', 'tsconfig*.json', 'vite.config.ts', '.github/workflows/web-quality.yml']
+    branches: [main, feature/pesapal-premium-integration]
+    paths: ['flutter_app/**', '.github/workflows/web-quality.yml']
   pull_request:
-    paths: ['src/**', 'public/**', 'package*.json', 'tsconfig*.json', 'vite.config.ts', '.github/workflows/web-quality.yml']
+    paths: ['flutter_app/**', '.github/workflows/web-quality.yml']
 permissions:
   contents: read
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: flutter_app
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: subosito/flutter-action@v2
         with:
-          node-version: '22'
-          cache: npm
-      - run: npm ci
-      - name: Typecheck
-        run: npx tsc --noEmit -p tsconfig.app.json
-      - name: Build for Cloudflare Pages
+          channel: stable
+          cache: true
+      - run: flutter create . --platforms=web --project-name tikvtv
+      - run: flutter pub get
+      - run: flutter analyze --fatal-infos
+      - run: flutter test
+      - name: Build Flutter Web and verify deployment entrypoint
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
-          test -n "$VITE_SUPABASE_URL" || { echo "Missing VITE_SUPABASE_URL"; exit 1; }
-          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Missing VITE_SUPABASE_ANON_KEY"; exit 1; }
-          npm run build
-          test -f dist/index.html
-          grep -Fx '/* /index.html 200' dist/_redirects
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_ANON_KEY"
+          flutter build web --release --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+          test -s build/web/index.html
+          test -s build/web/flutter_bootstrap.js
+          test -s build/web/main.dart.js
+          ! grep -q 'src="/src/main.tsx"' build/web/index.html

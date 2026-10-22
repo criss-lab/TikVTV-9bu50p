@@ -15,6 +15,30 @@ class NativeBackend extends ChangeNotifier {
   static const String _paymentApi = String.fromEnvironment('PAYMENT_API_URL', defaultValue: 'https://tikvtv-payment-api.onrender.com');
   bool get configured => _url.startsWith('https://') && _key.isNotEmpty;
   String? accessToken;
+  String? tvDeviceToken;
+  bool get tvPaired => tvDeviceToken != null;
+  Future<void> restoreTvDevice() async {
+    tvDeviceToken = await _secureStorage.read(key: 'tikvtv_tv_device_token');
+    notifyListeners();
+  }
+  Future<void> setTvDeviceToken(String token) async {
+    await _secureStorage.write(key: 'tikvtv_tv_device_token', value: token);
+    tvDeviceToken = token;
+    notifyListeners();
+  }
+  Future<void> clearTvDevice() async {
+    await _secureStorage.delete(key: 'tikvtv_tv_device_token');
+    tvDeviceToken = null;
+    notifyListeners();
+  }
+  Future<Map<String, dynamic>> tvViewingAccess(String channelId) async {
+    final token = tvDeviceToken;
+    if (token == null) throw StateError('TV not paired');
+    final uri = _paymentUri('/v1/tv/device/viewing-access').replace(queryParameters: {'channel_id': channelId});
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'}).timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) throw StateError(_message(response.body, 'TV pairing expired'));
+    return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+  }
   String? refreshToken;
   Map<String, dynamic>? user;
   bool get signedIn => accessToken != null && user != null;
@@ -143,6 +167,16 @@ class NativeBackend extends ChangeNotifier {
     _requireSignedIn();
     final response = await http.post(_paymentUri('/v1/payment/status'), headers: _paymentHeaders, body: jsonEncode({'order_tracking_id': trackingId})).timeout(const Duration(seconds: 25));
     if (response.statusCode < 200 || response.statusCode >= 300) throw StateError(_message(response.body, 'Payment verification failed'));
+    return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+  }
+  Future<Map<String, dynamic>> tvRequest(String path, Map<String, dynamic> body, {String? tvSecret, bool authenticated = false}) async {
+    if (authenticated) _requireSignedIn();
+    final response = await http.post(_paymentUri('/v1/tv/$path'), headers: {
+      'Content-Type': 'application/json', 'Accept': 'application/json',
+      if (authenticated && accessToken != null) 'Authorization': 'Bearer $accessToken',
+      if (tvSecret != null) 'X-TV-Pairing-Secret': tvSecret,
+    }, body: jsonEncode(body)).timeout(const Duration(seconds: 15));
+    if (response.statusCode < 200 || response.statusCode >= 300) throw StateError(_message(response.body, 'TV connection unavailable'));
     return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
   }
   void _requireConfig() { if (!configured) throw StateError('Native account services are not configured in this APK build.'); }

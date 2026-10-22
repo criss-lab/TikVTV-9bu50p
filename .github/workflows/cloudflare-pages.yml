@@ -1,50 +1,74 @@
-name: Cloudflare Pages preview
+name: Cloudflare Pages Flutter preview
 on:
   workflow_dispatch:
 permissions:
   contents: read
   deployments: write
 concurrency:
-  group: cloudflare-pages-preview
+  group: cloudflare-pages-flutter-preview
   cancel-in-progress: true
 jobs:
   deploy-preview:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: flutter_app
+    env:
+      SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: subosito/flutter-action@v2
         with:
-          node-version: '22'
-          cache: npm
-      - name: Validate deployment configuration
+          channel: stable
+          cache: true
+      - name: Validate preview configuration
         env:
           CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CF_ACCOUNT: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '77dbe7a859196105dc84fbb6b7094019' }}
-          CF_PROJECT: ${{ vars.CLOUDFLARE_PROJECT_NAME || 'tikvtvz' }}
-          SB_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          SB_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          CF_ACCOUNT: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CF_PROJECT: ${{ vars.CLOUDFLARE_PROJECT_NAME }}
         run: |
-          test -n "$CF_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN secret"; exit 1; }
-          test -n "$CF_ACCOUNT" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID variable"; exit 1; }
-          test -n "$CF_PROJECT" || { echo "::error::Missing CLOUDFLARE_PROJECT_NAME variable"; exit 1; }
-          test -n "$SB_URL" || { echo "::error::Missing VITE_SUPABASE_URL secret"; exit 1; }
-          test -n "$SB_KEY" || { echo "::error::Missing VITE_SUPABASE_ANON_KEY secret"; exit 1; }
-      - run: npm ci
-      - run: npx tsc --noEmit -p tsconfig.app.json
-      - name: Build static site
-        run: npm run build
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-      - name: Validate SPA fallback
+          test -n "$CF_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN"; exit 1; }
+          test -n "$CF_ACCOUNT" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID"; exit 1; }
+          test -n "$CF_PROJECT" || { echo "::error::Missing CLOUDFLARE_PROJECT_NAME"; exit 1; }
+          test -n "$SUPABASE_URL" || { echo "::error::Missing VITE_SUPABASE_URL"; exit 1; }
+          test -n "$SUPABASE_ANON_KEY" || { echo "::error::Missing VITE_SUPABASE_ANON_KEY"; exit 1; }
+      - run: flutter create . --platforms=web --project-name tikvtv
+      - run: flutter pub get
+      - run: flutter analyze --fatal-infos
+      - run: flutter test
+      - name: Build Flutter Web (not React/Vite)
+        run: flutter build web --release --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+      - name: Verify Flutter-only deployment artifact
         run: |
-          test -f dist/index.html
-          grep -Fx '/* /index.html 200' dist/_redirects
-      - name: Deploy preview (no production DNS changes)
+          test -s build/web/index.html
+          test -s build/web/flutter_bootstrap.js
+          test -s build/web/main.dart.js
+          printf '/* /index.html 200\n' > build/web/_redirects
+          cat > build/web/_headers <<'EOF'
+          /*
+            X-Content-Type-Options: nosniff
+            Referrer-Policy: strict-origin-when-cross-origin
+            X-Frame-Options: DENY
+            Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+          /index.html
+            Cache-Control: no-cache, max-age=0, must-revalidate
+          /flutter_bootstrap.js
+            Cache-Control: no-cache, max-age=0, must-revalidate
+          /main.dart.js
+            Cache-Control: no-cache, max-age=0, must-revalidate
+          EOF
+          ! grep -q 'src="/src/main.tsx"' build/web/index.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TikVTV-Cloudflare-Flutter-preview
+          path: flutter_app/build/web/
+          if-no-files-found: error
+      - name: Deploy Flutter preview (no production DNS changes)
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '77dbe7a859196105dc84fbb6b7094019' }}
-          command: pages deploy dist --project-name=${{ vars.CLOUDFLARE_PROJECT_NAME || 'tikvtvz' }} --branch=feature/pesapal-premium-integration
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy flutter_app/build/web --project-name=${{ vars.CLOUDFLARE_PROJECT_NAME }} --branch=flutter-migration-preview
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
