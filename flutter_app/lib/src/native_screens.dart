@@ -146,12 +146,11 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
     final stored = prefs.getString(_pendingCheckoutKey);
     if (stored == null || !backend.signedIn) return;
     final parts = stored.split('|');
-    if (parts.length != 3 || parts[0] != backend.user?['id']?.toString() ||
-        DateTime.tryParse(parts[2])?.isBefore(DateTime.now().toUtc()) != false) {
+    if (parts.length != 3 || DateTime.tryParse(parts[2])?.isBefore(DateTime.now().toUtc()) != false) {
       await prefs.remove(_pendingCheckoutKey);
       return;
     }
-    if (!mounted) return;
+    if (parts[0] != backend.user?['id']?.toString() || trackingId != null || !mounted) return;
     setState(() { trackingId = parts[1]; message = 'Resuming secure PesaPal payment verification…'; });
     _startPaymentPolling();
     await verifyPayment();
@@ -167,14 +166,18 @@ class _NativePremiumScreenState extends State<NativePremiumScreen> with WidgetsB
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_pendingCheckoutKey);
   }
+  void _accountChanged() {
+    if (!mounted || !backend.signedIn || trackingId != null) return;
+    unawaited(restorePendingCheckout());
+  }
   String selectedPlan = 'month';
   bool loading = true, paying = false;
   bool active = false;
   String? endsAt, trackingId, message;
   @override
-  void initState() { super.initState(); WidgetsBinding.instance.addObserver(this); refresh().then((_) => restorePendingCheckout()); _entitlementTimer = Timer.periodic(const Duration(seconds: 3), (_) { if (mounted && backend.signedIn && !loading) refresh(silent: true); }); }
+  void initState() { super.initState(); WidgetsBinding.instance.addObserver(this); backend.addListener(_accountChanged); refresh().then((_) => restorePendingCheckout()); _entitlementTimer = Timer.periodic(const Duration(seconds: 3), (_) { if (mounted && backend.signedIn && !loading) refresh(silent: true); }); }
   @override
-  void dispose() { _paymentTimer?.cancel(); _entitlementTimer?.cancel(); WidgetsBinding.instance.removeObserver(this); super.dispose(); }
+  void dispose() { _paymentTimer?.cancel(); _entitlementTimer?.cancel(); backend.removeListener(_accountChanged); WidgetsBinding.instance.removeObserver(this); super.dispose(); }
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && trackingId != null) verifyPayment();
