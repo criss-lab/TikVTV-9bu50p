@@ -8,6 +8,8 @@ class PlaybackGate extends ChangeNotifier {
   PlaybackGate._();
   static final instance = PlaybackGate._();
   static const _refreshInterval = Duration(seconds: 3);
+  static const _stableRefreshInterval = Duration(seconds: 30);
+  DateTime? _lastVerifiedAt;
   final NativeBackend _backend = NativeBackend.instance;
   Timer? _timer;
   Timer? _poll;
@@ -39,13 +41,23 @@ class PlaybackGate extends ChangeNotifier {
     remaining = duration.isNegative ? Duration.zero : duration;
     locked = !_paid && !_preview;
     if (locked && !wasLocked) unawaited(onLock?.call() ?? Future<void>.value());
-    notifyListeners();
+    if (locked != wasLocked || remaining.inSeconds != _lastNotifiedSecond || active != _lastNotifiedActive) {
+      _lastNotifiedSecond = remaining.inSeconds;
+      _lastNotifiedActive = active;
+      notifyListeners();
+    }
   }
+
+  int _lastNotifiedSecond = -1;
+  bool _lastNotifiedActive = false;
 
   void _ensureTimers() {
     _timer ??= Timer.periodic(const Duration(seconds: 1), (_) => _apply());
     _poll ??= Timer.periodic(_refreshInterval, (_) {
-      if (!checking && _backend.signedIn && _channelId != null) unawaited(refresh());
+      if (checking || !_backend.signedIn || _channelId == null) return;
+      final interval = !locked && !verificationUnavailable ? _stableRefreshInterval : _refreshInterval;
+      if (_lastVerifiedAt != null && DateTime.now().difference(_lastVerifiedAt!) < interval) return;
+      unawaited(refresh());
     });
   }
 
@@ -98,6 +110,7 @@ class PlaybackGate extends ChangeNotifier {
         _previewUntil = status['allowed'] == true && status['active'] != true ? _parse(status['preview_ends_at']) : null;
         previewsUsed = (status['previews_used'] as num?)?.toInt() ?? previewsUsed;
         verificationUnavailable = false;
+        _lastVerifiedAt = DateTime.now();
       }
     } catch (error) {
       if (revision != _revision) return;
@@ -118,6 +131,7 @@ class PlaybackGate extends ChangeNotifier {
     ++_revision;
     _paidUntil = status['active'] == true && _backend.signedIn ? _parse(status['ends_at']) : null;
     verificationUnavailable = false;
+    _lastVerifiedAt = DateTime.now();
     ready = true;
     _ensureTimers();
     _apply();
