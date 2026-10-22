@@ -78,14 +78,6 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
         } else if (['up','down','left','right'].contains(command)) {
           final direction = <String, TraversalDirection>{'up':TraversalDirection.up,'down':TraversalDirection.down,'left':TraversalDirection.left,'right':TraversalDirection.right}[command]!;
           FocusScope.of(context).focusInDirection(direction);
-        } else if (command == 'next' || command == 'previous') {
-          final channels = catalogue.channels;
-          if (channels.isNotEmpty && !openingChannel) {
-            final currentIndex = channels.indexWhere((item) => item.id == player.channel?.id);
-            final index = currentIndex < 0 ? 0 : (currentIndex + (command == 'next' ? 1 : -1) + channels.length) % channels.length;
-            if (Navigator.canPop(context)) Navigator.pop(context);
-            unawaited(tune(channels[index]));
-          }
         } else if (command == 'play_pause' && player.controller != null) {
           final controller = player.controller!;
           if (controller.value.isPlaying) { await controller.pause(); } else if (!gate.locked) { await controller.play(); }
