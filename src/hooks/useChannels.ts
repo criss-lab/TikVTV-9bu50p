@@ -1,8 +1,21 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchAllChannels, getChannelPage } from '@/lib/iptvApi';
 import type { IPTVChannel } from '@/types';
+import { streamHealth } from '@/lib/streamHealth';
 
-export function useChannels(category: string, countryCode = '') {
+export function traceWelcomeOrder(all: IPTVChannel[]): IPTVChannel[] {
+  const score = (ch: IPTVChannel) => {
+    const isTrace = /\bTRACE\b/i.test(ch.name) || /\bTRACE\b/i.test(ch.network || '');
+    if (!isTrace) return 2;
+    const health = streamHealth(ch.id);
+    return health === 'online' ? 0 : health === 'unknown' ? 1 : 2;
+  };
+  return all.map((channel, index) => ({ channel, index, rank: score(channel) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index).map(item => item.channel);
+}
+
+
+export function useChannels(category: string, countryCode = '', traceWelcome = false) {
   const [channels, setChannels]     = useState<IPTVChannel[]>([]);
   const [loading, setLoading]       = useState(true);
   const [hasMore, setHasMore]       = useState(true);
@@ -21,12 +34,13 @@ export function useChannels(category: string, countryCode = '') {
     pageRef.current = 1;
 
     const applyChannels = (all: IPTVChannel[]) => {
-      allChannelsRef.current = all;
+      const ordered = traceWelcome && category === 'all' && !countryCode ? traceWelcomeOrder(all) : all;
+      allChannelsRef.current = ordered;
       const loadedPages = Math.max(1, pageRef.current);
       const items: IPTVChannel[] = [];
-      let lastPage = getChannelPage(all, category, 1, countryCode);
+      let lastPage = getChannelPage(ordered, category, 1, countryCode);
       for (let pageNumber = 1; pageNumber <= loadedPages; pageNumber++) {
-        lastPage = getChannelPage(all, category, pageNumber, countryCode);
+        lastPage = getChannelPage(ordered, category, pageNumber, countryCode);
         items.push(...lastPage.items);
         if (!lastPage.hasMore) break;
       }
@@ -58,7 +72,7 @@ export function useChannels(category: string, countryCode = '') {
       mounted = false;
       window.removeEventListener('iptv-channels-updated', onChannelsUpdated);
     };
-  }, [category, countryCode]);
+  }, [category, countryCode, traceWelcome]);
 
   const loadMore = useCallback(() => {
     if (loadingMoreRef.current || !hasMore) return;

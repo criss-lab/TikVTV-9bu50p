@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'catalogue.dart';
 import 'playback.dart';
@@ -48,6 +49,13 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
     } catch (error) {
       debugPrint('Playback toggle failed: $error');
     }
+  }
+
+  Future<void> _openLandscape() async {
+    if (_gate.locked || _player.channel?.id != widget.channels[_index].id) return;
+    await Navigator.of(context).push<void>(MaterialPageRoute(
+      builder: (_) => _LandscapePlayer(player: _player, gate: _gate),
+    ));
   }
 
   void _likeFocused(String channelId) {
@@ -278,12 +286,15 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                   ],
                 ))),
               if (selected && _gate.locked && _gate.ready && !_gate.verificationUnavailable)
-                Center(child: Padding(
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: widget.onUnlockPremium,
+                  child: Center(child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 28),
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
                     const CircleAvatar(radius: 28, backgroundColor: Color(0x33FF315F), child: Icon(Icons.lock_open_rounded, size: 29, color: Color(0xFFFF315F))),
                     const SizedBox(height: 12),
-                    const Text('Unlock live TV', textAlign: TextAlign.center,
+                    const Text('Preview finished · Tap to unlock', textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     const Text('One subscription opens every channel. Already paid? Check your access without paying again.',
@@ -292,12 +303,12 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                     FilledButton.icon(
                       onPressed: widget.onUnlockPremium,
                       icon: const Icon(Icons.workspace_premium),
-                      label: const Text('View Premium / pay securely'),
+                      label: const Text('Choose a plan · Pay securely'),
                     ),
                     const SizedBox(height: 8),
                     OutlinedButton.icon(onPressed: () => unawaited(_gate.refresh()), icon: const Icon(Icons.refresh), label: const Text('Already paid? Check access')),
                   ]),
-                )),
+                ))),
               Positioned(top: 14, left: 14, child: DecoratedBox(
                 decoration: BoxDecoration(color: const Color(0xFFFF315F), borderRadius: BorderRadius.circular(6)),
                 child: const Padding(padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -305,6 +316,14 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
               if (selected && _showHints && !_gate.locked)
                 const Positioned(top: 16, right: 14, child: Text('SWIPE ↑',
                   style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600))),
+              if (selected && !_gate.locked) Positioned(
+                top: 10, right: 10,
+                child: IconButton.filledTonal(
+                  tooltip: 'Watch in landscape fullscreen',
+                  onPressed: _openLandscape,
+                  icon: const Icon(Icons.fullscreen),
+                ),
+              ),
               if (selected) Positioned(right: 12, bottom: 70, child: Column(children: [
                 IconButton(tooltip: 'Favorite', onPressed: () => _library.toggleFavorite(channel.id),
                   icon: Icon(_library.isFavorite(channel.id) ? Icons.favorite : Icons.favorite_border,
@@ -327,4 +346,71 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
       );
     },
   );
+}
+
+/// Uses the existing live controller: rotation must never reopen a stream or
+/// allocate another free preview. Closing restores the portrait feed.
+class _LandscapePlayer extends StatefulWidget {
+  final SharedPlayback player;
+  final PlaybackGate gate;
+  const _LandscapePlayer({required this.player, required this.gate});
+  @override
+  State<_LandscapePlayer> createState() => _LandscapePlayerState();
+}
+
+class _LandscapePlayerState extends State<_LandscapePlayer> {
+  @override
+  void initState() {
+    super.initState();
+    widget.player.addListener(_refresh);
+    widget.gate.addListener(_refresh);
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
+  void _refresh() { if (mounted) setState(() {}); }
+
+  @override
+  void dispose() {
+    widget.player.removeListener(_refresh);
+    widget.gate.removeListener(_refresh);
+    SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = widget.player.controller;
+    final playable = !widget.gate.locked && controller != null && controller.value.isInitialized;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(child: Stack(fit: StackFit.expand, children: [
+        if (playable)
+          Center(child: AspectRatio(
+            aspectRatio: controller.value.aspectRatio > 0 ? controller.value.aspectRatio : 16 / 9,
+            child: VideoPlayer(controller),
+          ))
+        else Center(child: Text(widget.gate.locked
+          ? 'Viewing access ended. Return to the feed to unlock.'
+          : widget.player.error ?? 'Connecting to live channel…',
+          textAlign: TextAlign.center)),
+        if (playable) Center(child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () async {
+            if (controller.value.isPlaying) { await controller.pause(); }
+            else if (!widget.gate.locked) { await controller.play(); }
+            _refresh();
+          },
+          child: const SizedBox.expand(),
+        )),
+        Positioned(top: 8, left: 8, child: IconButton.filledTonal(
+          tooltip: 'Return to portrait', onPressed: () => Navigator.of(context).pop(),
+          icon: const Icon(Icons.fullscreen_exit),
+        )),
+      ])),
+    );
+  }
 }

@@ -27,7 +27,30 @@ export default function Feed() {
   const [deadIds,     setDeadIds]    = useState<Set<string>>(new Set());
   const [liveIds,     setLiveIds]    = useState<Set<string>>(new Set());
   const t = useT();
-  const { channels, loading, hasMore, loadMore, total, error } = useChannels(category, countryFilter);
+  // Persist the first visit; return to organic ordering after 48 elapsed hours.
+  const [traceWelcome, setTraceWelcome] = useState(() => {
+    try {
+      const key = 'tikvtvz:welcome-start:v2';
+      let started = Number(localStorage.getItem(key));
+      if (!Number.isFinite(started) || started <= 0 || started > Date.now()) {
+        // Existing visitors who saw the earlier one-time welcome are not re-enrolled.
+        if (localStorage.getItem('tikvtvz:welcome-seen:v1') || localStorage.getItem('tikvtv_history_v2')) return false;
+        started = Date.now();
+        localStorage.setItem(key, String(started));
+      }
+      return Date.now() - started < 48 * 60 * 60 * 1000;
+    } catch { return false; }
+  });
+  useEffect(() => {
+    if (!traceWelcome) return;
+    const started = Number(localStorage.getItem('tikvtvz:welcome-start:v2'));
+    if (!Number.isFinite(started) || started <= 0) { setTraceWelcome(false); return; }
+    const remaining = 48 * 60 * 60 * 1000 - (Date.now() - started);
+    if (remaining <= 0) { setTraceWelcome(false); return; }
+    const timer = window.setTimeout(() => setTraceWelcome(false), remaining);
+    return () => window.clearTimeout(timer);
+  }, [traceWelcome]);
+  const { channels, loading, hasMore, loadMore, total, error } = useChannels(category, countryFilter, traceWelcome);
   const { user }     = useAuthStore();
   const { addToHistory } = useWatchHistory();
   const containerRef = useRef<HTMLDivElement>(null);
