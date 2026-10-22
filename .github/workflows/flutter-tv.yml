@@ -1,0 +1,58 @@
+name: Flutter Android TV APK
+on:
+  push:
+    branches: [main, feature/pesapal-premium-integration]
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/flutter-tv.yml'
+  pull_request:
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/flutter-tv.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android-tv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+    defaults:
+      run:
+        working-directory: flutter_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Generate Android runner
+        run: flutter create . --platforms=android --project-name tikvtv
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - name: Configure TV manifest and networking
+        run: |
+          python3 tool/configure_android.py
+          python3 tool/configure_tv.py
+      - name: Build separate TV APK
+        run: flutter build apk --release --target lib/main_tv.dart --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+      - name: Verify TV package and artifact
+        run: |
+          test -s build/app/outputs/flutter-apk/app-release.apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/TikVTV-TV-preview.apk
+          sha256sum build/app/outputs/flutter-apk/TikVTV-TV-preview.apk > build/app/outputs/flutter-apk/TV-SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TikVTV-TV-preview-${{ github.run_number }}
+          path: |
+            flutter_app/build/app/outputs/flutter-apk/TikVTV-TV-preview.apk
+            flutter_app/build/app/outputs/flutter-apk/TV-SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
