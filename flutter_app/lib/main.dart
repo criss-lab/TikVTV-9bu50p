@@ -60,6 +60,7 @@ class ChannelHome extends StatefulWidget {
 class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   Timer? _catalogueRefresh;
   bool _traceWelcome = false;
+  Timer? _welcomeExpiry;
   String query = '';
   final TextEditingController searchController = TextEditingController();
   bool searchOpen = false;
@@ -108,10 +109,23 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     _catalogueRefresh = Timer.periodic(const Duration(hours: 1), (_) => unawaited(catalogue.load()));
     unawaited(library.load().then((_) async {
       final prefs = await SharedPreferences.getInstance();
-      final seen = prefs.getBool('trace_welcome_seen_v1') ?? false;
-      if (!seen) await prefs.setBool('trace_welcome_seen_v1', true);
-      if (mounted) setState(() => _traceWelcome = !seen && library.history.isEmpty);
-    }));
+      const key = 'trace_welcome_start_v2';
+      var started = prefs.getInt(key);
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (started == null || started <= 0 || started > now) {
+        // Existing visitors who received the old welcome are not re-enrolled.
+        if (prefs.getBool('trace_welcome_seen_v1') == true || library.history.isNotEmpty) return;
+        started = now;
+        await prefs.setInt(key, started);
+      }
+      final remaining = const Duration(hours: 48) - Duration(milliseconds: now - started);
+      if (!mounted || remaining <= Duration.zero) return;
+      setState(() => _traceWelcome = true);
+      _welcomeExpiry?.cancel();
+      _welcomeExpiry = Timer(remaining, () {
+        if (mounted) setState(() => _traceWelcome = false);
+      });
+    }).catchError((Object error) { debugPrint('Welcome preference unavailable: $error'); }));
     nativeBackend.addListener(_onAccountChanged);
     unawaited(nativeBackend.restore().then((_) => PlaybackGate.instance.refresh()).catchError((Object error) {
       debugPrint('Session restore / entitlement refresh failed: $error');
@@ -136,6 +150,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _catalogueRefresh?.cancel();
+    _welcomeExpiry?.cancel();
     searchController.dispose();
     catalogue.removeListener(refresh);
     library.removeListener(refresh);
