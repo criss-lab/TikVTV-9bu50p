@@ -174,7 +174,7 @@ async function tvRoute(req, res, url) {
     const device = await tvDevice(req);
     const after = Number(url.searchParams.get('after') || 0);
     if (!Number.isSafeInteger(after) || after<0) throw pairingError('Invalid cursor');
-    const result = await pool.query("SELECT id,command FROM tv_remote_commands WHERE pairing_id=$1 AND id>$2 ORDER BY id ASC LIMIT 30", [device.id,after]);
+    const result = await pool.query("SELECT id,command FROM tv_remote_commands WHERE pairing_id=$1 AND id>$2 AND created_at>NOW()-INTERVAL '30 seconds' ORDER BY id ASC LIMIT 30", [device.id,after]);
     return json(res, 200, { commands: result.rows });
   }
   if (req.method === 'POST' && path === '/v1/tv/remote/send') {
