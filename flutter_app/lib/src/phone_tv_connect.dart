@@ -28,14 +28,14 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
       final uri = Uri.tryParse(barcode.rawValue ?? '');
       if (uri?.scheme != 'https' || !['streamora.co.ke','www.streamora.co.ke'].contains(uri?.host) || uri?.path != '/tv-pair') continue;
       final value = uri!.queryParameters['challenge'];
-      if (value == null || !RegExp(r'^[A-Za-z0-9_-]{43}
+      if (value == null || !RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(value)) continue;
       setState(() { challenge = value; scanning = false; message = null; });
       return;
     }
     if (mounted) setState(() => message = 'This is not a TikVTV TV pairing QR. Open Connect phone on the TV and scan its current QR code.');
   }
   Future<void> approve() async {
-    if (challenge == null || busy || !RegExp(r'^\\d{6}
+    if (challenge == null || busy || !RegExp(r'^\\d{6}$').hasMatch(code.text.trim())) return;
     setState(() { busy = true; message = null; });
     try {
       final result = await TvPairingApi.approve(challenge!, code.text.trim());
