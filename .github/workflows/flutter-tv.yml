@@ -50,6 +50,29 @@ jobs:
           python3 tool/configure_tv.py
       - name: Configure persistent signing when provisioned
         run: python3 tool/configure_signing.py
+      - name: Prepare Android NDK with retry for corrupted SDK downloads
+        run: |
+          set -euo pipefail
+          NDK_VERSION=28.2.13676358
+          NDK_PATH="$ANDROID_HOME/ndk/$NDK_VERSION"
+          if [ -f "$NDK_PATH/source.properties" ] && grep -q "Pkg.Revision = $NDK_VERSION" "$NDK_PATH/source.properties"; then
+            echo "Required Android NDK already installed"
+            exit 0
+          fi
+          for attempt in 1 2 3; do
+            echo "Installing Android NDK $NDK_VERSION (attempt $attempt/3)"
+            rm -rf "$NDK_PATH" "$ANDROID_HOME/.temp"/*
+            if yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" && \
+               test -f "$NDK_PATH/source.properties" && \
+               grep -q "Pkg.Revision = $NDK_VERSION" "$NDK_PATH/source.properties"; then
+              echo "Android NDK verified"
+              exit 0
+            fi
+            rm -rf "$NDK_PATH" "$ANDROID_HOME/.temp"/*
+            sleep $((attempt * 8))
+          done
+          echo "::error::Unable to install verified Android NDK after three attempts"
+          exit 1
       - name: Build separate TV APK
         run: flutter build apk --release --target lib/main_tv.dart --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
       - name: Verify APK signature and package metadata
