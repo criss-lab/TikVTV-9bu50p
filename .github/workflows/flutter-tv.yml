@@ -11,7 +11,10 @@ on:
       - '.github/workflows/flutter-tv.yml'
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
+concurrency:
+  group: tv-release-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   android-tv:
     runs-on: ubuntu-latest
@@ -72,3 +75,12 @@ jobs:
             flutter_app/build/app/outputs/flutter-apk/TV-SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
+      - name: Publish directly downloadable rolling TV preview
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/pesapal-premium-integration')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view preview-tv-latest >/dev/null 2>&1; then
+            gh release create preview-tv-latest --target "$GITHUB_SHA" --title "TikVTV Android TV preview" --notes "Dedicated Flutter Android TV preview. Verify TV-SHA256SUMS.txt. Preview signing may change between runs; not a Play Store production release." --prerelease
+          fi
+          gh release upload preview-tv-latest build/app/outputs/flutter-apk/TikVTV-TV-preview.apk build/app/outputs/flutter-apk/TV-SHA256SUMS.txt --clobber
