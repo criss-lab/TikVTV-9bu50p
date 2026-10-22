@@ -1,114 +1,132 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'native_backend.dart';
 
-/// Native playback allowance. Paid access is always revalidated by the server.
+/// Render/Neon owns all seven distinct fifteen-minute preview allocations.
+/// The device only caches verified deadlines; it never grants a local trial.
 class PlaybackGate extends ChangeNotifier {
   PlaybackGate._();
   static final instance = PlaybackGate._();
-  static const allowance = Duration(minutes: 15);
-  static const _startedKey = 'tikvtv_native_trial_started_at_v1';
-  static const _entitlementRefreshInterval = Duration(seconds: 3);
-  DateTime? _started;
+  static const _refreshInterval = Duration(seconds: 3);
+  final NativeBackend _backend = NativeBackend.instance;
   Timer? _timer;
-  Timer? _entitlementTimer;
-  DateTime? _verifiedPaidExpiry;
+  Timer? _poll;
+  DateTime? _paidUntil;
+  DateTime? _previewUntil;
+  String? _channelId;
+  String? _accountId;
+  int _revision = 0;
+  Future<void>? _inflight;
   bool active = false;
   bool locked = true;
-  bool checking = false;
   bool ready = false;
+  bool checking = false;
   bool verificationUnavailable = false;
-  Duration remaining = allowance;
+  Duration remaining = Duration.zero;
+  int previewsUsed = 0;
+  static const previewsLimit = 7;
   Future<void> Function()? onLock;
-  Future<void>? _inflight;
-  int _statusVersion = 0;
 
-  Future<void> start() => _inflight ??= _check().whenComplete(() => _inflight = null);
+  bool get _paid => _paidUntil?.isAfter(DateTime.now().toUtc()) ?? false;
+  bool get _preview => _previewUntil?.isAfter(DateTime.now().toUtc()) ?? false;
+  DateTime? _parse(dynamic value) => DateTime.tryParse(value?.toString() ?? '')?.toUtc();
 
-  Future<void> _check() async {
-    final version = _statusVersion;
-    checking = true;
+  void _apply() {
+    final wasLocked = locked;
+    active = _paid;
+    final until = _paid ? _paidUntil : _previewUntil;
+    final duration = until?.difference(DateTime.now().toUtc()) ?? Duration.zero;
+    remaining = duration.isNegative ? Duration.zero : duration;
+    locked = !_paid && !_preview;
+    if (locked && !wasLocked) unawaited(onLock?.call() ?? Future<void>.value());
     notifyListeners();
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final stored = prefs.getString(_startedKey);
-      final parsed = stored == null ? null : DateTime.tryParse(stored)?.toUtc();
+  }
 
-      // Start the one-time preview clock on first gate use even when Premium is
-      // currently active. Otherwise a paid subscription expiring later would
-      // accidentally create a fresh 15-minute preview.
-      _started = parsed ?? DateTime.now().toUtc();
-      if (parsed == null) {
-        await prefs.setString(_startedKey, _started!.toIso8601String());
-      }
+  void _ensureTimers() {
+    _timer ??= Timer.periodic(const Duration(seconds: 1), (_) => _apply());
+    _poll ??= Timer.periodic(_refreshInterval, (_) {
+      if (!checking && _backend.signedIn && _channelId != null) unawaited(refresh());
+    });
+  }
 
-      final backend = NativeBackend.instance;
-      if (!backend.signedIn) {
-        active = false;
-        _verifiedPaidExpiry = null;
-      } else {
-        final status = await backend.premiumStatus();
-        final expiry = DateTime.tryParse(status['ends_at']?.toString() ?? '')?.toUtc();
-        if (version != _statusVersion) return;
-        verificationUnavailable = false;
-        _verifiedPaidExpiry = status['active'] == true ? expiry : null;
-        active = _verifiedPaidExpiry != null && _verifiedPaidExpiry!.isAfter(DateTime.now().toUtc());
-      }
-      _tick();
-    } catch (e) {
-      if (version != _statusVersion) return;
-      verificationUnavailable = true;
-      debugPrint('Playback entitlement unavailable: $e');
-      // Fail closed for paid access; only the already-started preview can apply.
-      active = NativeBackend.instance.signedIn && _verifiedPaidExpiry != null && _verifiedPaidExpiry!.isAfter(DateTime.now().toUtc());
-      _tick();
-    } finally {
-      ready = true;
-      checking = false;
-      _timer ??= Timer.periodic(const Duration(seconds: 1), (_) => _tick());
-      // Re-check server entitlement while a channel remains focused. Without
-      // this, an expired subscription could keep playing indefinitely until
-      // the user swiped to another channel or reopened Premium.
-      _entitlementTimer ??= Timer.periodic(_entitlementRefreshInterval, (_) {
-        if (!checking) unawaited(start());
-      });
-      notifyListeners();
+  /// Called on focus, including swipes. Allocations are keyed by account/channel on Render.
+  Future<void> focus(String channelId) async {
+    final account = _backend.user?['id']?.toString();
+    if (_channelId != channelId || _accountId != account) {
+      ++_revision;
+      _channelId = channelId;
+      _accountId = account;
+      _previewUntil = null;
+      if (!_backend.signedIn || account == null) _paidUntil = null;
+      ready = false;
+      verificationUnavailable = false;
+      _apply();
     }
+    _ensureTimers();
+    await refresh();
   }
 
-  void _tick() {
-    final previous = locked;
-    final elapsed = _started == null
-        ? allowance
-        : DateTime.now().toUtc().difference(_started!);
-    remaining = allowance - (elapsed.isNegative ? Duration.zero : elapsed);
-    if (remaining.isNegative) remaining = Duration.zero;
-    if (active && (_verifiedPaidExpiry == null || !_verifiedPaidExpiry!.isAfter(DateTime.now().toUtc()))) active = false;
-    locked = !active && remaining == Duration.zero;
-    if (locked && !previous) unawaited(onLock?.call() ?? Future<void>.value());
-    notifyListeners();
-  }
-
-  void acceptVerifiedStatus(Map<String, dynamic> status) {
-    ++_statusVersion;
-    verificationUnavailable = false;
-    ready = true;
-    final expiry = DateTime.tryParse(status['ends_at']?.toString() ?? '')?.toUtc();
-    _verifiedPaidExpiry = status['active'] == true ? expiry : null;
-    active = NativeBackend.instance.signedIn && _verifiedPaidExpiry != null && _verifiedPaidExpiry!.isAfter(DateTime.now().toUtc());
-    _tick();
+  Future<void> start() async {
+    _ensureTimers();
+    if (_channelId != null) await refresh();
   }
 
   Future<void> refresh() async {
     if (_inflight != null) await _inflight;
-    await start();
+    final channel = _channelId;
+    if (channel == null) return;
+    final revision = _revision;
+    final account = _accountId;
+    final work = _verify(channel, account, revision);
+    _inflight = work;
+    try { await work; } finally { if (identical(_inflight, work)) _inflight = null; }
+  }
+
+  Future<void> _verify(String channel, String? account, int revision) async {
+    checking = true;
+    notifyListeners();
+    try {
+      if (!_backend.signedIn || account == null) {
+        if (revision != _revision) return;
+        _paidUntil = null;
+        _previewUntil = null;
+        verificationUnavailable = false;
+      } else {
+        final status = await _backend.viewingAccess(channel);
+        if (revision != _revision || account != _backend.user?['id']?.toString()) return;
+        _paidUntil = status['active'] == true ? _parse(status['ends_at']) : null;
+        _previewUntil = status['allowed'] == true && status['active'] != true ? _parse(status['preview_ends_at']) : null;
+        previewsUsed = (status['previews_used'] as num?)?.toInt() ?? previewsUsed;
+        verificationUnavailable = false;
+      }
+    } catch (error) {
+      if (revision != _revision) return;
+      verificationUnavailable = true;
+      debugPrint('Viewing access check unavailable: $error');
+      // A transient network failure cannot revoke an unexpired verified deadline.
+    } finally {
+      if (revision == _revision) {
+        checking = false;
+        ready = true;
+        _apply();
+      }
+    }
+  }
+
+  /// The Premium screen can immediately publish a server-verified paid result.
+  void acceptVerifiedStatus(Map<String, dynamic> status) {
+    ++_revision;
+    _paidUntil = status['active'] == true && _backend.signedIn ? _parse(status['ends_at']) : null;
+    verificationUnavailable = false;
+    ready = true;
+    _ensureTimers();
+    _apply();
   }
 
   void disposeTimer() {
     _timer?.cancel();
     _timer = null;
-    _entitlementTimer?.cancel();
-    _entitlementTimer = null;
+    _poll?.cancel();
+    _poll = null;
   }
 }
