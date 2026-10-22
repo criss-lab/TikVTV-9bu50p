@@ -120,6 +120,13 @@ class NativeBackend extends ChangeNotifier {
     return sorted.take(limit).map((e) => {'channel_id':e.key,'score':e.value}).toList();
   }
   Future<bool> hasPlaybackEntitlement() async => (await premiumStatus())['active'] == true;
+  Future<Map<String, dynamic>> viewingAccess(String channelId) async {
+    _requireSignedIn();
+    final uri = _paymentUri('/v1/viewing-access').replace(queryParameters: {'channel_id': channelId});
+    final response = await http.get(uri, headers: _paymentHeaders).timeout(const Duration(seconds: 15));
+    if (response.statusCode < 200 || response.statusCode >= 300) throw StateError(_message(response.body, 'Could not check viewing access'));
+    return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+  }
   Future<Map<String, dynamic>> premiumStatus() async {
     _requireSignedIn();
     final response = await http.get(_paymentUri('/v1/subscription'), headers: _paymentHeaders).timeout(const Duration(seconds: 15));
