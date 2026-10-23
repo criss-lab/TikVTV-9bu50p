@@ -52,6 +52,18 @@ jobs:
       - run: flutter test
       - name: Configure Android network access
         run: python3 tool/configure_android.py
+      - name: Verify generated Android camera permissions
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('android/app/src/main/AndroidManifest.xml').getroot()
+          ns = '{http://schemas.android.com/apk/res/android}'
+          permissions = {node.get(ns + 'name') for node in root.findall('uses-permission')}
+          assert 'android.permission.CAMERA' in permissions, 'Camera permission missing from generated runner'
+          features = {node.get(ns + 'name'): node.get(ns + 'required') for node in root.findall('uses-feature')}
+          assert features.get('android.hardware.camera') == 'false', 'Camera must remain optional for Android TV'
+          print('Generated Android camera permission and optional feature verified')
+          PY
       - name: Configure persistent signing when provisioned
         run: python3 tool/configure_signing.py
       - name: Build obfuscated Flutter release APK
