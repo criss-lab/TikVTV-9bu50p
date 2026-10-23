@@ -27,6 +27,7 @@ class ChannelCatalogue extends ChangeNotifier {
   static const additionalPlaylists = <String, String>{
     'free-tv': 'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8',
     'dearbulut': 'https://dearbulut.github.io/iptv/playlists/online.m3u',
+    'iptv-org-index': 'https://iptv-org.github.io/iptv/index.m3u',
   };
 
   static final ChannelCatalogue _instance = ChannelCatalogue._();
