@@ -274,13 +274,13 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                   Text('Checking your access…', style: TextStyle(color: Colors.white70)),
                 ])),
               if (selected && _gate.locked && _gate.ready && _gate.verificationUnavailable)
-                Center(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 28), child: Column(
+                Center(child: Container(margin: const EdgeInsets.symmetric(horizontal: 20), padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: const Color(0xFF151720), borderRadius: BorderRadius.circular(18)), child: Column(
                   mainAxisSize: MainAxisSize.min, children: [
                     const Icon(Icons.verified_user_outlined, size: 36, color: Colors.white70),
                     const SizedBox(height: 12),
-                    const Text('Viewing access could not be verified', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(_backend.signedIn ? 'Access check temporarily unavailable' : 'Your free welcome preview is loading', textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    const Text('The access service has not confirmed this channel. Your Wi-Fi may be working normally. We are retrying; do not pay again.', textAlign: TextAlign.center),
+                    Text(_backend.signedIn ? 'We could not verify this channel yet. Please retry; do not pay again.' : 'No account or payment is required for your first three channel previews. Please retry while we connect to the preview service.', textAlign: TextAlign.center),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(onPressed: () => unawaited(_gate.refresh()), icon: const Icon(Icons.refresh), label: const Text('Retry now')),
                   ],
