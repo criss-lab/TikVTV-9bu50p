@@ -40,7 +40,14 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
     final uri = Uri.tryParse(input.trim());
     if (uri?.scheme != 'https' || !['streamora.co.ke','www.streamora.co.ke'].contains(uri?.host) || uri?.path != '/tv-pair') { setState(() => message = 'Enter the complete HTTPS pairing link shown on your TV.'); return; }
     final value = uri!.queryParameters['challenge'];
-    if (value == null || !RegExp(r'^[A-Za-z0-9_-]{43}
+    if (value == null || value.length != 43 || !RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(value)) {
+      setState(() => message = 'Invalid TV pairing challenge. Generate a fresh link on your TV.');
+      return;
+    }
+    code.clear();
+    setState(() { challenge = value; scanning = false; message = null; });
+    _stopScanner();
+  }
   String? challenge, pairingId, message;
   bool scanning = false, busy = false;
   bool sending = false;
