@@ -1,3 +1,4 @@
+import 'native_backend.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -278,9 +279,9 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                   mainAxisSize: MainAxisSize.min, children: [
                     const Icon(Icons.verified_user_outlined, size: 36, color: Colors.white70),
                     const SizedBox(height: 12),
-                    Text(_backend.signedIn ? 'Access check temporarily unavailable' : 'Your free welcome preview is loading', textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(NativeBackend.instance.signedIn ? 'Access check temporarily unavailable' : 'Your free welcome preview is loading', textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    Text(_backend.signedIn ? 'We could not verify this channel yet. Please retry; do not pay again.' : 'No account or payment is required for your first three channel previews. Please retry while we connect to the preview service.', textAlign: TextAlign.center),
+                    Text(NativeBackend.instance.signedIn ? 'We could not verify this channel yet. Please retry; do not pay again.' : 'No account or payment is required for your first three channel previews. Please retry while we connect to the preview service.', textAlign: TextAlign.center),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(onPressed: () => unawaited(_gate.refresh()), icon: const Icon(Icons.refresh), label: const Text('Retry now')),
                   ],
