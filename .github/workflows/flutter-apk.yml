@@ -102,12 +102,21 @@ jobs:
           cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/TikVTV-preview.apk
           cd build/app/outputs/flutter-apk
           sha256sum TikVTV-preview.apk > SHA256SUMS.txt
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          "$APKSIGNER" verify --print-certs TikVTV-preview.apk | grep 'Signer #1 certificate SHA-256 digest:' > SIGNER-SHA256.txt
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo 'WARNING: Ephemeral CI debug certificate; may not update existing TikVTV installation. Back up data before any uninstall.' > INSTALL-NOTICE.txt
+          else
+            echo 'Persistent signing configured. Updates require matching installed signing certificate.' > INSTALL-NOTICE.txt
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: TikVTV-preview-${{ github.run_number }}
           path: |
             flutter_app/build/app/outputs/flutter-apk/TikVTV-preview.apk
             flutter_app/build/app/outputs/flutter-apk/SHA256SUMS.txt
+            flutter_app/build/app/outputs/flutter-apk/SIGNER-SHA256.txt
+            flutter_app/build/app/outputs/flutter-apk/INSTALL-NOTICE.txt
             flutter_app/build/symbols/**
           if-no-files-found: error
           retention-days: 90
@@ -119,7 +128,7 @@ jobs:
           if ! gh release view preview-latest >/dev/null 2>&1; then
             gh release create preview-latest --target "$GITHUB_SHA" --title "TikVTV latest Android preview" --notes "Automatically updated obfuscated release-mode preview APK from main. This is a testing build signed with the CI debug key, not a production-signing release. Verify SHA256SUMS.txt. Signing keys can change between CI runs." --prerelease
           fi
-          gh release upload preview-latest build/app/outputs/flutter-apk/TikVTV-preview.apk build/app/outputs/flutter-apk/SHA256SUMS.txt --clobber
+          gh release upload preview-latest build/app/outputs/flutter-apk/TikVTV-preview.apk build/app/outputs/flutter-apk/SHA256SUMS.txt build/app/outputs/flutter-apk/SIGNER-SHA256.txt build/app/outputs/flutter-apk/INSTALL-NOTICE.txt --clobber
           gh release edit preview-latest --target "$GITHUB_SHA" --notes "Preview built from commit $GITHUB_SHA. Download the APK asset directly, not the source-code ZIP. CI debug-key signing is not stable across builds unless persistent signing secrets are configured."
       - name: Publish tagged preview download
         if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
