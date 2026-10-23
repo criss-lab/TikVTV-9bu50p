@@ -19,6 +19,13 @@ if [[ ! -f /etc/wireguard/server.key ]]; then
   chmod 600 /etc/wireguard/server.key
   wg pubkey < /etc/wireguard/server.key > /etc/wireguard/server.pub
 fi
+# Preserve existing peer enrollment when re-running the installer.
+if [[ -e /etc/wireguard/wg0.conf ]]; then
+  echo "Existing wg0.conf detected; preserving enrolled peers." >&2
+  systemctl enable --now wg-quick@wg0
+  wg show wg0
+  exit 0
+fi
 private_key="$(cat /etc/wireguard/server.key)"
 cat > /etc/wireguard/wg0.conf <<EOF
 [Interface]
