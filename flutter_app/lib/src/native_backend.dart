@@ -48,14 +48,14 @@ class NativeBackend extends ChangeNotifier {
     var token = guestToken;
     if (token == null) {
       final start = await http.post(_paymentUri('/v1/guest/start'), headers: {'Accept':'application/json'}).timeout(const Duration(seconds: 15));
-      if (start.statusCode != 201) throw StateError('Guest preview is temporarily unavailable');
+      if (start.statusCode != 201) throw StateError('Guest preview API returned HTTP ${start.statusCode}: ${_message(start.body, 'Enrollment unavailable')}');
       token = (jsonDecode(start.body) as Map)['guest_token'] as String;
       await _secureStorage.write(key:'tikvtv_guest_preview_token',value:token);
       guestToken = token;
     }
     final uri = _paymentUri('/v1/guest/viewing-access').replace(queryParameters:{'channel_id':channelId});
     final response = await http.get(uri,headers:{'Authorization':'Bearer $token','Accept':'application/json'}).timeout(const Duration(seconds:15));
-    if (response.statusCode != 200) throw StateError(_message(response.body,'Guest preview unavailable'));
+    if (response.statusCode != 200) throw StateError('Guest access API returned HTTP ${response.statusCode}: ${_message(response.body,'Guest preview unavailable')}');
     return Map<String,dynamic>.from(jsonDecode(response.body) as Map);
   }
   Future<void> claimGuestPreview() async {
