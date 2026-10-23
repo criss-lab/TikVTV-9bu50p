@@ -39,7 +39,7 @@ class PlaybackGate extends ChangeNotifier {
     _lastVerifiedAt = null;
     ready = false;
     _apply();
-    if (account != null && _channelId != null) unawaited(refresh());
+    if (_channelId != null) unawaited(refresh());
   }
 
   bool get _paid => _paidUntil?.isAfter(DateTime.now().toUtc()) ?? false;
