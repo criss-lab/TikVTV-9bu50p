@@ -11,7 +11,7 @@ const STREAMS_API  = 'https://iptv-org.github.io/api/streams.json';
 const EXTRA_SOURCES: Array<[string, string]> = [
   // Additional independent public playlist feeds. The iptv-org JSON API remains primary.
   ['iptv-org-index', 'https://iptv-org.github.io/iptv/index.m3u'],
-  ['dearbulut', 'https://raw.githubusercontent.com/dearbulut/iptv/master/iptv.m3u'],
+  ['dearbulut', 'https://raw.githubusercontent.com/dearbulut/iptv/main/config/discovered.m3u'],
   // Free-TV curated
   ['freetv',       'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8'],
   // Categories
