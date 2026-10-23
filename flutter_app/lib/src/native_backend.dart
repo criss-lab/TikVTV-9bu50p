@@ -45,7 +45,8 @@ class NativeBackend extends ChangeNotifier {
     notifyListeners();
   }
   Future<Map<String, dynamic>> guestViewingAccess(String channelId) async {
-    var token = guestToken;
+    var token = guestToken ?? await _secureStorage.read(key: 'tikvtv_guest_preview_token');
+    guestToken = token;
     if (token == null) {
       final start = await http.post(_paymentUri('/v1/guest/start'), headers: {'Accept':'application/json'}).timeout(const Duration(seconds: 15));
       if (start.statusCode != 201) throw StateError('Guest preview API returned HTTP ${start.statusCode}: ${_message(start.body, 'Enrollment unavailable')}');
