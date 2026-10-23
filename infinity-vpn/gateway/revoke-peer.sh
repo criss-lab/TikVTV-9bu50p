@@ -1,24 +1,41 @@
 #!/usr/bin/env bash
-# Run as root on the dedicated gateway to revoke one enrolled device.
 set -euo pipefail
 umask 077
-[[ $# -eq 1 ]] || { echo "Usage: $0 <wireguard-client-public-key>" >&2; exit 2; }
+[[ $# -eq 1 ]] || { echo "Usage: $0 <client-public-key>" >&2; exit 2; }
 key="$1"
-[[ "$key" =~ ^[A-Za-z0-9+/]{43}=$ ]] || { echo "Invalid WireGuard public key" >&2; exit 2; }
+[[ "$key" =~ ^[A-Za-z0-9+/]{43}=$ ]] || exit 2
 config=/etc/wireguard/wg0.conf
-[[ -f "$config" ]] || { echo "Gateway is not initialized" >&2; exit 1; }
+[[ -f "$config" ]] || exit 1
 exec 9>/run/infinity-vpn-peer.lock
 flock -x 9
-# Update persistent configuration first, then active kernel/userspace peer table.
-tmp="$(mktemp /etc/wireguard/.wg0.XXXXXXXX)"
-trap 'rm -f "$tmp"' EXIT
-awk -v target="$key" '
-  /^\[Peer\]$/ { if (block != "") printf "%s", block; block=$0 ORS; peer=1; next }
-  peer { block=block $0 ORS; if ($0 ~ /^PublicKey[[:space:]]*=/) { split($0,a,"="); gsub(/[[:space:]]/,"",a[2]); if (a[2]==target) block=""; } next }
-  { print }
-  END { if (block != "") printf "%s", block }
-' "$config" > "$tmp"
-chmod 600 "$tmp"
-mv "$tmp" "$config"
+python3 - "$config" "$key" <<'PY'
+import os, pathlib, re, sys, tempfile
+path = pathlib.Path(sys.argv[1])
+target = sys.argv[2]
+text = path.read_text()
+blocks = re.split(r'(?=^\[Peer\]\s*$)', text, flags=re.MULTILINE)
+kept = []
+found = False
+for block in blocks:
+    if block.startswith('[Peer]'):
+        match = re.search(r'^PublicKey\s*=\s*(\S+)\s*$', block, re.MULTILINE)
+        if match and match.group(1) == target:
+            found = True
+            continue
+    kept.append(block)
+if not found:
+    raise SystemExit('Peer not present in persistent configuration')
+fd, name = tempfile.mkstemp(prefix='.wg0.', dir=path.parent)
+try:
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, 'w') as stream:
+        stream.write(''.join(kept))
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(name, path)
+finally:
+    if os.path.exists(name):
+        os.unlink(name)
+PY
 wg set wg0 peer "$key" remove
 echo "Peer revoked"
