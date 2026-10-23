@@ -51,7 +51,7 @@ async function initOrder(user, body) {
       callback_url: appUrl + '/payment-callback', notification_id: process.env.PESAPAL_IPN_ID,
       billing_address: { email_address: user.email || '', first_name: user.user_metadata?.first_name || user.email?.split('@')[0] || 'TikVTV', last_name: user.user_metadata?.last_name || 'Customer' }
     });
-    if (!result.order_tracking_id || !result.redirect_url || !['pay.pesapal.com', 'cybqa.pesapal.com'].includes(new URL(result.redirect_url).hostname) || new URL(result.redirect_url).protocol !== 'https:') throw new Error('Pesapal did not return a valid secure checkout order');
+    if (!result.order_tracking_id || !result.redirect_url || !(new URL(result.redirect_url).hostname === 'pesapal.com' || new URL(result.redirect_url).hostname.endsWith('.pesapal.com')) || new URL(result.redirect_url).protocol !== 'https:') throw new Error('Pesapal did not return a valid secure checkout order');
     await pool.query('UPDATE payment_orders SET order_tracking_id=$1,pesapal_redirect_url=$2 WHERE id=$3', [result.order_tracking_id, result.redirect_url, order.id]);
     return { order_tracking_id: result.order_tracking_id, merchant_reference: merchantReference, redirect_url: result.redirect_url, amount_kes: plan.amount, plan_code: planCode };
   } catch (error) {
@@ -67,6 +67,11 @@ async function verifyAndActivate(tracking, suppliedReference = '') {
   if (!order) throw Object.assign(new Error('Payment order not found'), { status: 404 });
   if (suppliedReference && suppliedReference !== order.merchant_reference) {
     throw Object.assign(new Error('Payment reference does not match the order'), { status: 400 });
+  }
+  // An already committed order must remain idempotent even during a Pesapal outage.
+  if (order.status === 'completed') {
+    const existing = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1', [order.user_id]);
+    return { payment_status_description: 'Completed', active: existing.rowCount > 0, ends_at: existing.rows[0]?.expires_at || null, order_tracking_id: order.order_tracking_id };
   }
   const verified = await pesapal('/api/Transactions/GetTransactionStatus?orderTrackingId=' + encodeURIComponent(order.order_tracking_id));
   const status = String(verified.payment_status_description || '').toLowerCase();
@@ -94,6 +99,50 @@ async function verifyAndActivate(tracking, suppliedReference = '') {
   } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   const entitlement = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW()', [order.user_id]);
   return { payment_status_description: verified.payment_status_description || 'Pending', active: entitlement.rows.length > 0, ends_at: entitlement.rows[0]?.expires_at || null, order_tracking_id: order.order_tracking_id };
+}
+
+// Recover completed payments even when the browser closes or Pesapal's IPN is delayed.
+// A single worker tick is bounded; verifyAndActivate locks the order and account
+// transactionally so IPN, status polling and this worker cannot double-credit.
+let reconciliationRunning = false;
+let recoveryCursor = 0;
+// Rotate through outstanding orders rather than repeatedly checking the oldest
+// ten: an unresolved checkout must never starve newer customers' payments.
+async function reconcileRecentOrders() {
+  if (reconciliationRunning || !pool || !configured()) return;
+  reconciliationRunning = true;
+  try {
+    const query = "SELECT id,order_tracking_id FROM payment_orders WHERE order_tracking_id IS NOT NULL AND status IN ('pending','failed') AND created_at > NOW() - INTERVAL '2 days' AND id > $1 ORDER BY id ASC LIMIT 10";
+    let candidates = await pool.query(query, [recoveryCursor]);
+    if (!candidates.rowCount && recoveryCursor) {
+      recoveryCursor = 0;
+      candidates = await pool.query(query, [recoveryCursor]);
+    }
+    for (const row of candidates.rows) {
+      recoveryCursor = Number(row.id);
+      try { await verifyAndActivate(row.order_tracking_id); }
+      catch (error) { console.error('Payment recovery retry failed:', error.message); }
+    }
+  } catch (error) { console.error('Payment recovery scan failed:', error.message); }
+  finally { reconciliationRunning = false; }
+}
+const recoveryTimer = setInterval(() => { void reconcileRecentOrders(); }, 60_000);
+recoveryTimer.unref();
+
+// All access surfaces use the same verified account entitlement. Never trust a
+// client-side payment result; reconcile only known orders owned by this account.
+async function activeEntitlement(userId, reconcile = true) {
+  let paid = await pool.query('SELECT plan_code,starts_at,expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1', [userId]);
+  if (!paid.rowCount && reconcile && configured()) {
+    const pending = await pool.query("SELECT order_tracking_id FROM payment_orders WHERE user_id=$1 AND order_tracking_id IS NOT NULL AND status IN ('pending','failed') AND created_at > NOW()-INTERVAL '2 days' ORDER BY created_at DESC LIMIT 5", [userId]);
+    for (const order of pending.rows) {
+      try { await verifyAndActivate(order.order_tracking_id); }
+      catch (error) { console.error('Entitlement reconciliation failed:', error.message); }
+      paid = await pool.query('SELECT plan_code,starts_at,expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1', [userId]);
+      if (paid.rowCount) break;
+    }
+  }
+  return paid.rows[0] || null;
 }
 
 const secret = () => crypto.randomBytes(32).toString('base64url');
@@ -150,8 +199,10 @@ async function tvRoute(req, res, url) {
     const device = await tvDevice(req);
     const channelId = url.searchParams.get('channel_id')?.trim();
     if (!channelId || channelId.length > 200) throw pairingError('Valid channel_id is required');
-    const paid = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1',[device.user_id]);
-    if (paid.rowCount) return json(res,200,{active:true,allowed:true,ends_at:paid.rows[0].expires_at,preview_ends_at:null,previews_used:0,previews_limit:7});
+    const paid = await activeEntitlement(device.user_id);
+    if (paid) return json(res,200,{active:true,allowed:true,ends_at:paid.expires_at,preview_ends_at:null,previews_used:0,previews_limit:7});
+    const prior = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 LIMIT 1',[device.user_id]);
+    if (prior.rowCount) return json(res,200,{active:false,allowed:false,expired:true,ends_at:prior.rows[0].expires_at,preview_ends_at:null,previews_used:7,previews_limit:7});
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -167,8 +218,8 @@ async function tvRoute(req, res, url) {
   }
   if (req.method === 'GET' && path === '/v1/tv/device/subscription') {
     const device = await tvDevice(req);
-    const result = await pool.query("SELECT plan_code,expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() LIMIT 1", [device.user_id]);
-    return json(res, 200, { active: result.rowCount>0, plan_code: result.rows[0]?.plan_code || null, ends_at: result.rows[0]?.expires_at || null });
+    const entitlement = await activeEntitlement(device.user_id);
+    return json(res, 200, { active: Boolean(entitlement), plan_code: entitlement?.plan_code || null, ends_at: entitlement?.expires_at || null });
   }
   if (req.method === 'GET' && path === '/v1/tv/remote/poll') {
     const device = await tvDevice(req);
@@ -231,9 +282,10 @@ async function route(req, res) {
           to_regclass('public.free_preview_sessions') IS NOT NULL AS free_preview_sessions,
           to_regclass('public.free_channel_previews') IS NOT NULL AS free_channel_previews,
           to_regclass('public.pesapal_ipn_events_notification_tracking_status_key') IS NOT NULL AS ipn_status_history_index,
-          (SELECT is_nullable = 'YES' FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'payment_orders' AND column_name = 'order_tracking_id') AS order_tracking_id_nullable
+          (SELECT is_nullable = 'YES' FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'payment_orders' AND column_name = 'order_tracking_id') AS order_tracking_id_nullable,
+          (SELECT COUNT(*)::int FROM information_schema.columns WHERE table_schema='public' AND table_name='payment_orders' AND column_name IN ('pesapal_payment_method','pesapal_confirmation_code','raw_ipn','paid_at')) AS payment_activation_columns
       `);
-      if (!schema.rows[0]?.payment_orders || !schema.rows[0]?.subscriptions || !schema.rows[0]?.pesapal_ipn_events || !schema.rows[0]?.free_preview_sessions || !schema.rows[0]?.free_channel_previews || !schema.rows[0]?.ipn_status_history_index || schema.rows[0]?.order_tracking_id_nullable !== true) {
+      if (!schema.rows[0]?.payment_orders || !schema.rows[0]?.subscriptions || !schema.rows[0]?.pesapal_ipn_events || !schema.rows[0]?.free_preview_sessions || !schema.rows[0]?.free_channel_previews || !schema.rows[0]?.ipn_status_history_index || schema.rows[0]?.order_tracking_id_nullable !== true || schema.rows[0]?.payment_activation_columns !== 4) {
         return json(res, 503, { ready: false, reason: 'payment_schema_missing' });
       }
       await token();
@@ -262,8 +314,11 @@ async function route(req, res) {
       const channelId = url.searchParams.get('channel_id')?.trim();
       if (!channelId || channelId.length > 200) return json(res, 400, { error: 'Valid channel_id is required' });
       // Check the paid entitlement first: every paid plan unlocks every channel.
-      const paid = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1', [user.id]);
-      if (paid.rowCount) return json(res, 200, { active: true, allowed: true, ends_at: paid.rows[0].expires_at, preview_ends_at: null, previews_used: 0, previews_limit: 7 });
+      const paid = await activeEntitlement(user.id);
+      if (paid) return json(res, 200, { active: true, allowed: true, ends_at: paid.expires_at, preview_ends_at: null, previews_used: 0, previews_limit: 7 });
+      // A previously paid account must lock immediately at expiry, not silently fall back to a new free preview.
+      const prior = await pool.query('SELECT expires_at FROM subscriptions WHERE user_id=$1 LIMIT 1', [user.id]);
+      if (prior.rowCount) return json(res, 200, { active: false, allowed: false, expired: true, ends_at: prior.rows[0].expires_at, preview_ends_at: null, previews_used: 7, previews_limit: 7 });
       // Serialize allocations per account, including simultaneous web/APK requests.
       const client = await pool.connect();
       try {
@@ -285,12 +340,20 @@ async function route(req, res) {
     }
   }
   if (req.method === 'GET' && url.pathname === '/v1/subscription') {
-    try { const user = await authenticate(req); requireDb(); let result = await pool.query('SELECT plan_code,starts_at,expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW()', [user.id]); if (!result.rowCount) { const pending = await pool.query("SELECT order_tracking_id FROM payment_orders WHERE user_id=$1 AND order_tracking_id IS NOT NULL AND status IN ('pending','failed') AND created_at > NOW() - INTERVAL '2 days' ORDER BY created_at DESC LIMIT 1", [user.id]); if (pending.rowCount) { try { await verifyAndActivate(pending.rows[0].order_tracking_id); } catch (verificationError) { console.error('Subscription reconciliation pending:', verificationError.message); } result = await pool.query('SELECT plan_code,starts_at,expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW()', [user.id]); } } const row = result.rows[0]; return json(res, 200, { active: Boolean(row), plan_code: row?.plan_code || null, starts_at: row?.starts_at || null, ends_at: row?.expires_at || null }); }
+    try { const user = await authenticate(req); requireDb(); const row = await activeEntitlement(user.id); return json(res, 200, { active: Boolean(row), plan_code: row?.plan_code || null, starts_at: row?.starts_at || null, ends_at: row?.expires_at || null }); }
     catch (e) { console.error('Subscription lookup failed:', e.message); return json(res, e.status || 503, { error: e.message || 'Subscription lookup failed' }); }
   }
   return json(res, 404, { error: 'Not found' });
 }
 const server = http.createServer((req, res) => {
+  // API responses must not be cached or embedded; TLS terminates at the trusted
+  // HTTPS ingress, while backend-to-Pesapal and backend-to-DB verify TLS.
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
   const origin = req.headers.origin;
   if (origin && allowedOrigins.has(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin');

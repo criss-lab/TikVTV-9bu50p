@@ -88,6 +88,8 @@ export async function getPremiumAccess(userId: string) {
 
 export function notifyPremiumChanged() {
   window.dispatchEvent(new Event(PREMIUM_CHANGED));
+  // Storage notifications wake other tabs without storing credentials or access.
+  try { localStorage.setItem(PREMIUM_CHANGED, String(Date.now())); } catch { /* storage may be disabled */ }
 }
 
 export type CheckoutResponse = {

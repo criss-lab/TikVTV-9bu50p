@@ -51,7 +51,7 @@ export default function Premium() {
       }
       if (typeof data.redirect_url !== 'string') throw new Error('Secure checkout URL unavailable');
       const checkoutUrl = new URL(data.redirect_url);
-      if (checkoutUrl.protocol !== 'https:' || !['pay.pesapal.com', 'cybqa.pesapal.com'].includes(checkoutUrl.hostname)) {
+      if (checkoutUrl.protocol !== 'https:' || !(checkoutUrl.hostname === 'pesapal.com' || checkoutUrl.hostname.endsWith('.pesapal.com'))) {
         throw new Error('Unexpected checkout destination');
       }
       window.location.assign(data.redirect_url);

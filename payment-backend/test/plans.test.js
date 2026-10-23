@@ -76,3 +76,21 @@ test('live checkout fails closed when Pesapal environment is missing or invalid'
   assert.ok(server.includes("reason: !pool ? 'database_missing' : !environmentConfigured ? 'pesapal_environment_invalid'"));
   assert.ok(server.includes("environment: environmentConfigured ? paymentEnvironment : 'invalid'"));
 });
+
+test('Checkout destinations permit only HTTPS hosts owned by Pesapal across web and Flutter', async () => {
+  const server = await readFile(new URL('../server.js', import.meta.url), 'utf8');
+  const web = await readFile(new URL('../../src/pages/Premium.tsx', import.meta.url), 'utf8');
+  const flutter = await readFile(new URL('../../flutter_app/lib/src/native_screens.dart', import.meta.url), 'utf8');
+  for (const source of [server, web]) {
+    assert.ok(source.includes("hostname.endsWith('.pesapal.com')"));
+  }
+  assert.ok(flutter.includes("host?.endsWith('.pesapal.com')"));
+  for (const candidate of ['https://pay.pesapal.com/pay', 'https://cybqa.pesapal.com/checkout', 'https://checkout.pesapal.com/']) {
+    const url = new URL(candidate);
+    assert.ok(url.protocol === 'https:' && (url.hostname === 'pesapal.com' || url.hostname.endsWith('.pesapal.com')));
+  }
+  for (const candidate of ['https://pesapal.com.evil.test/', 'http://pay.pesapal.com/', 'https://fakepesapal.com/']) {
+    const url = new URL(candidate);
+    assert.equal(url.protocol === 'https:' && (url.hostname === 'pesapal.com' || url.hostname.endsWith('.pesapal.com')), false);
+  }
+});

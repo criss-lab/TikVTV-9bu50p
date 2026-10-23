@@ -9,9 +9,6 @@ const STREAMS_API  = 'https://iptv-org.github.io/api/streams.json';
 
 // ── All iptv-org M3U sources — categories, regions, languages, countries ──────
 const EXTRA_SOURCES: Array<[string, string]> = [
-  // Additional independent public playlist feeds. The iptv-org JSON API remains primary.
-  ['iptv-org-index', 'https://iptv-org.github.io/iptv/index.m3u'],
-  ['dearbulut', 'https://raw.githubusercontent.com/dearbulut/iptv/main/config/discovered.m3u'],
   // Free-TV curated
   ['freetv',       'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8'],
   // Categories
@@ -317,10 +314,18 @@ async function fetchM3U(url: string, tag: string): Promise<IPTVChannel[]> {
 }
 
 async function fetchExtraSources(): Promise<IPTVChannel[]> {
-  // A small curated batch avoids serially waiting on dozens of remote playlists.
-  // The primary IPTV-org JSON API already covers countries and categories.
-  const sources = EXTRA_SOURCES.slice(0, 10);
-  const results = await Promise.all(sources.map(([tag, url]) => fetchM3U(url, tag)));
+  // Categories, regions and countries overlap heavily. Fetch each distinct URL
+  // with bounded concurrency instead of silently discarding all but eight.
+  const sources = [...new Map(EXTRA_SOURCES.map(([tag, url]) => [url, [tag, url] as [string, string]])).values()];
+  const results: IPTVChannel[][] = new Array(sources.length);
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(6, sources.length) }, async () => {
+    while (cursor < sources.length) {
+      const index = cursor++;
+      const [tag, url] = sources[index];
+      results[index] = await fetchM3U(url, tag);
+    }
+  }));
   return results.flat();
 }
 
@@ -377,17 +382,18 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
         network:     ch.network,
       }));
 
-    const existingIds = new Set(primary.map(ch => ch.id));
-    const existingUrls = new Set(primary.map(ch => ch.streamUrl));
-    const deduped = extraChannels.filter(ch => {
-      if (!browserHls(ch.streamUrl) || !ch.name || ch.name.length < 2 || existingUrls.has(ch.streamUrl)) return false;
-      // A channel ID can occur across providers with distinct streams: retain it as a fallback
-      // using a source-specific ID, while keeping each stream URL only once.
-      if (existingIds.has(ch.id)) ch.id = `extra-${ch.id}-${existingUrls.size}`;
-      existingIds.add(ch.id);
-      existingUrls.add(ch.streamUrl);
-      return true;
-    });
+    const existingIds = new Set(primary.map(ch => ch.id.toLowerCase()));
+    const existingUrls = new Set(primary.map(ch => ch.streamUrl.trim()));
+    const deduped: IPTVChannel[] = [];
+    for (const ch of extraChannels) {
+      const id = ch.id.toLowerCase();
+      const url = ch.streamUrl.trim();
+      if (!browserHls(url) || !ch.name || ch.name.length < 2 ||
+          existingIds.has(id) || existingUrls.has(url)) continue;
+      existingIds.add(id);
+      existingUrls.add(url);
+      deduped.push(ch);
+    }
 
     const all = shuffle([...primary, ...deduped]);
     console.log(`[IPTV] Total: ${all.length} (${primary.length} primary + ${deduped.length} extra)`);
