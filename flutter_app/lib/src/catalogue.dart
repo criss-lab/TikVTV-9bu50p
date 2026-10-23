@@ -17,6 +17,10 @@ class ChannelCatalogue extends ChangeNotifier {
   static const approvedFreeTvIds = <String>{};
   static const maxOptionalPlaylistBytes = 8 * 1024 * 1024;
   int discoveredFreeTv = 0;
+  int get playableChannelCount => channels.length;
+  int get playableStreamCount => channels.fold<int>(0, (total, channel) => total + channel.urls.length);
+  int get discoveredOptionalEntries => discoveredBySource.values.fold<int>(0, (total, count) => total + count);
+  int get approvedOptionalSourceCount => approvedFreeTvIds.length;
   final Map<String, int> discoveredBySource = {};
   // StreamVault mirrors iptv-org; awesome-iptv is a directory, not a playlist.
   // Guovin exports require an independently configured and reviewed deployment.
@@ -128,7 +132,7 @@ class ChannelCatalogue extends ChangeNotifier {
       }
       // Optional feeds are discovered independently: a failure never removes
       // the last known-good primary catalogue. Do not auto-monetize links.
-      discoveredBySource.clear();
+      final nextDiscoveredBySource = <String, int>{};
       final known = <String, int>{for (var i = 0; i < parsed.length; i++) parsed[i].id: i};
       final extra = await Future.wait(additionalPlaylists.entries.map((entry) async {
         try {
@@ -148,7 +152,7 @@ class ChannelCatalogue extends ChangeNotifier {
       for (final entry in extra) {
         var count = 0;
         if (!entry.value.startsWith('#EXTM3U')) {
-          discoveredBySource[entry.key] = 0;
+          nextDiscoveredBySource[entry.key] = 0;
           continue;
         }
         String? pendingId;
@@ -176,8 +180,9 @@ class ChannelCatalogue extends ChangeNotifier {
             pendingId = null;
           }
         }
-        discoveredBySource[entry.key] = count;
+        nextDiscoveredBySource[entry.key] = count;
       }
+      discoveredBySource..clear()..addAll(nextDiscoveredBySource);
       discoveredFreeTv = discoveredBySource['free-tv'] ?? 0;
       channels = List.unmodifiable(parsed);
       _loadedAt = DateTime.now();
