@@ -26,7 +26,7 @@ class PlaybackGate extends ChangeNotifier {
   bool verificationUnavailable = false;
   Duration remaining = Duration.zero;
   int previewsUsed = 0;
-  static const previewsLimit = 7;
+  int get previewsLimit => _backend.signedIn || _backend.tvPaired ? 7 : 3;
   Future<void> Function()? onLock;
 
   void _identityChanged() {
@@ -67,7 +67,7 @@ class PlaybackGate extends ChangeNotifier {
   void _ensureTimers() {
     _timer ??= Timer.periodic(const Duration(seconds: 1), (_) => _apply());
     _poll ??= Timer.periodic(_refreshInterval, (_) {
-      if (checking || (!_backend.signedIn && !_backend.tvPaired) || _channelId == null) return;
+      if (checking || _channelId == null) return;
       final interval = !locked && !verificationUnavailable ? _stableRefreshInterval : _refreshInterval;
       if (_lastVerifiedAt != null && DateTime.now().difference(_lastVerifiedAt!) < interval) return;
       unawaited(refresh());
@@ -113,13 +113,8 @@ class PlaybackGate extends ChangeNotifier {
     checking = true;
     notifyListeners();
     try {
-      if ((!_backend.signedIn && !_backend.tvPaired) || account == null) {
-        if (revision != _revision) return;
-        _paidUntil = null;
-        _previewUntil = null;
-        verificationUnavailable = false;
-      } else {
-        final status = _backend.signedIn ? await _backend.viewingAccess(channel) : await _backend.tvViewingAccess(channel);
+      {
+        final status = _backend.signedIn ? await _backend.viewingAccess(channel) : _backend.tvPaired ? await _backend.tvViewingAccess(channel) : await _backend.guestViewingAccess(channel);
         if (revision != _revision || account != (_backend.signedIn ? (_backend.user?['id']?.toString()) : (_backend.tvPaired ? 'paired-tv' : null))) return;
         _paidUntil = status['active'] == true ? _parse(status['ends_at']) : null;
         _previewUntil = status['allowed'] == true && status['active'] != true ? _parse(status['preview_ends_at']) : null;
