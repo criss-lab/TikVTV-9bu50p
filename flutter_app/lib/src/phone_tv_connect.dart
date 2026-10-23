@@ -32,13 +32,20 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
       return;
     }
     final value = uri!.queryParameters['challenge'];
-    if (value == null || !RegExp(r'^[A-Za-z0-9_-]{43}
+    if (value == null || value.length != 43 || RegExp(r'[^A-Za-z0-9_-]').hasMatch(value)) {
+      setState(() => message = 'Invalid or incomplete TV pairing link. Generate a fresh QR code on your TV.');
+      return;
+    }
+    code.clear();
+    setState(() { challenge = value; scanning = false; message = null; });
+  }
+  void scan(BarcodeCapture capture) {
     if (!mounted || !scanning || challenge != null) return;
     for (final barcode in capture.barcodes) {
       final uri = Uri.tryParse(barcode.rawValue ?? '');
-      if (uri?.scheme != 'https' || !['streamora.co.ke','www.streamora.co.ke'].contains(uri?.host) || uri?.path != '/tv-pair') continue;
+      if (uri?.scheme != 'https' || !['streamora.co.ke', 'www.streamora.co.ke'].contains(uri?.host) || uri?.path != '/tv-pair') continue;
       final value = uri!.queryParameters['challenge'];
-      if (value == null || !RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(value)) continue;
+      if (value == null || value.length != 43 || RegExp(r'[^A-Za-z0-9_-]').hasMatch(value)) continue;
       acceptLink(barcode.rawValue ?? '');
       return;
     }
