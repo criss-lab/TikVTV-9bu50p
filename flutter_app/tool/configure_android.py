@@ -5,10 +5,14 @@ manifest = Path("android/app/src/main/AndroidManifest.xml")
 if not manifest.exists():
     raise SystemExit("Flutter Android runner missing")
 xml = manifest.read_text()
-for name in ("INTERNET", "WAKE_LOCK", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_MEDIA_PLAYBACK"):
+for name in ("INTERNET", "WAKE_LOCK", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_MEDIA_PLAYBACK", "CAMERA"):
     permission = f'<uses-permission android:name="android.permission.{name}" />'
     if permission not in xml:
         xml = xml.replace("<application", permission + "\n    <application", 1)
+# QR pairing uses mobile_scanner; camera is optional so Android TV remains installable.
+feature = '<uses-feature android:name="android.hardware.camera" android:required="false" />'
+if feature not in xml:
+    xml = xml.replace("<application", feature + "\\n    <application", 1)
 if "android:usesCleartextTraffic" not in xml:
     xml = xml.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
 if "android:allowBackup" not in xml:
