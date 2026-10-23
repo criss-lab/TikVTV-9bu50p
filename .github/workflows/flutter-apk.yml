@@ -52,6 +52,11 @@ jobs:
       - run: flutter test
       - name: Configure Android network access
         run: python3 tool/configure_android.py
+      - name: Assert camera permission in generated phone manifest
+        run: |
+          grep -q 'android.permission.CAMERA' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.hardware.camera' android/app/src/main/AndroidManifest.xml
+          grep -q 'android:required="false"' android/app/src/main/AndroidManifest.xml
       - name: Configure persistent signing when provisioned
         run: python3 tool/configure_signing.py
       - name: Build obfuscated Flutter release APK
