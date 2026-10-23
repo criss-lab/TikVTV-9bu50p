@@ -52,6 +52,8 @@ jobs:
       - run: flutter test
       - name: Configure Android network access
         run: python3 tool/configure_android.py
+      - name: Install native Android VPN service declaration
+        run: python3 tool/configure_vpn_android.py
       - name: Configure persistent signing when provisioned
         run: python3 tool/configure_signing.py
       - name: Build obfuscated Flutter release APK
