@@ -20,6 +20,7 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
   int scannerSession = 0;
   bool requestingCamera = false;
   bool cameraBlocked = false;
+  bool acceptingQr = false;
   @override
   void initState() { super.initState(); load(); }
   @override
@@ -29,7 +30,7 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
     catch (e) { if (mounted) setState(() => message = e.toString()); }
   }
   Future<void> openScanner() async {
-    if (requestingCamera) return;
+    if (requestingCamera || scanning || challenge != null) return;
     if (kIsWeb) {
       setState(() { scanning = true; scannerSession++; message = null; });
       return;
@@ -37,7 +38,9 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
     setState(() { requestingCamera = true; message = null; });
     try {
       var status = await Permission.camera.status;
-      if (!status.isGranted) status = await Permission.camera.request();
+      if (!status.isGranted && !status.isPermanentlyDenied && !status.isRestricted) {
+        status = await Permission.camera.request();
+      }
       if (!mounted) return;
       setState(() {
         cameraBlocked = status.isPermanentlyDenied || status.isRestricted;
@@ -65,15 +68,16 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
       return;
     }
     code.clear();
-    setState(() { challenge = value; scanning = false; message = null; });
+    setState(() { challenge = value; scanning = false; message = null; cameraBlocked = false; });
   }
   void scan(BarcodeCapture capture) {
-    if (!mounted || !scanning || challenge != null) return;
+    if (!mounted || !scanning || challenge != null || acceptingQr) return;
     for (final barcode in capture.barcodes) {
       final uri = Uri.tryParse(barcode.rawValue ?? '');
       if (uri?.scheme != 'https' || !['streamora.co.ke', 'www.streamora.co.ke'].contains(uri?.host) || uri?.path != '/tv-pair') continue;
       final value = uri!.queryParameters['challenge'];
       if (value == null || value.length != 43 || RegExp(r'[^A-Za-z0-9_-]').hasMatch(value)) continue;
+      acceptingQr = true;
       acceptLink(barcode.rawValue ?? '');
       return;
     }
@@ -84,7 +88,7 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
     try {
       final result = await TvPairingApi.approve(challenge!, code.text.trim());
       if (!mounted) return;
-      setState(() { pairingId = result['pairing_id'] as String; challenge = null; message = 'TV connected. You can now control it from this phone.'; });
+      setState(() { pairingId = result['pairing_id'] as String; challenge = null; acceptingQr = false; message = 'TV connected. You can now control it from this phone.'; });
       await load();
     } catch(e) { if (mounted) setState(() => message = e.toString()); }
     finally { if (mounted) setState(() => busy = false); }
@@ -137,7 +141,7 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
         const Text('Confirm the six-digit number displayed on your TV before connecting.'),
         TextField(controller: code, maxLength: 6, keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly], textInputAction: TextInputAction.done, onSubmitted: (_) => approve(), decoration: const InputDecoration(labelText: 'TV confirmation code')),
         FilledButton(onPressed: busy ? null : approve, child: Text(busy ? 'Connecting…' : 'Confirm and connect TV')),
-        TextButton(onPressed: () => setState(() { challenge = null; code.clear(); message = null; }), child: const Text('Cancel')),
+        TextButton(onPressed: () => setState(() { challenge = null; acceptingQr = false; code.clear(); message = null; }), child: const Text('Cancel')),
       ],
       if (message != null) Padding(padding: const EdgeInsets.all(12), child: Text(message!, textAlign: TextAlign.center)),
       const Divider(height: 32),
