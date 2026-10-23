@@ -35,7 +35,7 @@ if 'com.wireguard.android.backend.GoBackend$VpnService' not in xml:
     xml = xml.replace('</application>', '''
         <service android:name="com.wireguard.android.backend.GoBackend$VpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>
