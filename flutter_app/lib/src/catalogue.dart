@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -71,16 +72,13 @@ class ChannelCatalogue extends ChangeNotifier {
   Future<void> _fetch() async {
     loading = true; error = null; notifyListeners();
     try {
+      // Only the two essential endpoints gate startup. Optional metadata must not
+      // turn a slow logo server into a fatal catalogue timeout.
       final results = await Future.wait([
         http.get(Uri.parse('https://iptv-org.github.io/api/channels.json'))
           .timeout(const Duration(seconds: 15)),
         http.get(Uri.parse('https://iptv-org.github.io/api/streams.json'))
-          .timeout(const Duration(seconds: 20)),
-        http.get(Uri.parse('https://iptv-org.github.io/api/logos.json'))
-          .timeout(const Duration(seconds: 20)),
-        http.get(Uri.parse('https://iptv-org.github.io/api/blocklist.json'))
-          .timeout(const Duration(seconds: 20)),
-
+          .timeout(const Duration(seconds: 20))
       ]);
       if (results[0].statusCode != 200 || results[1].statusCode != 200) {
         throw StateError('Catalogue HTTP failure');
@@ -88,8 +86,12 @@ class ChannelCatalogue extends ChangeNotifier {
       final metadata = jsonDecode(results[0].body) as List<dynamic>;
       final streams = jsonDecode(results[1].body) as List<dynamic>;
       final logos = <String, String>{};
-      if (results[2].statusCode == 200) {
-        for (final item in jsonDecode(results[2].body) as List<dynamic>) {
+      final optional = await Future.wait([
+        http.get(Uri.parse('https://iptv-org.github.io/api/logos.json')).timeout(const Duration(seconds: 8)).catchError((Object _) => http.Response('[]', 503)),
+        http.get(Uri.parse('https://iptv-org.github.io/api/blocklist.json')).timeout(const Duration(seconds: 10)).catchError((Object _) => http.Response('[]', 503)),
+      ]);
+      if (optional[0].statusCode == 200) {
+        for (final item in jsonDecode(optional[0].body) as List<dynamic>) {
           if (item is! Map || item['in_use'] != true) continue;
           final id = item['channel'], url = item['url'];
           if (id is String && url is String && Uri.tryParse(url)?.scheme == 'https') {
@@ -98,8 +100,8 @@ class ChannelCatalogue extends ChangeNotifier {
         }
       }
       final blocked = <String>{};
-      if (results[3].statusCode != 200) throw StateError('Blocklist unavailable; retaining last safe catalogue');
-      for (final item in jsonDecode(results[3].body) as List<dynamic>) {
+      if (optional[1].statusCode != 200) throw StateError('Blocklist unavailable; retaining last safe catalogue');
+      for (final item in jsonDecode(optional[1].body) as List<dynamic>) {
         if (item is Map && item['channel'] is String) blocked.add(item['channel'] as String);
       }
       final sources = <String, List<String>>{};
