@@ -332,12 +332,14 @@ async function route(req, res) {
         const guest = await client.query('SELECT claimed_user_id FROM guest_preview_installations WHERE token_hash=$1 FOR UPDATE', [hash]);
         if (!guest.rowCount || guest.rows[0].claimed_user_id) { await client.query('ROLLBACK'); return json(res, 403, { error: 'Guest session unavailable; sign in to continue' }); }
         let preview = await client.query('SELECT expires_at FROM guest_channel_previews WHERE token_hash=$1 AND channel_id=$2', [hash, channel]);
+        const existingPreview = preview.rowCount > 0;
         const count = await client.query('SELECT COUNT(*)::int AS used FROM guest_channel_previews WHERE token_hash=$1', [hash]);
         const used = count.rows[0].used;
         if (!preview.rowCount && used < 3) preview = await client.query("INSERT INTO guest_channel_previews(token_hash,channel_id) VALUES($1,$2) RETURNING expires_at", [hash,channel]);
+        const allocated = used + (preview.rowCount && used < 3 && !existingPreview ? 1 : 0);
         await client.query('COMMIT');
         const expiry = preview.rows[0]?.expires_at || null;
-        return json(res, 200, { active:false, allowed: Boolean(expiry && new Date(expiry).getTime()>Date.now()), preview_ends_at:expiry, previews_used:used, previews_limit:3, stage:'guest' });
+        return json(res, 200, { active:false, allowed: Boolean(expiry && new Date(expiry).getTime()>Date.now()), preview_ends_at:expiry, previews_used:allocated, previews_limit:3, stage:'guest' });
       } catch(e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
     } catch(e) { console.error('Guest preview failed:',e.message); return json(res,503,{error:'Guest preview unavailable'}); }
   }
