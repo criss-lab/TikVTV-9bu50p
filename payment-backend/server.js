@@ -131,17 +131,15 @@ recoveryTimer.unref();
 
 // All access surfaces use the same verified account entitlement. Never trust a
 // client-side payment result; reconcile only known orders owned by this account.
-async function activeEntitlement(userId, reconcile = true) {
-  let paid = await pool.query('SELECT plan_code,starts_at,expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1', [userId]);
-  if (!paid.rowCount && reconcile && configured()) {
-    const pending = await pool.query("SELECT order_tracking_id FROM payment_orders WHERE user_id=$1 AND order_tracking_id IS NOT NULL AND status IN ('pending','failed') AND created_at > NOW()-INTERVAL '2 days' ORDER BY created_at DESC LIMIT 5", [userId]);
-    for (const order of pending.rows) {
-      try { await verifyAndActivate(order.order_tracking_id); }
-      catch (error) { console.error('Entitlement reconciliation failed:', error.message); }
-      paid = await pool.query('SELECT plan_code,starts_at,expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1', [userId]);
-      if (paid.rowCount) break;
-    }
-  }
+async function activeEntitlement(userId) {
+  // Hot path: one indexed DB read. Never call external PesaPal from a channel
+  // access check: that would amplify traffic and couple playback to checkout
+  // provider latency. Explicit payment/status and the bounded recovery worker
+  // are responsible for independently verifying pending orders.
+  const paid = await pool.query(
+    'SELECT plan_code,starts_at,expires_at FROM subscriptions WHERE user_id=$1 AND expires_at>NOW() LIMIT 1',
+    [userId],
+  );
   return paid.rows[0] || null;
 }
 
