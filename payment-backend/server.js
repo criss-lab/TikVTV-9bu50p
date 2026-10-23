@@ -384,7 +384,14 @@ async function route(req, res) {
         const count = await client.query('SELECT COUNT(*)::int AS used FROM free_channel_previews WHERE user_id=$1', [user.id]);
         const used = count.rows[0].used;
         const claimed = await client.query('SELECT token_hash FROM guest_preview_installations WHERE claimed_user_id=$1',[user.id]);
-        const guestChannel = claimed.rowCount ? await client.query('SELECT 1 FROM guest_channel_previews WHERE token_hash=$1 AND channel_id=$2',[claimed.rows[0].token_hash,channelId]) : {rowCount:0};
+        const guestChannel = claimed.rowCount ? await client.query('SELECT expires_at FROM guest_channel_previews WHERE token_hash=$1 AND channel_id=$2',[claimed.rows[0].token_hash,channelId]) : {rowCount:0};
+        // Claiming a guest session preserves its original three channel deadlines.
+        // Those channels are separate from the seven additional signed-in previews.
+        if (guestChannel.rowCount) {
+          await client.query('COMMIT');
+          const expiry = guestChannel.rows[0].expires_at;
+          return json(res, 200, { active:false, allowed:new Date(expiry).getTime()>Date.now(), ends_at:null, preview_ends_at:expiry, previews_used:used, previews_limit:7, stage:'claimed_guest' });
+        }
         if (!preview.rowCount && used < 7 && !guestChannel.rowCount) {
           preview = await client.query("INSERT INTO free_channel_previews (user_id,channel_id,started_at,expires_at) VALUES ($1,$2,NOW(),NOW()+INTERVAL '15 minutes') ON CONFLICT (user_id,channel_id) DO UPDATE SET channel_id=EXCLUDED.channel_id RETURNING expires_at", [user.id,channelId]);
         }
