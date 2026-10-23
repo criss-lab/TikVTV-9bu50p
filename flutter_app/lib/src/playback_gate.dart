@@ -30,7 +30,7 @@ class PlaybackGate extends ChangeNotifier {
   Future<void> Function()? onLock;
 
   void _identityChanged() {
-    final account = _backend.signedIn ? _backend.user?['id']?.toString() : (_backend.tvPaired ? 'paired-tv' : null);
+    final account = _backend.signedIn ? (_backend.user?['id']?.toString()) : (_backend.tvPaired ? 'paired-tv' : null);
     if (account == _accountId) return;
     ++_revision;
     _accountId = account;
