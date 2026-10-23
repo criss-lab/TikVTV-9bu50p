@@ -11,7 +11,7 @@ for name in ("CAMERA", "INTERNET", "WAKE_LOCK", "FOREGROUND_SERVICE", "FOREGROUN
         xml = xml.replace("<application", permission + "\n    <application", 1)
 # Camera is optional for TV hardware; the phone pairing scanner requests it at runtime.
 if 'android.hardware.camera' not in xml:
-    xml = xml.replace("<application", '<uses-feature android:name="android.hardware.camera" android:required="false" />\\n    <application', 1)
+    xml = xml.replace("<application", '<uses-feature android:name="android.hardware.camera" android:required="false" />\n    <application', 1)
 if "android:usesCleartextTraffic" not in xml:
     xml = xml.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
 if "android:allowBackup" not in xml:
