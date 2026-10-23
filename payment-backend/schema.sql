@@ -110,3 +110,16 @@ CREATE TABLE IF NOT EXISTS tv_remote_commands (
 );
 CREATE INDEX IF NOT EXISTS tv_remote_commands_pairing_idx ON tv_remote_commands(pairing_id,id);
 
+
+-- Hot-path indexes for authenticated account checks and recovery scans.
+-- CONCURRENTLY is intentionally not used: migrate.js executes this repeatable
+-- schema as a regular statement batch.
+CREATE INDEX IF NOT EXISTS payment_orders_user_recovery_idx
+ ON payment_orders (user_id, created_at DESC)
+ WHERE order_tracking_id IS NOT NULL AND status IN ('pending','failed');
+CREATE INDEX IF NOT EXISTS payment_orders_recovery_cursor_idx
+ ON payment_orders (id)
+ WHERE order_tracking_id IS NOT NULL AND status IN ('pending','failed');
+CREATE INDEX IF NOT EXISTS tv_pairings_active_token_idx
+ ON tv_pairings (device_token_hash)
+ WHERE approved_at IS NOT NULL AND revoked_at IS NULL;
