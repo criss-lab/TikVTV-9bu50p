@@ -13,7 +13,7 @@ if 'com.wireguard.android:tunnel:' not in s:
     s += '''
 // Official WireGuard Android userspace tunnel implementation (Apache-2.0).
 dependencies {
-    implementation("com.wireguard.android:tunnel:1.0.20250521")
+    implementation("com.wireguard.android:tunnel:1.0.20260102")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
 }
 '''
