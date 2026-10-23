@@ -13,6 +13,8 @@ class _TvPairingScreenState extends State<TvPairingScreen> {
   Map<String, dynamic>? pairing;
   Timer? timer;
   bool polling = false;
+  bool connected = false;
+  int consecutivePollFailures = 0;
   bool starting = false;
   DateTime? expiresAt;
   int generation = 0;
@@ -23,9 +25,10 @@ class _TvPairingScreenState extends State<TvPairingScreen> {
   @override
   void dispose() { generation++; timer?.cancel(); super.dispose(); }
   Future<void> start() async {
-    if (starting) return;
+    if (starting || connected) return;
     starting = true;
     timer?.cancel();
+    consecutivePollFailures = 0;
     final current = ++generation;
     if (mounted) setState(() { pairing = null; message = null; expiresAt = null; });
     try {
@@ -36,27 +39,42 @@ class _TvPairingScreenState extends State<TvPairingScreen> {
         if (!mounted) return;
         if (secondsLeft == 0) { timer?.cancel(); setState(() { pairing = null; message = 'Pairing expired. Generate a fresh QR code.'; }); return; }
         setState(() {});
-        if (secondsLeft % 3 == 0) unawaited(poll());
+        if (secondsLeft % 3 == 0 && consecutivePollFailures < 4) unawaited(poll());
       });
     } catch(e) { if (mounted && current == generation) setState(() => message = 'Could not generate the TV QR code: $e'); }
     finally { starting = false; }
   }
   Future<void> poll() async {
-    if (polling || pairing == null || secondsLeft == 0) return;
+    if (polling || connected || pairing == null || secondsLeft == 0) return;
     final current = generation;
     polling = true;
     try {
       final result = await TvPairingApi.status(pairing!['poll_token'] as String);
       if (!mounted || current != generation) return;
-      if (result['device_token'] is String) {
+      consecutivePollFailures = 0;
+      if (result['device_token'] is String && (result['device_token'] as String).isNotEmpty) {
+        connected = true;
         timer?.cancel();
-        await NativeBackend.instance.setTvDeviceToken(result['device_token'] as String);
-        if (mounted && current == generation) Navigator.pop(context, true);
+        try {
+          await NativeBackend.instance.setTvDeviceToken(result['device_token'] as String);
+          if (mounted && current == generation) Navigator.pop(context, true);
+        } catch (_) {
+          connected = false;
+          if (mounted && current == generation) setState(() => message = 'TV connected, but saving the connection failed. Generate a fresh code and retry.');
+        }
       } else if (result['already_claimed'] == true) {
         timer?.cancel();
         setState(() { pairing = null; message = 'This pairing was already claimed. Generate a new QR code.'; });
       }
-    } catch(e) { if (mounted && current == generation) { timer?.cancel(); setState(() { pairing = null; message = e.toString(); }); } }
+    } catch(e) {
+      if (mounted && current == generation) {
+        consecutivePollFailures++;
+        if (consecutivePollFailures >= 4) {
+          timer?.cancel();
+          setState(() { pairing = null; message = 'TV connection was interrupted. Check your internet and generate a new QR code.'; });
+        }
+      }
+    }
     finally { polling = false; }
   }
   @override
