@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'tv_pairing_api.dart';
 
 class PhoneTvConnectScreen extends StatefulWidget {
@@ -17,6 +18,8 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
   final code = TextEditingController();
   final manualLink = TextEditingController();
   int scannerSession = 0;
+  bool requestingCamera = false;
+  bool cameraBlocked = false;
   @override
   void initState() { super.initState(); load(); }
   @override
@@ -24,6 +27,31 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
   Future<void> load() async {
     try { final result = await TvPairingApi.devices(); if (mounted) setState(() => devices = result); }
     catch (e) { if (mounted) setState(() => message = e.toString()); }
+  }
+  Future<void> openScanner() async {
+    if (requestingCamera) return;
+    if (kIsWeb) {
+      setState(() { scanning = true; scannerSession++; message = null; });
+      return;
+    }
+    setState(() { requestingCamera = true; message = null; });
+    try {
+      var status = await Permission.camera.status;
+      if (!status.isGranted) status = await Permission.camera.request();
+      if (!mounted) return;
+      setState(() {
+        cameraBlocked = status.isPermanentlyDenied || status.isRestricted;
+        scanning = status.isGranted;
+        if (status.isGranted) scannerSession++;
+        if (!status.isGranted) message = cameraBlocked
+            ? 'Camera access is blocked. You can enable it in App Settings or paste your TV pairing link below.'
+            : 'Camera permission was declined. Tap Scan TV QR code to try again, or use the pairing link below.';
+      });
+    } catch (_) {
+      if (mounted) setState(() { scanning = false; message = 'Unable to request camera access. You can still connect using the TV pairing link.'; });
+    } finally {
+      if (mounted) setState(() => requestingCamera = false);
+    }
   }
   void acceptLink(String raw) {
     final uri = Uri.tryParse(raw.trim());
@@ -87,13 +115,14 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
                 const SizedBox(height: 8),
                 const Text('Allow camera permission for TikVTV in Android Settings, then try again. You can also paste the TV pairing link below.', textAlign: TextAlign.center),
                 const SizedBox(height: 12),
-                OutlinedButton.icon(onPressed: () => setState(() => scannerSession++), icon: const Icon(Icons.refresh), label: const Text('Retry camera')),
+                OutlinedButton.icon(onPressed: openScanner, icon: const Icon(Icons.refresh), label: const Text('Retry camera')),
               ]))),
         )),
         TextButton.icon(onPressed: () => setState(() { scanning = false; message = null; }), icon: const Icon(Icons.close), label: const Text('Close scanner')),
       ],
       if (challenge == null) ...[
-        if (!scanning) FilledButton.icon(onPressed: () => setState(() { scanning = true; scannerSession++; message = null; }), icon: const Icon(Icons.qr_code_scanner), label: const Text('Scan TV QR code')),
+        if (!scanning) FilledButton.icon(onPressed: requestingCamera ? null : openScanner, icon: const Icon(Icons.qr_code_scanner), label: Text(requestingCamera ? 'Requesting camera access…' : 'Scan TV QR code')),
+        if (cameraBlocked && !kIsWeb) TextButton.icon(onPressed: openAppSettings, icon: const Icon(Icons.settings), label: const Text('Open camera permission settings')),
         const SizedBox(height: 18),
         const Text('Camera not working? Connect using the TV pairing link', style: TextStyle(color: Colors.white70)),
         const SizedBox(height: 8),
