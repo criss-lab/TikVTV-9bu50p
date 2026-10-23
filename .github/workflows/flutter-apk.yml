@@ -78,6 +78,24 @@ jobs:
             CERT="$("$APKSIGNER" verify --print-certs "$APK")"
             echo "$CERT" | grep -q 'Signer #1 certificate SHA-256 digest:'
           fi
+      - name: Verify APK archive and Android 12 installation compatibility
+        run: |
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          python3 - "$APK" <<'PY'
+          import sys,zipfile
+          with zipfile.ZipFile(sys.argv[1]) as apk:
+              corrupt = apk.testzip()
+              assert corrupt is None, f'Corrupt APK member: {corrupt}'
+              names = set(apk.namelist())
+              assert 'AndroidManifest.xml' in names, 'Missing binary manifest'
+              assert 'classes.dex' in names, 'Missing Android classes'
+              assert any(name.startswith('lib/') and name.endswith('/libflutter.so') for name in names), 'Missing Flutter native engine'
+              print('APK ZIP integrity and required package entries verified')
+          PY
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          "$APKSIGNER" verify --min-sdk-version 31 --verbose --print-certs "$APK"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
+          "$AAPT" dump badging "$APK" | grep -E '^(package:|sdkVersion:|targetSdkVersion:|native-code:)'
       - name: Verify and label preview APK
         run: |
           test -s build/app/outputs/flutter-apk/app-release.apk
