@@ -103,7 +103,9 @@ jobs:
           cd build/app/outputs/flutter-apk
           sha256sum TikVTV-preview.apk > SHA256SUMS.txt
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
-          "$APKSIGNER" verify --print-certs TikVTV-preview.apk | grep 'Signer #1 certificate SHA-256 digest:' > SIGNER-SHA256.txt
+          "$APKSIGNER" verify --print-certs TikVTV-preview.apk > SIGNER-DETAILS.txt
+          grep -E '^(Signer #1|V2 Signer): certificate SHA-256 digest:' SIGNER-DETAILS.txt > SIGNER-SHA256.txt
+          test -s SIGNER-SHA256.txt
           if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
             echo 'WARNING: Ephemeral CI debug certificate; may not update existing TikVTV installation. Back up data before any uninstall.' > INSTALL-NOTICE.txt
           else
