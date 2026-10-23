@@ -120,6 +120,7 @@ jobs:
             gh release create preview-latest --target "$GITHUB_SHA" --title "TikVTV latest Android preview" --notes "Automatically updated obfuscated release-mode preview APK from main. This is a testing build signed with the CI debug key, not a production-signing release. Verify SHA256SUMS.txt. Signing keys can change between CI runs." --prerelease
           fi
           gh release upload preview-latest build/app/outputs/flutter-apk/TikVTV-preview.apk build/app/outputs/flutter-apk/SHA256SUMS.txt --clobber
+          gh release edit preview-latest --target "$GITHUB_SHA" --notes "Preview built from commit $GITHUB_SHA. Download the APK asset directly, not the source-code ZIP. CI debug-key signing is not stable across builds unless persistent signing secrets are configured."
       - name: Publish tagged preview download
         if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
         env:
