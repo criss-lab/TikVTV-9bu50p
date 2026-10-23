@@ -131,11 +131,21 @@ class NativeBackend extends ChangeNotifier {
     if (response.statusCode != 200) throw StateError('Session expired');
     await _saveSession(Map<String, dynamic>.from(jsonDecode(response.body) as Map));
   }
+  Future<void> _claimGuestWithoutBlockingAuthentication() async {
+    try {
+      await claimGuestPreview();
+    } catch (error) {
+      // Keep the secure guest token for a later retry. A payment API outage
+      // must never prevent Supabase login or profile setup.
+      debugPrint('Guest preview transfer deferred: $error');
+    }
+  }
   Future<void> signIn(String email, String password) async {
     _requireConfig();
     final response = await http.post(_uri('/auth/v1/token', {'grant_type': 'password'}), headers: {'apikey': _key, 'Content-Type': 'application/json'}, body: jsonEncode({'email': email.trim(), 'password': password})).timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) throw StateError(_message(response.body, 'Sign-in failed'));
     await _saveSession(Map<String, dynamic>.from(jsonDecode(response.body) as Map));
+    await _claimGuestWithoutBlockingAuthentication();
   }
   Future<void> requestSignupOtp(String email) async {
     _requireConfig();
@@ -147,11 +157,11 @@ class NativeBackend extends ChangeNotifier {
     final response = await http.post(_uri('/auth/v1/verify'), headers: {'apikey': _key, 'Content-Type': 'application/json'}, body: jsonEncode({'email': email.trim(), 'token': code.trim(), 'type': 'email'})).timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) throw StateError(_message(response.body, 'Email verification failed'));
     await _saveSession(Map<String, dynamic>.from(jsonDecode(response.body) as Map));
-    await claimGuestPreview();
     final update = await http.put(_uri('/auth/v1/user'), headers: _headers, body: jsonEncode({'password': password, 'data': {'username': username.trim()}})).timeout(const Duration(seconds: 20));
     if (update.statusCode < 200 || update.statusCode >= 300) throw StateError(_message(update.body, 'Email verified but profile setup failed. Sign in and try again.'));
     user = {...?user, ...Map<String, dynamic>.from(jsonDecode(update.body) as Map)};
     final prefs = await SharedPreferences.getInstance(); await prefs.setString('native_supabase_user', jsonEncode(user)); notifyListeners();
+    await _claimGuestWithoutBlockingAuthentication();
   }
   Future<void> signOut() async {
     if (configured && accessToken != null) { try { await http.post(_uri('/auth/v1/logout'), headers: _headers).timeout(const Duration(seconds: 8)); } catch (_) {} }
