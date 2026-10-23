@@ -39,6 +39,36 @@ class NativeBackend extends ChangeNotifier {
     if (response.statusCode != 200) throw StateError(_message(response.body, 'TV pairing expired'));
     return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
   }
+  String? guestToken;
+  Future<void> restoreGuest() async {
+    guestToken = await _secureStorage.read(key: 'tikvtv_guest_preview_token');
+    notifyListeners();
+  }
+  Future<Map<String, dynamic>> guestViewingAccess(String channelId) async {
+    var token = guestToken;
+    if (token == null) {
+      final start = await http.post(_paymentUri('/v1/guest/start'), headers: {'Accept':'application/json'}).timeout(const Duration(seconds: 15));
+      if (start.statusCode != 201) throw StateError('Guest preview is temporarily unavailable');
+      token = (jsonDecode(start.body) as Map)['guest_token'] as String;
+      await _secureStorage.write(key:'tikvtv_guest_preview_token',value:token);
+      guestToken = token;
+    }
+    final uri = _paymentUri('/v1/guest/viewing-access').replace(queryParameters:{'channel_id':channelId});
+    final response = await http.get(uri,headers:{'Authorization':'Bearer $token','Accept':'application/json'}).timeout(const Duration(seconds:15));
+    if (response.statusCode != 200) throw StateError(_message(response.body,'Guest preview unavailable'));
+    return Map<String,dynamic>.from(jsonDecode(response.body) as Map);
+  }
+  Future<void> claimGuestPreview() async {
+    final token = guestToken ?? await _secureStorage.read(key:'tikvtv_guest_preview_token');
+    if (token == null || !signedIn) return;
+    final response = await http.post(_paymentUri('/v1/guest/claim'),headers:_paymentHeaders,body:jsonEncode({'guest_token':token})).timeout(const Duration(seconds:15));
+    if (response.statusCode == 200) {
+      await _secureStorage.delete(key:'tikvtv_guest_preview_token');
+      guestToken = null;
+    } else if (response.statusCode != 409 && response.statusCode != 403) {
+      throw StateError(_message(response.body,'Could not transfer guest preview'));
+    }
+  }
   String? refreshToken;
   Map<String, dynamic>? user;
   bool get signedIn => accessToken != null && user != null;
@@ -116,6 +146,7 @@ class NativeBackend extends ChangeNotifier {
     final response = await http.post(_uri('/auth/v1/verify'), headers: {'apikey': _key, 'Content-Type': 'application/json'}, body: jsonEncode({'email': email.trim(), 'token': code.trim(), 'type': 'email'})).timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) throw StateError(_message(response.body, 'Email verification failed'));
     await _saveSession(Map<String, dynamic>.from(jsonDecode(response.body) as Map));
+    await claimGuestPreview();
     final update = await http.put(_uri('/auth/v1/user'), headers: _headers, body: jsonEncode({'password': password, 'data': {'username': username.trim()}})).timeout(const Duration(seconds: 20));
     if (update.statusCode < 200 || update.statusCode >= 300) throw StateError(_message(update.body, 'Email verified but profile setup failed. Sign in and try again.'));
     user = {...?user, ...Map<String, dynamic>.from(jsonDecode(update.body) as Map)};
