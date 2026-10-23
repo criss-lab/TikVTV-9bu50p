@@ -17,11 +17,18 @@ class InfinityVpnBridge extends ChangeNotifier {
   InfinityVpnState state = InfinityVpnState.disconnected;
   String? lastError;
   bool get connected => state == InfinityVpnState.connected;
+  bool _busy = false;
+  bool get busy => _busy;
+  bool _disposed = false;
+  void _notify() { if (!_disposed) notifyListeners(); }
+
+  @override
+  void dispose() { _disposed = true; super.dispose(); }
 
   Future<void> refresh() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
       state = InfinityVpnState.unsupported;
-      notifyListeners();
+      _notify();
       return;
     }
     try {
@@ -40,20 +47,23 @@ class InfinityVpnBridge extends ChangeNotifier {
       state = InfinityVpnState.failed;
       lastError = e.message ?? 'Unable to read VPN status';
     }
-    notifyListeners();
+    _notify();
   }
 
   /// Call only from an explicit user action. The native Android implementation
   /// must use VpnService.prepare and obtain system consent before connecting.
   Future<void> connect() async {
+    if (_busy || connected) return;
+    _busy = true;
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
       state = InfinityVpnState.unsupported;
-      notifyListeners();
+      _notify();
+      _busy = false;
       return;
     }
     state = InfinityVpnState.connecting;
     lastError = null;
-    notifyListeners();
+    _notify();
     try {
       final result = await _channel.invokeMethod<String>('connect');
       state = result == 'connected'
@@ -66,10 +76,13 @@ class InfinityVpnBridge extends ChangeNotifier {
       state = InfinityVpnState.failed;
       lastError = e.message ?? 'VPN connection failed';
     }
-    notifyListeners();
+    _busy = false;
+    _notify();
   }
 
   Future<void> disconnect() async {
+    if (_busy) return;
+    _busy = true;
     try {
       await _channel.invokeMethod<void>('disconnect');
       state = InfinityVpnState.disconnected;
@@ -80,6 +93,7 @@ class InfinityVpnBridge extends ChangeNotifier {
       state = InfinityVpnState.failed;
       lastError = e.message ?? 'VPN disconnection failed';
     }
-    notifyListeners();
+    _busy = false;
+    _notify();
   }
 }
