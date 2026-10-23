@@ -1,0 +1,23 @@
+name: Secondary IPTV discovery feeder
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+permissions:
+  contents: read
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Scan curated source directory into paged discovery candidates
+        run: node scripts/secondary-iptv-feeder.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: secondary-iptv-discovery
+          path: catalogue-discovery/
+          retention-days: 7
