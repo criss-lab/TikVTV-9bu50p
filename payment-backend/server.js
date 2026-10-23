@@ -307,6 +307,60 @@ async function route(req, res) {
       return json(res, 200, await verifyAndActivate(body.order_tracking_id));
     } catch (e) { console.error('Payment status check failed:', e.message); return json(res, e.status || 502, { error: e.message || 'Status check failed' }); }
   }
+  if (req.method === 'POST' && url.pathname === '/v1/guest/start') {
+    try {
+      requireDb();
+      const secret = crypto.randomBytes(32).toString('base64url');
+      const hash = crypto.createHash('sha256').update(secret).digest('hex');
+      await pool.query('INSERT INTO guest_preview_installations(token_hash) VALUES($1)', [hash]);
+      return json(res, 201, { guest_token: secret, previews_limit: 3 });
+    } catch (e) { return json(res, 503, { error: 'Guest preview unavailable' }); }
+  }
+  if (req.method === 'GET' && url.pathname === '/v1/guest/viewing-access') {
+    try {
+      requireDb();
+      const secret = (req.headers.authorization || '').replace(/^Bearer /, '');
+      if (!/^[A-Za-z0-9_-]{43}$/.test(secret)) return json(res, 401, { error: 'Guest session required' });
+      const hash = crypto.createHash('sha256').update(secret).digest('hex');
+      const channel = url.searchParams.get('channel_id')?.trim();
+      if (!channel || channel.length > 200) return json(res, 400, { error: 'Invalid channel' });
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const guest = await client.query('SELECT claimed_user_id FROM guest_preview_installations WHERE token_hash=$1 FOR UPDATE', [hash]);
+        if (!guest.rowCount || guest.rows[0].claimed_user_id) { await client.query('ROLLBACK'); return json(res, 403, { error: 'Guest session unavailable; sign in to continue' }); }
+        let preview = await client.query('SELECT expires_at FROM guest_channel_previews WHERE token_hash=$1 AND channel_id=$2', [hash, channel]);
+        const count = await client.query('SELECT COUNT(*)::int AS used FROM guest_channel_previews WHERE token_hash=$1', [hash]);
+        const used = count.rows[0].used;
+        if (!preview.rowCount && used < 3) preview = await client.query("INSERT INTO guest_channel_previews(token_hash,channel_id) VALUES($1,$2) RETURNING expires_at", [hash,channel]);
+        await client.query('COMMIT');
+        const expiry = preview.rows[0]?.expires_at || null;
+        return json(res, 200, { active:false, allowed: Boolean(expiry && new Date(expiry).getTime()>Date.now()), preview_ends_at:expiry, previews_used:used, previews_limit:3, stage:'guest' });
+      } catch(e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+    } catch(e) { console.error('Guest preview failed:',e.message); return json(res,503,{error:'Guest preview unavailable'}); }
+  }
+  if (req.method === 'POST' && url.pathname === '/v1/guest/claim') {
+    try {
+      const user = await authenticate(req); requireDb();
+      const body = await readBody(req);
+      if (typeof body.guest_token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(body.guest_token)) return json(res,400,{error:'Invalid guest token'});
+      const hash = crypto.createHash('sha256').update(body.guest_token).digest('hex');
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const guest = await client.query('SELECT claimed_user_id FROM guest_preview_installations WHERE token_hash=$1 FOR UPDATE',[hash]);
+        if (!guest.rowCount || (guest.rows[0].claimed_user_id && guest.rows[0].claimed_user_id!==user.id)) { await client.query('ROLLBACK'); return json(res,403,{error:'Guest preview already claimed or missing'}); }
+        const prior = await client.query('SELECT 1 FROM subscriptions WHERE user_id=$1',[user.id]);
+        const previous = await client.query('SELECT 1 FROM free_channel_previews WHERE user_id=$1 LIMIT 1',[user.id]);
+        if (prior.rowCount || previous.rowCount) { await client.query('ROLLBACK'); return json(res,409,{error:'Existing account preview cannot be reset'}); }
+        const other = await client.query('SELECT 1 FROM guest_preview_installations WHERE claimed_user_id=$1 AND token_hash<>$2',[user.id,hash]);
+        if (other.rowCount) { await client.query('ROLLBACK'); return json(res,409,{error:'Account already claimed a guest preview'}); }
+        await client.query('UPDATE guest_preview_installations SET claimed_user_id=$1,claimed_at=COALESCE(claimed_at,NOW()) WHERE token_hash=$2',[user.id,hash]);
+        await client.query('COMMIT');
+        return json(res,200,{claimed:true,previews_limit:7});
+      } catch(e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+    } catch(e) { console.error('Guest claim failed:',e.message); return json(res,e.status||503,{error:'Guest claim unavailable'}); }
+  }
   if (req.method === 'GET' && url.pathname === '/v1/viewing-access') {
     try {
       const user = await authenticate(req);
@@ -327,7 +381,9 @@ async function route(req, res) {
         let preview = await client.query('SELECT expires_at FROM free_channel_previews WHERE user_id=$1 AND channel_id=$2', [user.id, channelId]);
         const count = await client.query('SELECT COUNT(*)::int AS used FROM free_channel_previews WHERE user_id=$1', [user.id]);
         const used = count.rows[0].used;
-        if (!preview.rowCount && used < 7) {
+        const claimed = await client.query('SELECT token_hash FROM guest_preview_installations WHERE claimed_user_id=$1',[user.id]);
+        const guestChannel = claimed.rowCount ? await client.query('SELECT 1 FROM guest_channel_previews WHERE token_hash=$1 AND channel_id=$2',[claimed.rows[0].token_hash,channelId]) : {rowCount:0};
+        if (!preview.rowCount && used < 7 && !guestChannel.rowCount) {
           preview = await client.query("INSERT INTO free_channel_previews (user_id,channel_id,started_at,expires_at) VALUES ($1,$2,NOW(),NOW()+INTERVAL '15 minutes') ON CONFLICT (user_id,channel_id) DO UPDATE SET channel_id=EXCLUDED.channel_id RETURNING expires_at", [user.id,channelId]);
         }
         await client.query('COMMIT');
