@@ -61,7 +61,19 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> {
       const SizedBox(height: 20),
       if (kIsWeb) const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('On web, allow camera access in your browser. Use HTTPS and a device with a camera.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white70))),
       if (scanning) ...[
-        SizedBox(height: 290, child: MobileScanner(onDetect: scan, errorBuilder: (context, error, child) => Center(child: Padding(padding: const EdgeInsets.all(16), child: Text('Camera unavailable. Allow camera access in your browser or Android settings, then retry.', textAlign: TextAlign.center))))),
+        SizedBox(height: 290, child: MobileScanner(onDetect: scan, errorBuilder: (context, error, child) => Center(child: Padding(padding: const EdgeInsets.all(16), child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.no_photography_outlined, size: 42, color: Colors.orangeAccent),
+          const SizedBox(height: 12),
+          Text(error.errorCode == MobileScannerErrorCode.permissionDenied
+              ? 'Camera permission was denied. Allow Camera for TikVTV in Android Settings, then return and retry.'
+              : 'Unable to start the camera. Close other camera apps and retry. Details: ${error.errorCode.name}', textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          FilledButton.icon(onPressed: () async {
+            setState(() => scanning = false);
+            await Future<void>.delayed(const Duration(milliseconds: 150));
+            if (mounted) setState(() => scanning = true);
+          }, icon: const Icon(Icons.refresh), label: const Text('Retry camera')),
+        ]))))),
         TextButton.icon(onPressed: () => setState(() { scanning = false; message = null; }), icon: const Icon(Icons.close), label: const Text('Close scanner')),
       ],
       if (!scanning && challenge == null) FilledButton.icon(onPressed: () => setState(() { scanning = true; message = null; }), icon: const Icon(Icons.qr_code_scanner), label: const Text('Scan TV QR code')),
