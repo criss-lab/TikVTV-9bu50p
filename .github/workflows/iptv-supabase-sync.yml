@@ -1,0 +1,38 @@
+name: Supabase IPTV catalogue sync
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: iptv-supabase-catalogue-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: payment-backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: payment-backend/package-lock.json
+      - name: Validate secure database configuration
+        env:
+          IPTV_DATABASE_URL: ${{ secrets.IPTV_DATABASE_URL }}
+        run: |
+          if [ -z "$IPTV_DATABASE_URL" ]; then
+            echo "::error::Configure IPTV_DATABASE_URL as a GitHub Actions repository secret with the dedicated Supabase database connection string."
+            exit 1
+          fi
+          echo "Dedicated IPTV database secret is present."
+      - run: npm ci --omit=dev
+      - name: Sync unreviewed source discoveries into isolated IPTV schema
+        env:
+          IPTV_DATABASE_URL: ${{ secrets.IPTV_DATABASE_URL }}
+        run: node sync-iptv-catalogue.js
