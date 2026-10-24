@@ -51,7 +51,7 @@ jobs:
             X-Content-Type-Options: nosniff
             Referrer-Policy: strict-origin-when-cross-origin
             X-Frame-Options: DENY
-            Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+            Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=()
           /index.html
             Cache-Control: no-cache, max-age=0, must-revalidate
           /flutter_bootstrap.js
@@ -59,6 +59,8 @@ jobs:
           /main.dart.js
             Cache-Control: no-cache, max-age=0, must-revalidate
           EOF
+          grep -Fq 'Permissions-Policy: camera=(self)' build/web/_headers
+          ! grep -Fq 'Permissions-Policy: camera=()' build/web/_headers
           ! grep -q 'src="/src/main.tsx"' build/web/index.html
       - uses: actions/upload-artifact@v4
         with:

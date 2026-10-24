@@ -68,6 +68,15 @@ jobs:
         run: python3 tool/configure_signing.py
       - name: Build obfuscated Flutter release APK
         run: flutter build apk --release --obfuscate --split-debug-info=build/symbols --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+      - name: Verify camera permission is packaged in the Flutter release APK
+        run: |
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          test -s "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          AAPT="$(dirname "$APKSIGNER")/aapt"
+          test -x "$AAPT"
+          "$AAPT" dump permissions "$APK" | grep -Fq 'android.permission.CAMERA' || { echo '::error::Flutter release APK is missing android.permission.CAMERA'; exit 1; }
+          echo 'Verified: CAMERA permission is present in the final Flutter release APK.'
       - name: Verify APK signature and package metadata
         run: |
           APK=build/app/outputs/flutter-apk/app-release.apk
