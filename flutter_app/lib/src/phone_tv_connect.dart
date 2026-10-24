@@ -166,7 +166,7 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
       const SizedBox(height: 20),
       if (kIsWeb) const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('On web, allow camera access in your browser. Use HTTPS and a device with a camera.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white70))),
       if (scanning) ...[
-        SizedBox(height: 290, child: MobileScanner(controller: scannerController, onDetect: scan, errorBuilder: (context, error, child) => Center(child: Padding(padding: const EdgeInsets.all(16), child: Column(mainAxisSize: MainAxisSize.min, children: [
+        SizedBox(height: 290, child: MobileScanner(controller: scannerController, onDetect: scan, errorBuilder: (context, error) => Center(child: Padding(padding: const EdgeInsets.all(16), child: Column(mainAxisSize: MainAxisSize.min, children: [
           const Icon(Icons.no_photography_outlined, size: 42, color: Colors.orangeAccent),
           const SizedBox(height: 12),
           Text(error.errorCode == MobileScannerErrorCode.permissionDenied
