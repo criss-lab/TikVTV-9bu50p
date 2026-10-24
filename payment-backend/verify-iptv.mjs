@@ -1,7 +1,7 @@
 // Bounded, opt-in verification worker. Run with INFINITY_IPTV_DATABASE_URL and INFINITY_IPTV_CA_CERT.
 // Does not approve rights or sources. HTTPS only, no redirects, public DNS/IP only.
 import pg from 'pg';
-import { probe } from './iptv-safe-probe.mjs';
+import { verifyPlayback } from './iptv-playback.mjs';
 const { Pool } = pg;
 const uri = new URL(process.env.INFINITY_IPTV_DATABASE_URL || 'postgres://missing:missing@localhost/missing');
 for (const key of ['sslmode','sslcert','sslkey','sslrootcert','uselibpqcompat']) uri.searchParams.delete(key);
@@ -15,10 +15,10 @@ try {
   const rows=await pool.query("SELECT id,stream_url FROM iptv.streams WHERE rights_status <> 'rejected' AND (checked_at IS NULL OR checked_at < NOW()-INTERVAL '12 hours') ORDER BY checked_at ASC NULLS FIRST,id ASC LIMIT $1",[limit]);
   let checked=0,healthy=0,unhealthy=0,inconclusive=0;
   for(const row of rows.rows) {
-    const result=await probe(row.stream_url);
-    await pool.query("INSERT INTO iptv.stream_checks(stream_id,outcome,http_status,media_type,playback_format,latency_ms,reason_code,checker_version) VALUES($1,$2,$3,$4,$5,$6,$7,'http-probe-v1')",[row.id,result.outcome,result.status||null,result.type||null,result.format||'unknown',result.latency||null,result.reason]);
+    const result=await verifyPlayback(row.stream_url);
+    await pool.query("INSERT INTO iptv.stream_checks(stream_id,outcome,http_status,media_type,playback_format,latency_ms,reason_code,checker_version) VALUES($1,$2,$3,$4,$5,$6,$7,'manifest-sample-v1')",[row.id,result.outcome,result.status||null,result.type||null,result.format||'unknown',result.latency||null,result.reason]);
     // HTTP-only results cannot promote a stream to healthy.
-    await pool.query("UPDATE iptv.streams SET checked_at=NOW(),health_status=CASE WHEN $2='unhealthy' THEN 'unhealthy' ELSE health_status END WHERE id=$1",[row.id,result.outcome]);
+    await pool.query("UPDATE iptv.streams SET checked_at=NOW(),health_status=CASE WHEN $2='unhealthy' THEN 'unhealthy' ELSE 'unknown' END WHERE id=$1",[row.id,result.outcome]);
     checked++;if(result.outcome==='healthy')healthy++;else if(result.outcome==='unhealthy')unhealthy++;else inconclusive++;
   }
   await pool.query("UPDATE iptv.verification_runs SET status='completed',completed_at=NOW(),checked_count=$2,healthy_count=$3,unhealthy_count=$4,inconclusive_count=$5 WHERE id=$1",[run,checked,healthy,unhealthy,inconclusive]);
