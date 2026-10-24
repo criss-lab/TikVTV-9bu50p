@@ -22,10 +22,11 @@ test('guest preview API validates bearer format and channel ID before allocation
 
 test('guest allocations are serialized and capped at three distinct channels', async () => {
   const server = await read('../server.js');
+  const schema = await read('../schema.sql');
   assert.match(server, /await client\.query\('BEGIN'\)/);
   assert.match(server, /SELECT COUNT\(\*\)::int AS used FROM guest_channel_previews WHERE token_hash=\$1/);
   assert.match(server, /if \(!preview\.rowCount && used < 3\)/);
-  assert.match(server, /PRIMARY KEY\(token_hash,channel_id\)/);
+  assert.match(schema, /PRIMARY KEY\(token_hash,channel_id\)/);
 });
 
 test('guest preview expiry is immutable and enforced by server time', async () => {
@@ -42,7 +43,7 @@ test('guest claim requires authenticated identity and cannot reset an existing a
   const server = await read('../server.js');
   assert.match(server, /url\.pathname === '\/v1\/guest\/claim'/);
   assert.match(server, /const user = await authenticate\(req\)/);
-  assert.match(server, /guest_token: string/); // documented request shape in server implementation
+  assert.match(server, /typeof body\.guest_token !== 'string'/);
   assert.match(server, /Existing account preview cannot be reset/);
   assert.match(server, /guest_preview_installations WHERE claimed_user_id=\$1 AND token_hash<>\$2/);
 });
@@ -69,7 +70,7 @@ test('catalogue publication remains fail-closed and only approved, healthy HTTPS
   assert.match(route, /t\.stream_url LIKE 'https:\/\/%'/);
 });
 
-test('this guest-only guard suite does not edit payment plans, checkout, IPN, or TV pairing', async () => {
+test('guest-only guard suite leaves payment plans, checkout, IPN, and TV pairing files untouched', async () => {
   const packageJson = JSON.parse(await read('../package.json'));
   assert.equal(packageJson.scripts.test, 'node --test');
   const plans = await read('../plans.js');
