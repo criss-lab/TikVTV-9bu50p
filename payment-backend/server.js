@@ -443,4 +443,4 @@ const server = http.createServer((req, res) => {
   route(req, res).catch(error => { console.error('Unhandled payment API error:', error.message); if (!res.headersSent) json(res, 500, { error: 'Internal server error' }); });
 });
 server.listen(port, '0.0.0.0');
-process.on('SIGTERM', async () => { server.close(); if (pool) await pool.end(); });
+process.on('SIGTERM', async () => { server.close(); await Promise.allSettled([pool?.end(), cataloguePool?.end()]); });
