@@ -56,15 +56,22 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
   Future<void> _openLandscape() async {
     if (_gate.locked || _player.channel?.id != widget.channels[_index].id) return;
     await Navigator.of(context).push<void>(MaterialPageRoute(
-      builder: (_) => _LandscapePlayer(
-        player: _player,
-        gate: _gate,
-        channels: widget.channels,
-        currentIndex: _index,
-        onPlayChannel: (index) {
-          Navigator.of(context).pop();
-          _focus(index);
-        },
+      builder: (_) => StatefulBuilder(
+        builder: (routeContext, refreshLandscape) => _LandscapePlayer(
+          player: _player,
+          gate: _gate,
+          channels: widget.channels,
+          currentIndex: _index,
+          onPlayChannel: (index) {
+            if (!mounted || index < 0 || index >= widget.channels.length) return;
+            // Change the shared decoder and the feed's selected page without
+            // popping the fullscreen route. Only the exit button restores portrait.
+            _focusDebounce?.cancel();
+            _focus(index);
+            if (_pages.hasClients) _pages.jumpToPage(index);
+            refreshLandscape(() {});
+          },
+        ),
       ),
     ));
   }
@@ -121,7 +128,7 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
   }
 
   void _onPageChanged(int index) {
-    if (!mounted || index < 0 || index >= widget.channels.length) return;
+    if (!mounted || index < 0 || index >= widget.channels.length || index == _index) return;
     // Update selection immediately, but wait for a short settle window before
     // creating a native decoder. Fast multi-page swipes won't open every stream.
     setState(() { _index = index; _showHints = index == 0; });
@@ -582,7 +589,7 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
                       style: const TextStyle(color: Colors.white70, fontSize: 12)),
                     const SizedBox(height: 12),
                     SizedBox(width: double.infinity, child: FilledButton.icon(
-                      onPressed: () => widget.onPlayChannel(widget.currentIndex + 1),
+                      onPressed: () { _dismissSuggestion(); widget.onPlayChannel(widget.currentIndex + 1); },
                       icon: const Icon(Icons.play_arrow),
                       label: const Text('Play next channel'),
                     )),
