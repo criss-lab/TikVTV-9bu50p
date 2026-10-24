@@ -378,6 +378,8 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
   Timer? _suggestionTimer;
   double _lastAppliedValue = -1;
   bool _applyingNativeValue = false;
+  double? _pendingNativeValue;
+  String? _pendingNativeKind;
 
   @override
   void initState() {
@@ -428,16 +430,42 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
     if (kind == null) return;
     final next = (_gestureStartValue + (_gestureStartY - y) / 220).clamp(0.0, 1.0).toDouble();
     setState(() => _gestureValue = next);
-    // Native calls can be expensive; avoid duplicate values during high-rate touch events.
-    if (_applyingNativeValue || (next - _lastAppliedValue).abs() < 0.015) return;
+
+    // Keep only the latest desired native value while a platform call is in
+    // flight. A serialized drain prevents dropped end-of-gesture updates and
+    // avoids flooding the platform channel with every pointer event.
+    if ((next - _lastAppliedValue).abs() < 0.015) return;
     _lastAppliedValue = next;
+    _pendingNativeKind = kind;
+    _pendingNativeValue = next;
+    if (!_applyingNativeValue) unawaited(_drainNativeUpdates());
+  }
+
+  Future<void> _drainNativeUpdates() async {
+    if (_applyingNativeValue) return;
     _applyingNativeValue = true;
-    final apply = kind == 'volume'
-      ? VolumeController.instance.setVolume(next)
-      : ScreenBrightness.instance.setApplicationScreenBrightness(next);
-    unawaited(apply.catchError((Object e) {
-      debugPrint('Landscape $kind adjustment failed: $e');
-    }).whenComplete(() { _applyingNativeValue = false; }));
+    try {
+      while (mounted && _pendingNativeValue != null && _pendingNativeKind != null) {
+        final value = _pendingNativeValue!;
+        final kind = _pendingNativeKind!;
+        _pendingNativeValue = null;
+        _pendingNativeKind = null;
+        try {
+          if (kind == 'volume') {
+            await VolumeController.instance.setVolume(value);
+          } else {
+            await ScreenBrightness.instance.setApplicationScreenBrightness(value);
+          }
+        } catch (error) {
+          debugPrint('Landscape $kind adjustment failed: $error');
+        }
+      }
+    } finally {
+      _applyingNativeValue = false;
+      if (mounted && _pendingNativeValue != null && _pendingNativeKind != null) {
+        unawaited(_drainNativeUpdates());
+      }
+    }
   }
 
   void _endSwipe() {
