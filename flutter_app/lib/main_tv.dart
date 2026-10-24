@@ -298,7 +298,7 @@ class _TvPlayerState extends State<TvPlayer> {
     final controller = widget.player.controller;
     return Scaffold(body: Focus(onKeyEvent: (node, event) {
       if (event is! KeyDownEvent) return KeyEventResult.ignored;
-      if (event.logicalKey == LogicalKeyboardKey.select || event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.mediaPlayPause || event.logicalKey == LogicalKeyboardKey.space) {
+      if (event.logicalKey == LogicalKeyboardKey.mediaPlayPause) {
         unawaited(togglePlayback()); return KeyEventResult.handled;
       }
       if (event.logicalKey == LogicalKeyboardKey.arrowUp || event.logicalKey == LogicalKeyboardKey.arrowDown) { showControls(); }
