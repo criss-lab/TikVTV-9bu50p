@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
+import 'package:screen_brightness/screen_brightness.dart';
+import 'package:volume_controller/volume_controller.dart';
 import 'catalogue.dart';
 import 'playback.dart';
 import 'playback_gate.dart';
@@ -355,11 +357,18 @@ class _LandscapePlayer extends StatefulWidget {
 }
 
 class _LandscapePlayerState extends State<_LandscapePlayer> {
+  double? _gestureValue;
+  String? _gestureKind;
+  double _gestureStartY = 0;
+  double _gestureStartValue = 0;
+  bool _gestureBusy = false;
+
   @override
   void initState() {
     super.initState();
     widget.player.addListener(_refresh);
     widget.gate.addListener(_refresh);
+    VolumeController.instance.showSystemUI = false;
     SystemChrome.setPreferredOrientations(const [
       DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight,
     ]);
@@ -367,6 +376,39 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
   }
 
   void _refresh() { if (mounted) setState(() {}); }
+
+  Future<void> _beginSwipe(bool leftSide, double y) async {
+    if (_gestureBusy) return;
+    _gestureBusy = true;
+    try {
+      final value = leftSide ? await VolumeController.instance.getVolume() : await ScreenBrightness().current;
+      if (!mounted) return;
+      setState(() {
+        _gestureKind = leftSide ? 'volume' : 'brightness';
+        _gestureStartValue = value.clamp(0.0, 1.0);
+        _gestureValue = _gestureStartValue;
+        _gestureStartY = y;
+      });
+    } catch (e) { debugPrint('Landscape swipe control read failed: $e'); }
+    finally { _gestureBusy = false; }
+  }
+
+  void _updateSwipe(double y) {
+    final kind = _gestureKind;
+    if (kind == null) return;
+    final next = (_gestureStartValue + (_gestureStartY - y) / 220).clamp(0.0, 1.0);
+    setState(() => _gestureValue = next);
+    if (kind == 'volume') {
+      VolumeController.instance.setVolume(next);
+    } else {
+      ScreenBrightness().setScreenBrightness(next);
+    }
+  }
+
+  void _endSwipe() {
+    if (_gestureKind == null) return;
+    setState(() { _gestureKind = null; _gestureValue = null; });
+  }
 
   @override
   void dispose() {
