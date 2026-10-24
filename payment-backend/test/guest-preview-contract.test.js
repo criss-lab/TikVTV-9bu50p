@@ -88,6 +88,6 @@ test('catalogue pagination rejects malformed values before database query', asyn
   const end = server.indexOf("url.pathname === '/health'", start);
   const route = server.slice(start, end);
   assert.ok(start >= 0 && end > start, 'catalogue route exists');
-  assert.match(route, /!\/^\\d\+\$\/.test\(rawLimit\)/);
-  assert.match(route, /!\/^\\d\+\$\/.test\(rawCursor\)/);
+  assert.ok(route.includes("!/^\\\\d+$/.test(rawLimit)"), 'limit is validated as digits');
+  assert.ok(route.includes("!/^\\\\d+$/.test(rawCursor)"), 'cursor is validated as digits');
 });
