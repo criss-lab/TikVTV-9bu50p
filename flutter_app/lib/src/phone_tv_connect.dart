@@ -108,6 +108,11 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
       setState(() => message = 'Invalid TV pairing challenge. Generate a fresh link on your TV.');
       return;
     }
+    // Invalidate any in-flight camera start before leaving scanner mode; otherwise
+    // a slow platform start can finish after a successful QR decode and keep camera active.
+    scannerShouldRun = false;
+    scannerAttempt++;
+    scannerStartQueued = false;
     code.clear();
     setState(() { challenge = value; scanning = false; message = null; });
     _stopScanner();
