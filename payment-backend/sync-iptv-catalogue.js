@@ -43,11 +43,15 @@ async function run(source) {
    const client=await pool.connect();
    try {
     await client.query('BEGIN');
-    for(const row of rows) {
-     await client.query(`insert into iptv.streams(source_id,source_channel_id,name,stream_url,url_hash,country,logo_url,category,last_seen_at)
-      values($1,$2,$3,$4,$5,$6,$7,$8,now())
-      on conflict(source_id,url_hash) do update set last_seen_at=now(),name=excluded.name,logo_url=excluded.logo_url`,row);
-    }
+    const values=[];
+    const placeholders=rows.map((row,i)=>{
+      values.push(...row);
+      const p=Array.from({length:8},(_,j)=>'$'+(i*8+j+1));
+      return '('+p.join(',')+',now())';
+    });
+    await client.query(`insert into iptv.streams(source_id,source_channel_id,name,stream_url,url_hash,country,logo_url,category,last_seen_at)
+      values ${placeholders.join(',')}
+      on conflict(source_id,url_hash) do update set last_seen_at=now(),name=excluded.name,logo_url=excluded.logo_url`,values);
     await client.query('COMMIT');
    }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
    accepted+=rows.length;rows.length=0;
