@@ -329,6 +329,25 @@ async function fetchExtraSources(): Promise<IPTVChannel[]> {
   return results.flat();
 }
 
+async function fetchApprovedCatalogue(): Promise<IPTVChannel[]> {
+  const base = ((import.meta.env.VITE_PAYMENT_API_URL as string | undefined) || 'https://tikvtv-payment-api.onrender.com').replace(/\\/$/, '');
+  const approved: IPTVChannel[] = [];
+  let after = 0;
+  for (let page = 0; page < 200; page++) {
+    const response = await fetch(`${base}/v1/catalogue?limit=100&after=${after}`, { signal: AbortSignal.timeout(12000) });
+    if (!response.ok) throw new Error('Approved catalogue unavailable');
+    const payload = await response.json();
+    if (payload.publication !== 'approved_only' || !Array.isArray(payload.channels)) throw new Error('Unexpected catalogue response');
+    for (const row of payload.channels) {
+      if (!row || !browserHls(row.stream_url) || !row.name) continue;
+      approved.push({ id: `approved-${row.id}`, name: row.name, logo: row.logo_url || genLogoUrl(row.name), country: row.country || 'INT', countryCode: row.country || 'INT', languages: row.language ? [row.language] : [], categories: [normalizeCategory(row.category || 'general')], streamUrl: row.stream_url, alt_names: [] });
+    }
+    if (!payload.next_cursor || !payload.channels.length || payload.next_cursor <= after) break;
+    after = payload.next_cursor;
+  }
+  return approved;
+}
+
 export async function fetchAllChannels(): Promise<IPTVChannel[]> {
   if (memCache && memCache.length > 0) return memCache;
 
@@ -347,10 +366,11 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
   console.log('[IPTV] Fetching everything…');
 
   try {
-    const [chanRes, streamRes, extraChannels] = await Promise.all([
+    const [chanRes, streamRes, extraChannels, approvedChannels] = await Promise.all([
       fetch(CHANNELS_API),
       fetch(STREAMS_API),
       fetchExtraSources(),
+      fetchApprovedCatalogue().catch(error => { console.warn('[IPTV] Approved catalogue unavailable:', error); return [] as IPTVChannel[]; }),
     ]);
 
     if (!chanRes.ok || !streamRes.ok) throw new Error('Primary API error');
@@ -385,7 +405,7 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
     const existingIds = new Set(primary.map(ch => ch.id.toLowerCase()));
     const existingUrls = new Set(primary.map(ch => ch.streamUrl.trim()));
     const deduped: IPTVChannel[] = [];
-    for (const ch of extraChannels) {
+    for (const ch of [...extraChannels, ...approvedChannels]) {
       const id = ch.id.toLowerCase();
       const url = ch.streamUrl.trim();
       if (!browserHls(url) || !ch.name || ch.name.length < 2 ||
