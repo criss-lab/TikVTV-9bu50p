@@ -13,29 +13,93 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
   final MobileScannerController scannerController = MobileScannerController(autoStart: false, facing: CameraFacing.back, detectionSpeed: DetectionSpeed.noDuplicates);
   final manualLink = TextEditingController();
   bool scannerStarting = false;
+  bool scannerShouldRun = false;
+  bool scannerStartQueued = false;
+  String? scannerDiagnostic;
+  int scannerAttempt = 0;
   String? scannerFailure;
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!scanning || kIsWeb) return;
-    if (state == AppLifecycleState.resumed) { _startScanner(); }
-    else if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) { scannerController.stop(); }
+    if (kIsWeb || !scanning) return;
+    if (state == AppLifecycleState.resumed) {
+      scannerShouldRun = true;
+      _requestScannerStart();
+    } else if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      scannerShouldRun = false;
+      scannerAttempt++;
+      scannerStartQueued = false;
+      _stopScanner();
+    }
   }
+
+  void _requestScannerStart() {
+    if (!mounted || !scanning || !scannerShouldRun || kIsWeb) return;
+    if (scannerStarting) {
+      scannerStartQueued = true;
+      return;
+    }
+    _startScanner();
+  }
+
   Future<void> _startScanner() async {
-    if (!mounted || !scanning || scannerStarting) return;
+    if (!mounted || !scanning || !scannerShouldRun || kIsWeb || scannerStarting) return;
     scannerStarting = true;
+    final attempt = ++scannerAttempt;
     try {
       await scannerController.stop();
-      if (!mounted || !scanning) return;
+      if (!mounted || !scanning || !scannerShouldRun || attempt != scannerAttempt) return;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if (!mounted || !scanning || !scannerShouldRun || attempt != scannerAttempt) return;
       await scannerController.start();
-      if (mounted) setState(() => scannerFailure = null);
-    } catch (e) {
-      debugPrint('TV pairing scanner start failed: $e');
-      if (mounted) setState(() => scannerFailure = 'Camera initialization failed. You can retry or enter the TV pairing link manually.');
-    } finally { scannerStarting = false; }
+      if (mounted && attempt == scannerAttempt && scannerShouldRun) {
+        setState(() { scannerFailure = null; scannerDiagnostic = null; });
+      } else {
+        await scannerController.stop();
+      }
+    } catch (e, stack) {
+      debugPrint('TV pairing scanner start failed (attempt $attempt): $e\\n$stack');
+      if (mounted && attempt == scannerAttempt) setState(() {
+        scannerDiagnostic = e.toString();
+        scannerFailure = 'Camera could not be initialized. Check Android Camera permission, close apps using the camera, then retry. If it still fails, share the diagnostic below.';
+      });
+    } finally {
+      scannerStarting = false;
+      if (scannerStartQueued && mounted && scanning && scannerShouldRun) {
+        scannerStartQueued = false;
+        _requestScannerStart();
+      }
+    }
   }
-  Future<void> _stopScanner() async { await scannerController.stop(); }
-  void _openScanner() { setState(() { scanning = true; scannerFailure = null; message = null; }); WidgetsBinding.instance.addPostFrameCallback((_) => _startScanner()); }
-  Future<void> _retryScanner() async { await _stopScanner(); if (mounted) _startScanner(); }
+
+  Future<void> _stopScanner() async {
+    try {
+      await scannerController.stop();
+    } catch (e, stack) {
+      debugPrint('TV pairing scanner stop failed: $e\\n$stack');
+    }
+  }
+
+  void _openScanner() {
+    setState(() { scanning = true; scannerFailure = null; scannerDiagnostic = null; message = null; });
+    scannerShouldRun = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _requestScannerStart());
+  }
+
+  Future<void> _retryScanner() async {
+    if (!mounted || !scanning) return;
+    scannerShouldRun = true;
+    scannerAttempt++;
+    try {
+      await scannerController.stop();
+    } catch (e) {
+      debugPrint('Scanner stop before retry: $e');
+    }
+    if (mounted && scanning && scannerShouldRun) _requestScannerStart();
+  }
+
   void _acceptLink(String input) {
     final uri = Uri.tryParse(input.trim());
     if (uri?.scheme != 'https' || !['streamora.co.ke','www.streamora.co.ke'].contains(uri?.host) || uri?.path != '/tv-pair') { setState(() => message = 'Enter the complete HTTPS pairing link shown on your TV.'); return; }
@@ -44,6 +108,11 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
       setState(() => message = 'Invalid TV pairing challenge. Generate a fresh link on your TV.');
       return;
     }
+    // Invalidate any in-flight camera start before leaving scanner mode; otherwise
+    // a slow platform start can finish after a successful QR decode and keep camera active.
+    scannerShouldRun = false;
+    scannerAttempt++;
+    scannerStartQueued = false;
     code.clear();
     setState(() { challenge = value; scanning = false; message = null; });
     _stopScanner();
@@ -102,12 +171,15 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
           const SizedBox(height: 12),
           Text(error.errorCode == MobileScannerErrorCode.permissionDenied
               ? 'Camera permission was denied. Allow Camera for TikVTV in Android Settings, then return and retry.'
-              : 'Unable to start the camera. Close other camera apps and retry. Details: ${error.errorCode.name}', textAlign: TextAlign.center),
+              : 'Unable to start the camera. Close other camera apps and retry. Error: ${error.errorCode.name}\n${error.toString()}', textAlign: TextAlign.center),
           const SizedBox(height: 12),
           FilledButton.icon(onPressed: _retryScanner, icon: const Icon(Icons.refresh), label: const Text('Retry camera')),
         ]))))),
         if (scannerFailure != null) Padding(padding: const EdgeInsets.all(8), child: Text(scannerFailure!, textAlign: TextAlign.center)),
-        TextButton.icon(onPressed: () { _stopScanner(); setState(() { scanning = false; message = null; }); }, icon: const Icon(Icons.close), label: const Text('Close scanner')),
+        if (scannerDiagnostic != null) Padding(padding: const EdgeInsets.all(8), child: SelectableText('Camera diagnostic: $scannerDiagnostic', textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: Colors.white54))),
+        TextButton.icon(onPressed: () { _stopScanner(); scannerShouldRun = false;
+          scannerAttempt++;
+          setState(() { scanning = false; message = null; }); }, icon: const Icon(Icons.close), label: const Text('Close scanner')),
       ],
       if (!scanning && challenge == null) FilledButton.icon(onPressed: _openScanner, icon: const Icon(Icons.qr_code_scanner), label: const Text('Scan TV QR code')),
       if (challenge == null) ...[
