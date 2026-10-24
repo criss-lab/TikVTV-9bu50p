@@ -9,7 +9,7 @@ const paymentEnvironment = String(process.env.PESAPAL_ENVIRONMENT || '').trim().
 const environmentConfigured = paymentEnvironment === 'live' || paymentEnvironment === 'sandbox';
 const live = paymentEnvironment === 'live';
 const base = live ? 'https://pay.pesapal.com/v3' : 'https://cybqa.pesapal.com/pesapalv3';
-const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: true }, max: 5, idleTimeoutMillis: 10000, connectionTimeoutMillis: 10000 }) : null;
+const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: true }, max: Math.min(10, Math.max(2, Number(process.env.PG_POOL_MAX || 5))), idleTimeoutMillis: 10000, connectionTimeoutMillis: 3000, statement_timeout: 8000, query_timeout: 9000, application_name: 'tikvtv-payment-api' }) : null;
 const cataloguePool = process.env.IPTV_DATABASE_URL ? new Pool({ connectionString: process.env.IPTV_DATABASE_URL, ssl: { rejectUnauthorized: true }, max: 3, connectionTimeoutMillis: 3000, statement_timeout: 8000, application_name: 'tikvtv-approved-catalogue' }) : null;
 const allowedOrigins = new Set((process.env.CORS_ORIGINS || 'https://streamora.co.ke,https://www.streamora.co.ke').split(',').map(x => x.trim()).filter(Boolean));
 const json = (res, status, data) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); res.end(JSON.stringify(data)); };
@@ -276,7 +276,7 @@ async function route(req, res) {
       if (!cataloguePool) return json(res, 503, { error: 'Approved catalogue database is not configured' });
       const rawLimit = url.searchParams.get('limit') || '30';
       const rawCursor = url.searchParams.get('after') || '0';
-      if (!/^\d+$/.test(rawLimit) || !/^\d+$/.test(rawCursor)) return json(res, 400, { error: 'Invalid catalogue pagination' });
+      if (!/^\\d+$/.test(rawLimit) || !/^\\d+$/.test(rawCursor)) return json(res, 400, { error: 'Invalid catalogue pagination' });
       const requestedLimit = Number(rawLimit);
       const cursor = Number(rawCursor);
       if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || !Number.isSafeInteger(cursor) || cursor < 0) return json(res, 400, { error: 'Invalid catalogue pagination' });
@@ -407,7 +407,12 @@ async function route(req, res) {
         let preview = await client.query('SELECT expires_at FROM free_channel_previews WHERE user_id=$1 AND channel_id=$2', [user.id, channelId]);
         const count = await client.query('SELECT COUNT(*)::int AS used FROM free_channel_previews WHERE user_id=$1', [user.id]);
         const used = count.rows[0].used;
-        if (!preview.rowCount && used < 7) {
+        const claimed = await client.query('SELECT token_hash FROM guest_preview_installations WHERE claimed_user_id=$1',[user.id]);
+        const guestChannel = claimed.rowCount ? await client.query('SELECT expires_at FROM guest_channel_previews WHERE token_hash=$1 AND channel_id=$2',[claimed.rows[0].token_hash,channelId]) : {rowCount:0};
+        // Claiming a guest session preserves its original three channel deadlines.
+        // Those channels are separate from the seven additional signed-in previews.
+        if (guestChannel.rowCount) {
+          
           preview = await client.query("INSERT INTO free_channel_previews (user_id,channel_id,started_at,expires_at) VALUES ($1,$2,NOW(),NOW()+INTERVAL '15 minutes') ON CONFLICT (user_id,channel_id) DO UPDATE SET channel_id=EXCLUDED.channel_id RETURNING expires_at", [user.id,channelId]);
         }
         await client.query('COMMIT');
