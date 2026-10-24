@@ -64,7 +64,7 @@ test('catalogue publication remains fail-closed and only approved, healthy HTTPS
   const end = server.indexOf("url.pathname === '/health'", start);
   const route = server.slice(start, end);
   assert.ok(start >= 0 && end > start, 'catalogue route exists');
-  assert.match(route, /if \(!cataloguePool\) return json\(res, 503/);
+  assert.match(route, /if \(!cataloguePools\.length\) return json\(res, 503/);
   assert.match(route, /s\.enabled=TRUE AND s\.publication_approved=TRUE/);
   assert.match(route, /t\.rights_status='approved' AND t\.health_status='healthy'/);
   assert.match(route, /t\.stream_url LIKE 'https:\/\/%'/);

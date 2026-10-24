@@ -11,6 +11,13 @@ const live = paymentEnvironment === 'live';
 const base = live ? 'https://pay.pesapal.com/v3' : 'https://cybqa.pesapal.com/pesapalv3';
 const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: true }, max: Math.min(10, Math.max(2, Number(process.env.PG_POOL_MAX || 5))), idleTimeoutMillis: 10000, connectionTimeoutMillis: 3000, statement_timeout: 8000, query_timeout: 9000, application_name: 'tikvtv-payment-api' }) : null;
 const cataloguePool = process.env.IPTV_DATABASE_URL ? new Pool({ connectionString: process.env.IPTV_DATABASE_URL, ssl: { rejectUnauthorized: true }, max: 3, connectionTimeoutMillis: 3000, statement_timeout: 8000, application_name: 'tikvtv-approved-catalogue' }) : null;
+// Optional second approved catalogue. Set this to infinity-vpn's dedicated Postgres connection string.
+// Never use a browser anon key here; this connection stays server-side.
+const infinityCataloguePool = process.env.INFINITY_IPTV_DATABASE_URL ? new Pool({ connectionString: process.env.INFINITY_IPTV_DATABASE_URL, ssl: { rejectUnauthorized: true }, max: 2, connectionTimeoutMillis: 3000, statement_timeout: 8000, application_name: 'tikvtv-infinity-catalogue' }) : null;
+const cataloguePools = [
+  ...(cataloguePool ? [{ pool: cataloguePool, prefix: '' }] : []),
+  ...(infinityCataloguePool ? [{ pool: infinityCataloguePool, prefix: 'infinity-' }] : []),
+];
 const allowedOrigins = new Set((process.env.CORS_ORIGINS || 'https://streamora.co.ke,https://www.streamora.co.ke').split(',').map(x => x.trim()).filter(Boolean));
 const json = (res, status, data) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); res.end(JSON.stringify(data)); };
 const configured = () => Boolean(environmentConfigured && process.env.PESAPAL_CONSUMER_KEY && process.env.PESAPAL_CONSUMER_SECRET && process.env.PESAPAL_IPN_ID);
@@ -270,25 +277,47 @@ async function route(req, res) {
       })),
     });
   }
-  // Production catalogue is fail-closed: discovery imports are never automatically published.
+  // Both catalogues use the same fail-closed publication gate. Infinity additions remain hidden
+  // until their source is enabled, rights are approved, and health is verified.
   if (req.method === 'GET' && url.pathname === '/v1/catalogue') {
     try {
-      if (!cataloguePool) return json(res, 503, { error: 'Approved catalogue database is not configured' });
+      if (!cataloguePools.length) return json(res, 503, { error: 'Approved catalogue database is not configured' });
       const rawLimit = url.searchParams.get('limit') || '30';
       const rawCursor = url.searchParams.get('after') || '0';
       if (!/^\\d+$/.test(rawLimit) || !/^\\d+$/.test(rawCursor)) return json(res, 400, { error: 'Invalid catalogue pagination' });
       const requestedLimit = Number(rawLimit);
       const cursor = Number(rawCursor);
-      if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || !Number.isSafeInteger(cursor) || cursor < 0) return json(res, 400, { error: 'Invalid catalogue pagination' });
+      if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || !Number.isSafeInteger(cursor) || cursor < 0 || cursor > 50000) return json(res, 400, { error: 'Invalid catalogue pagination' });
       const limit = Math.min(100, requestedLimit);
-      const result = await cataloguePool.query(`SELECT id,name,stream_url,country,logo_url,category,language,url_hash FROM (
-          SELECT DISTINCT ON (t.url_hash) t.id,t.name,t.stream_url,t.country,t.logo_url,t.category,t.language,t.url_hash
-          FROM iptv.streams t JOIN iptv.sources s ON s.id=t.source_id
-          WHERE s.enabled=TRUE AND s.publication_approved=TRUE AND t.rights_status='approved' AND t.health_status='healthy'
-            AND t.stream_url LIKE 'https://%'
-          ORDER BY t.url_hash,t.id
-        ) approved WHERE id>$1 ORDER BY id LIMIT $2`, [cursor, limit]);
-      return json(res, 200, { channels: result.rows.map(({url_hash, ...channel}) => channel), next_cursor: result.rows.length ? result.rows[result.rows.length-1].id : null, publication: 'approved_only' });
+      // The API cursor is a global offset across the merged catalogue, not a database row ID.
+      // Overscan each source so cross-source URL deduplication does not prematurely end a page.
+      const scanLimit = Math.min(50000, cursor + limit + 5000);
+      const sourceRows = await Promise.all(cataloguePools.map(async ({ pool, prefix }, sourceIndex) => {
+        const result = await pool.query(`SELECT id,name,stream_url,country,logo_url,category,language,url_hash FROM (
+            SELECT DISTINCT ON (t.url_hash) t.id,t.name,t.stream_url,t.country,t.logo_url,t.category,t.language,t.url_hash
+            FROM iptv.streams t JOIN iptv.sources s ON s.id=t.source_id
+            WHERE s.enabled=TRUE AND s.publication_approved=TRUE AND t.rights_status='approved' AND t.health_status='healthy'
+              AND t.stream_url LIKE 'https://%'
+            ORDER BY t.url_hash,t.id
+          ) approved ORDER BY id LIMIT $1`, [scanLimit]);
+        return result.rows.map(row => ({ ...row, id: prefix + String(row.id), _sourceIndex: sourceIndex, _numericId: Number(row.id) || 0 }));
+      }));
+      const seen = new Set();
+      const merged = sourceRows.flat()
+        .sort((a, b) => a._sourceIndex - b._sourceIndex || a._numericId - b._numericId)
+        .filter(row => {
+          if (seen.has(row.url_hash)) return false;
+          seen.add(row.url_hash);
+          return true;
+        });
+      const page = merged.slice(cursor, cursor + limit);
+      const hasMore = merged.length > cursor + page.length || scanLimit === 50000;
+      const channels = page.map(({ url_hash, _sourceIndex, _numericId, ...channel }) => channel);
+      return json(res, 200, {
+        channels,
+        next_cursor: hasMore && page.length ? cursor + page.length : null,
+        publication: 'approved_only',
+      });
     } catch (e) { console.error('Catalogue query failed:', e.message); return json(res, 503, { error: 'Catalogue temporarily unavailable' }); }
   }
   if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: 'ok', service: 'tikvtv-payment-backend', database_configured: Boolean(pool), auth_validation_configured: authConfigured(), pesapal_credentials_present: configured(), environment: environmentConfigured ? paymentEnvironment : 'invalid' });
@@ -452,4 +481,4 @@ const server = http.createServer((req, res) => {
   route(req, res).catch(error => { console.error('Unhandled payment API error:', error.message); if (!res.headersSent) json(res, 500, { error: 'Internal server error' }); });
 });
 server.listen(port, '0.0.0.0');
-process.on('SIGTERM', async () => { server.close(); await Promise.allSettled([pool?.end(), cataloguePool?.end()]); });
+process.on('SIGTERM', async () => { server.close(); await Promise.allSettled([pool?.end(), cataloguePool?.end(), infinityCataloguePool?.end()]); });
