@@ -571,7 +571,7 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
                 )),
               )),
               const SizedBox(height: 8),
-              Text(((_gestureValue ?? 0) * 100).round().toString() + '%', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              Text('${((_gestureValue ?? 0) * 100).round()}%', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               Text(_gestureKind == 'brightness' ? 'Brightness' : 'Volume', style: const TextStyle(color: Colors.white70, fontSize: 11)),
             ]),
           ),
