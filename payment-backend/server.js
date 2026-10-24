@@ -274,9 +274,13 @@ async function route(req, res) {
   if (req.method === 'GET' && url.pathname === '/v1/catalogue') {
     try {
       if (!cataloguePool) return json(res, 503, { error: 'Approved catalogue database is not configured' });
-      const limit = Math.min(100, Math.max(1, Number.parseInt(url.searchParams.get('limit') || '30', 10) || 30));
-      const cursor = Math.max(0, Number.parseInt(url.searchParams.get('after') || '0', 10) || 0);
-      if (!Number.isSafeInteger(cursor)) return json(res, 400, { error: 'Invalid catalogue cursor' });
+      const rawLimit = url.searchParams.get('limit') || '30';
+      const rawCursor = url.searchParams.get('after') || '0';
+      if (!/^\\d+$/.test(rawLimit) || !/^\\d+$/.test(rawCursor)) return json(res, 400, { error: 'Invalid catalogue pagination' });
+      const requestedLimit = Number(rawLimit);
+      const cursor = Number(rawCursor);
+      if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || !Number.isSafeInteger(cursor) || cursor < 0) return json(res, 400, { error: 'Invalid catalogue pagination' });
+      const limit = Math.min(100, requestedLimit);
       const result = await cataloguePool.query(`SELECT id,name,stream_url,country,logo_url,category,language,url_hash FROM (
           SELECT DISTINCT ON (t.url_hash) t.id,t.name,t.stream_url,t.country,t.logo_url,t.category,t.language,t.url_hash
           FROM iptv.streams t JOIN iptv.sources s ON s.id=t.source_id
