@@ -284,7 +284,7 @@ async function route(req, res) {
       if (!cataloguePools.length) return json(res, 503, { error: 'Approved catalogue database is not configured' });
       const rawLimit = url.searchParams.get('limit') || '30';
       const rawCursor = url.searchParams.get('after') || '0';
-      if (!/^\\d+$/.test(rawLimit) || !/^\\d+$/.test(rawCursor)) return json(res, 400, { error: 'Invalid catalogue pagination' });
+      if (!/^\d+$/.test(rawLimit) || !/^\d+$/.test(rawCursor)) return json(res, 400, { error: 'Invalid catalogue pagination' });
       const requestedLimit = Number(rawLimit);
       const cursor = Number(rawCursor);
       if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || !Number.isSafeInteger(cursor) || cursor < 0 || cursor > 50000) return json(res, 400, { error: 'Invalid catalogue pagination' });
