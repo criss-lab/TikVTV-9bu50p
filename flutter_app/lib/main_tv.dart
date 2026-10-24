@@ -252,6 +252,19 @@ class TvPlayer extends StatefulWidget {
 
 class _TvPlayerState extends State<TvPlayer> {
   bool retrying = false;
+  bool controlsVisible = true;
+  Timer? controlsTimer;
+  void showControls() {
+    controlsTimer?.cancel();
+    if (mounted) setState(() => controlsVisible = true);
+    controlsTimer = Timer(const Duration(seconds: 7), () { if (mounted) setState(() => controlsVisible = false); });
+  }
+  Future<void> togglePlayback() async {
+    final controller = widget.player.controller;
+    if (widget.gate.locked || controller == null || !controller.value.isInitialized) return;
+    if (controller.value.isPlaying) { await controller.pause(); } else { await controller.play(); }
+    showControls();
+  }
   Future<void> openPremium() async {
     await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => const NativePremiumScreen()));
     if (mounted) await widget.gate.refresh();
@@ -270,18 +283,27 @@ class _TvPlayerState extends State<TvPlayer> {
     super.initState();
     widget.player.addListener(refresh);
     widget.gate.addListener(refresh);
+    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) showControls(); });
   }
   void refresh() { if (mounted) setState(() {}); }
   @override
   void dispose() {
     widget.player.removeListener(refresh);
     widget.gate.removeListener(refresh);
+    controlsTimer?.cancel();
     super.dispose();
   }
   @override
   Widget build(BuildContext context) {
     final controller = widget.player.controller;
-    return Scaffold(body: Stack(children: [
+    return Scaffold(body: Focus(onKeyEvent: (node, event) {
+      if (event is! KeyDownEvent) return KeyEventResult.ignored;
+      if (event.logicalKey == LogicalKeyboardKey.select || event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.mediaPlayPause || event.logicalKey == LogicalKeyboardKey.space) {
+        unawaited(togglePlayback()); return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp || event.logicalKey == LogicalKeyboardKey.arrowDown) { showControls(); }
+      return KeyEventResult.ignored;
+    }, child: Stack(children: [
       Positioned.fill(child: widget.gate.locked
         ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
             const Icon(Icons.lock_outline, size: 58),
@@ -300,13 +322,14 @@ class _TvPlayerState extends State<TvPlayer> {
               Text(widget.player.error ?? 'Connecting to live channel…', textAlign: TextAlign.center),
               if (!widget.player.loading) TextButton.icon(onPressed: retrying ? null : retry, icon: const Icon(Icons.refresh), label: Text(retrying ? 'Retrying…' : 'Retry channel')),
             ]))),
-      Positioned(left: 24, top: 24, child: Text(widget.channel.name, style: const TextStyle(fontSize: 22, shadows: [Shadow(blurRadius: 8)]))),
+      if (controlsVisible) Positioned(left: 24, top: 24, child: Text(widget.channel.name, style: const TextStyle(fontSize: 22, shadows: [Shadow(blurRadius: 8)]))),
       if (!widget.gate.locked && widget.player.buffering) const Positioned(right: 24, top: 24, child: Chip(avatar: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)), label: Text('Buffering'))),
-      Positioned(left: 24, bottom: 24, child: ElevatedButton.icon(
+      if (controlsVisible && !widget.gate.locked) Positioned(right: 24, bottom: 24, child: ElevatedButton.icon(onPressed: togglePlayback, icon: Icon(controller?.value.isPlaying == true ? Icons.pause : Icons.play_arrow), label: Text(controller?.value.isPlaying == true ? 'Pause' : 'Play'))),
+      if (controlsVisible) Positioned(left: 24, bottom: 24, child: ElevatedButton.icon(
         autofocus: true,
         onPressed: () => Navigator.pop(context),
         icon: const Icon(Icons.arrow_back), label: const Text('Back to channels'),
       )),
-    ]));
+    ])));
   }
 }
