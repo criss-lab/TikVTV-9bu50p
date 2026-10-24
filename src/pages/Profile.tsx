@@ -11,6 +11,8 @@ import { useLangStore } from '@/stores/langStore';
 import { cn, getCountryFlag } from '@/lib/utils';
 import AuthModal from '@/components/features/AuthModal';
 import { toast } from 'sonner';
+import { Capacitor } from '@capacitor/core';
+import { CapacitorBarcodeScanner } from '@capacitor/barcode-scanner';
 
 const LANGUAGES = [
   { code: 'en', label: 'English', flag: '🇬🇧' },
@@ -30,6 +32,7 @@ export default function Profile() {
   const [username,   setUsername]   = useState(user?.username || '');
   const [saving,     setSaving]     = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [scanningQr, setScanningQr] = useState(false);
   const fileRef      = useRef<HTMLInputElement>(null);
 
   const stats = [
@@ -50,6 +53,49 @@ export default function Profile() {
     history.forEach(h => h.categories.forEach(c => { counts[c] = (counts[c] || 0) + 1; }));
     return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
   })();
+
+  async function scanQrCode() {
+    if (scanningQr) return;
+    setScanningQr(true);
+    try {
+      // Must be triggered by a user tap: Android opens the native camera/permission flow;
+      // the plugin's web implementation uses the device camera when browser support allows it.
+      if (!Capacitor.isNativePlatform() && !window.isSecureContext) {
+        throw new Error('Camera access requires HTTPS or the installed Android app.');
+      }
+      const result = await CapacitorBarcodeScanner.scanBarcode({
+        hint: 0,
+        cameraDirection: 1,
+        scanOrientation: 1,
+        scanInstructions: 'Point your camera at a QR code',
+        scanButton: true,
+        scanText: 'Scan QR',
+        android: { scanningLibrary: 'mlkit' },
+        web: { showCameraSelection: false, scannerFPS: 10 },
+      });
+      const value = result?.ScanResult?.trim();
+      if (!value) {
+        toast.info('QR scan cancelled or no code was detected');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(value);
+        toast.success('QR code scanned and copied to clipboard');
+      } catch {
+        toast.success('QR code scanned: ' + value.slice(0, 180));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/cancel/i.test(message)) toast.info('QR scan cancelled');
+      else if (/permission|denied|notallowed/i.test(message)) {
+        toast.error('Camera permission is blocked. Allow Camera for TikVTV in Android Settings, then try again.');
+      } else {
+        toast.error('Could not start QR camera: ' + message.slice(0, 180));
+      }
+    } finally {
+      setScanningQr(false);
+    }
+  }
 
   async function saveUsername() {
     if (!user || !username.trim()) return;
@@ -229,6 +275,14 @@ export default function Profile() {
       <Section title="Premium"><div className="px-4"><button onClick={() => navigate("/premium")} className="w-full flex items-center gap-3 px-4 py-4 bg-primary/15 border border-primary/30 rounded-xl text-white font-semibold"><Crown className="w-5 h-5 text-primary" /> Manage Premium / PesaPal subscription</button></div></Section>
       <Section title="Actions">
         <div className="px-4 space-y-2">
+          <button
+            onClick={scanQrCode}
+            disabled={scanningQr}
+            className="w-full flex items-center gap-3 px-4 py-3 bg-primary/10 border border-primary/25 rounded-xl text-white text-sm hover:bg-primary/20 transition-colors disabled:opacity-60"
+          >
+            <Camera className="w-4 h-4 text-primary" />
+            {scanningQr ? 'Opening camera…' : 'Scan QR code with camera'}
+          </button>
           <button
             onClick={() => { if (confirm('Clear all watch history?')) clearHistory(); }}
             className="w-full flex items-center gap-3 px-4 py-3 bg-white/5 border border-white/8 rounded-xl text-white/70 text-sm hover:bg-white/10 transition-colors"
