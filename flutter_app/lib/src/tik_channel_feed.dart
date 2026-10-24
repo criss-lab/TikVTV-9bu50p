@@ -378,6 +378,10 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
   Timer? _suggestionTimer;
   double _lastAppliedValue = -1;
   bool _applyingNativeValue = false;
+  double? _pendingNativeValue;
+  String? _pendingNativeKind;
+  int _gestureEpoch = 0;
+  int? _pendingNativeEpoch;
 
   @override
   void initState() {
@@ -410,9 +414,10 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
   Future<void> _beginSwipe(bool leftSide, double y) async {
     if (_gestureBusy) return;
     _gestureBusy = true;
+    final epoch = ++_gestureEpoch;
     try {
       final value = leftSide ? await VolumeController.instance.getVolume() : await ScreenBrightness.instance.application;
-      if (!mounted) return;
+      if (!mounted || epoch != _gestureEpoch) return;
       setState(() {
         _gestureKind = leftSide ? 'volume' : 'brightness';
         _gestureStartValue = value.clamp(0.0, 1.0);
@@ -428,22 +433,57 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
     if (kind == null) return;
     final next = (_gestureStartValue + (_gestureStartY - y) / 220).clamp(0.0, 1.0).toDouble();
     setState(() => _gestureValue = next);
-    // Native calls can be expensive; avoid duplicate values during high-rate touch events.
-    if (_applyingNativeValue || (next - _lastAppliedValue).abs() < 0.015) return;
+
+    // Keep only the latest desired native value while a platform call is in
+    // flight. A serialized drain prevents dropped end-of-gesture updates and
+    // avoids flooding the platform channel with every pointer event.
+    if ((next - _lastAppliedValue).abs() < 0.015) return;
     _lastAppliedValue = next;
+    _pendingNativeKind = kind;
+    _pendingNativeValue = next;
+    _pendingNativeEpoch = _gestureEpoch;
+    if (!_applyingNativeValue) unawaited(_drainNativeUpdates());
+  }
+
+  Future<void> _drainNativeUpdates() async {
+    if (_applyingNativeValue) return;
     _applyingNativeValue = true;
-    final apply = kind == 'volume'
-      ? VolumeController.instance.setVolume(next)
-      : ScreenBrightness.instance.setApplicationScreenBrightness(next);
-    unawaited(apply.catchError((Object e) {
-      debugPrint('Landscape $kind adjustment failed: $e');
-    }).whenComplete(() { _applyingNativeValue = false; }));
+    try {
+      while (mounted && _pendingNativeValue != null && _pendingNativeKind != null && _pendingNativeEpoch == _gestureEpoch) {
+        final value = _pendingNativeValue!;
+        final kind = _pendingNativeKind!;
+        _pendingNativeValue = null;
+        _pendingNativeKind = null;
+        _pendingNativeEpoch = null;
+        try {
+          if (kind == 'volume') {
+            await VolumeController.instance.setVolume(value);
+          } else {
+            await ScreenBrightness.instance.setApplicationScreenBrightness(value);
+          }
+        } catch (error) {
+          debugPrint('Landscape $kind adjustment failed: $error');
+        }
+      }
+    } finally {
+      _applyingNativeValue = false;
+      if (mounted && _pendingNativeValue != null && _pendingNativeKind != null) {
+        unawaited(_drainNativeUpdates());
+      }
+    }
   }
 
   void _endSwipe() {
-    if (_gestureKind == null) return;
+    // Invalidate an outstanding async system-value read and discard values
+    // queued by a gesture that has already ended. An in-flight platform call
+    // cannot be cancelled, but stale queued writes must never run afterward.
+    ++_gestureEpoch;
+    _pendingNativeValue = null;
+    _pendingNativeKind = null;
+    _pendingNativeEpoch = null;
     _lastAppliedValue = -1;
-    setState(() { _gestureKind = null; _gestureValue = null; });
+    if (_gestureKind == null) return;
+    if (mounted) setState(() { _gestureKind = null; _gestureValue = null; });
   }
 
   @override
@@ -475,6 +515,7 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
         if (playable) Positioned.fill(child: Row(children: [
           Expanded(child: GestureDetector(
             behavior: HitTestBehavior.translucent,
+            onTap: _showSuggestion,
             onVerticalDragStart: (details) => _beginSwipe(true, details.globalPosition.dy),
             onVerticalDragUpdate: (details) => _updateSwipe(details.globalPosition.dy),
             onVerticalDragEnd: (_) => _endSwipe(),
@@ -488,6 +529,7 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
           )),
           Expanded(child: GestureDetector(
             behavior: HitTestBehavior.translucent,
+            onTap: _showSuggestion,
             onVerticalDragStart: (details) => _beginSwipe(false, details.globalPosition.dy),
             onVerticalDragUpdate: (details) => _updateSwipe(details.globalPosition.dy),
             onVerticalDragEnd: (_) => _endSwipe(),
