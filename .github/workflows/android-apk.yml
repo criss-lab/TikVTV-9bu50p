@@ -68,7 +68,7 @@ jobs:
           if not url.startswith('https://') or not key:
               sys.exit('::error::Missing/invalid VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY')
           print('Web frontend Supabase URL configured:', url)
-          req = urllib.request.Request(url + '/auth/v1/health', headers={'apikey': key, 'Accept': 'application/json'})
+          req = urllib.request.Request(url + '/auth/v1/settings', headers={'apikey': key, 'Accept': 'application/json'})
           try:
               with urllib.request.urlopen(req, timeout=15) as response:
                   body = response.read(4096).decode('utf-8', 'replace')
@@ -76,7 +76,7 @@ jobs:
                       sys.exit(f'::error::Supabase Auth health returned HTTP {response.status}')
                   print('Supabase Auth health HTTP', response.status, body[:300])
           except Exception as exc:
-              sys.exit(f'::error::Configured Supabase-compatible endpoint health check failed: {exc}')
+              sys.exit(f'::error::Configured Supabase endpoint check failed. HTTP 404 usually means the URL is not a Supabase project API URL; check the VITE_SUPABASE_URL secret (value redacted): {exc}')
           PY
       - name: Build web app
         run: npm run build
