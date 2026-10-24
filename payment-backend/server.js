@@ -303,8 +303,14 @@ async function route(req, res) {
         return result.rows.map(row => ({ ...row, id: prefix + String(row.id), _sourceIndex: sourceIndex, _numericId: Number(row.id) || 0 }));
       }));
       const sourceRows = sourceResults.filter(result => result.status === 'fulfilled').map(result => result.value);
+      sourceResults.forEach((result, index) => {
+        if (result.status !== 'rejected') return;
+        const error = result.reason;
+        // Log only PostgreSQL's structured error code, never messages, SQL, URLs or credentials.
+        const code = typeof error?.code === 'string' && /^[A-Z0-9]{5}$/.test(error.code) ? error.code : 'CONNECTION_OR_QUERY_ERROR';
+        console.error('Approved catalogue source failed', { source: index === 0 ? (cataloguePool ? 'primary' : 'infinity') : 'infinity', code });
+      });
       if (!sourceRows.length) return json(res, 503, { error: 'Catalogue temporarily unavailable' });
-      if (sourceResults.some(result => result.status === 'rejected')) console.error('One approved catalogue source is unavailable');
       const seen = new Set();
       const merged = sourceRows.flat()
         .sort((a, b) => a._sourceIndex - b._sourceIndex || a._numericId - b._numericId)
