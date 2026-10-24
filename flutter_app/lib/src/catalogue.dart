@@ -232,7 +232,7 @@ class ChannelCatalogue extends ChangeNotifier {
               if (importedUrls.add(line) && streamName != null && streamName.isNotEmpty) {
                 final sourceKey = entry.key.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
                 final safeId = identity.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
-                imported.add(Channel('feed-$sourceKey-$safeId-${imported.length}', pendingName, pendingLogo ?? '', 'INT', [line]));
+                imported.add(Channel('feed-$sourceKey-$safeId-${imported.length}', streamName, pendingLogo ?? '', 'INT', [line]));
               }
               if (pendingId != null && approvedFreeTvIds.contains(pendingId) && index != null &&
                   approvedUrls.putIfAbsent(pendingId, () => parsed[index].urls.toSet()).add(line)) {
