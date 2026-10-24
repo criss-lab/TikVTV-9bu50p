@@ -110,3 +110,20 @@ CREATE TABLE IF NOT EXISTS tv_remote_commands (
 );
 CREATE INDEX IF NOT EXISTS tv_remote_commands_pairing_idx ON tv_remote_commands(pairing_id,id);
 
+-- Guest preview allocations are server-owned and can be claimed only once by a
+-- Supabase-authenticated account. Store only a SHA-256 hash of the bearer secret.
+CREATE TABLE IF NOT EXISTS guest_preview_installations (
+  token_hash TEXT PRIMARY KEY CHECK (length(token_hash)=64),
+  claimed_user_id TEXT UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  claimed_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS guest_channel_previews (
+  token_hash TEXT NOT NULL REFERENCES guest_preview_installations(token_hash) ON DELETE CASCADE,
+  channel_id TEXT NOT NULL,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW()+INTERVAL '15 minutes'),
+  PRIMARY KEY(token_hash,channel_id),
+  CHECK (expires_at>started_at)
+);
+CREATE INDEX IF NOT EXISTS guest_channel_previews_token_idx ON guest_channel_previews(token_hash);
