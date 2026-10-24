@@ -381,7 +381,7 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
     if (_gestureBusy) return;
     _gestureBusy = true;
     try {
-      final value = leftSide ? await VolumeController.instance.getVolume() : await ScreenBrightness().current;
+      final value = leftSide ? await VolumeController.instance.getVolume() : await ScreenBrightness.instance.application;
       if (!mounted) return;
       setState(() {
         _gestureKind = leftSide ? 'volume' : 'brightness';
@@ -399,9 +399,9 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
     final next = (_gestureStartValue + (_gestureStartY - y) / 220).clamp(0.0, 1.0);
     setState(() => _gestureValue = next);
     if (kind == 'volume') {
-      VolumeController.instance.setVolume(next);
+      unawaited(VolumeController.instance.setVolume(next).catchError((Object e) { debugPrint('Volume adjustment failed: $e'); }));
     } else {
-      ScreenBrightness().setScreenBrightness(next);
+      unawaited(ScreenBrightness.instance.setApplicationScreenBrightness(next).catchError((Object e) { debugPrint('Brightness adjustment failed: $e'); }));
     }
   }
 
