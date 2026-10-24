@@ -14,7 +14,7 @@ for name in ("CAMERA", "INTERNET", "WAKE_LOCK", "FOREGROUND_SERVICE", "FOREGROUN
 # have neither. The phone scanner requests runtime permission when opened.
 for feature in ("android.hardware.camera", "android.hardware.camera.autofocus"):
     if f'android:name="{feature}"' not in xml:
-        xml = xml.replace("<application", f'<uses-feature android:name="{feature}" android:required="false" />' + "\\n    <application", 1)
+        xml = xml.replace("<application", f'<uses-feature android:name="{feature}" android:required="false" />' + "\n    <application", 1)
 if "android:usesCleartextTraffic" not in xml:
     xml = xml.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
 if "android:allowBackup" not in xml:
