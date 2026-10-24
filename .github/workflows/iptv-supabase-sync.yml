@@ -20,8 +20,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: payment-backend/package-lock.json
       - name: Validate secure database configuration
         env:
           IPTV_DATABASE_URL: ${{ secrets.IPTV_DATABASE_URL }}
@@ -31,7 +29,10 @@ jobs:
             exit 1
           fi
           echo "Dedicated IPTV database secret is present."
-      - run: npm ci --omit=dev
+      - name: Install dependencies
+        run: npm install --omit=dev --no-audit --no-fund
+      - name: Validate importer syntax
+        run: node --check sync-iptv-catalogue.js
       - name: Sync unreviewed source discoveries into isolated IPTV schema
         env:
           IPTV_DATABASE_URL: ${{ secrets.IPTV_DATABASE_URL }}
