@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'native_backend.dart';
 import 'tv_pairing_api.dart';
+import 'qr_pairing_parser.dart';
 
 class TvPairingScreen extends StatefulWidget {
   const TvPairingScreen({super.key});
@@ -33,7 +34,17 @@ class _TvPairingScreenState extends State<TvPairingScreen> {
     try {
       final data = await TvPairingApi.start();
       if (!mounted || current != generation) return;
-      setState(() { pairing = data; expiresAt = DateTime.now().add(Duration(seconds: (data['expires_in_seconds'] as num?)?.toInt() ?? 300)); });
+      final challenge = data['challenge'];
+      final pollToken = data['poll_token'];
+      final displayCode = data['display_code']?.toString();
+      final pairingUrl = Uri.https('streamora.co.ke', '/tv-pair', {'challenge': challenge is String ? challenge : ''}).toString();
+      if (challenge is! String || QrPairingParser.challenge(pairingUrl) != challenge ||
+          pollToken is! String || pollToken.isEmpty || displayCode == null ||
+          displayCode.length != 6 || displayCode.codeUnits.any((unit) => unit < 48 || unit > 57)) {
+        throw const FormatException('Invalid TV pairing challenge or confirmation code');
+      }
+      final lifetime = ((data['expires_in_seconds'] as num?)?.toInt() ?? 300).clamp(1, 300);
+      setState(() { pairing = data; expiresAt = DateTime.now().add(Duration(seconds: lifetime)); });
       timer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted) return;
         if (secondsLeft == 0) { timer?.cancel(); setState(() { pairing = null; message = 'Pairing expired. Generate a fresh QR code.'; }); return; }
@@ -73,7 +84,7 @@ class _TvPairingScreenState extends State<TvPairingScreen> {
   Widget build(BuildContext context) {
     final challenge = pairing?['challenge'] as String?;
     final url = Uri.https('streamora.co.ke','/tv-pair',{'challenge':challenge ?? ''}).toString();
-    return Scaffold(appBar: AppBar(title: const Text('Connect your phone')), body: Center(child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+    return Scaffold(appBar: AppBar(title: const Text('Connect your phone')), body: Center(child: SingleChildScrollView(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20), child: Column(mainAxisSize: MainAxisSize.min, children: [
       const Icon(Icons.phonelink, color: Color(0xFF32CED0), size: 45),
       const SizedBox(height: 12),
       const Text('Connect your phone', style: TextStyle(fontSize: 29, fontWeight: FontWeight.w800)),
@@ -82,8 +93,10 @@ class _TvPairingScreenState extends State<TvPairingScreen> {
       const SizedBox(height: 20),
       if (challenge == null && message == null) const CircularProgressIndicator(),
       if (challenge != null) ...[
-        Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: const [BoxShadow(color: Color(0x4432CED0), blurRadius: 25)]), padding: const EdgeInsets.all(18), child: QrImageView(data: url, size: 260)),
+        Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: const [BoxShadow(color: Color(0x4432CED0), blurRadius: 25)]), padding: const EdgeInsets.all(24), child: QrImageView(data: url, size: 320, backgroundColor: Colors.white, errorCorrectionLevel: QrErrorCorrectLevel.H)),
         const SizedBox(height: 14),
+        const Text('Point your phone at the full QR square and avoid screen glare.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
+        const SizedBox(height: 12),
         const Text('Confirm this six-digit code on your phone:', style: TextStyle(fontSize: 18, color: Colors.white70)),
         SelectableText('${pairing!['display_code']}', style: const TextStyle(fontSize: 42, fontWeight: FontWeight.bold, letterSpacing: 8)),
         Text('Expires in ${secondsLeft ~/ 60}:${(secondsLeft % 60).toString().padLeft(2, '0')}. Do not share this code with strangers.'),
