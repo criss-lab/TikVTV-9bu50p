@@ -8,7 +8,7 @@ for (const [base,bits] of [['0.0.0.0',8],['10.0.0.0',8],['100.64.0.0',10],['127.
 export function publicIPv4(ip) { return net.isIP(ip)===4 && !blocked.check(ip,'ipv4'); }
 export function validateTarget(raw) {
   let u;try {u=new URL(raw);}catch{return null;}
-  if(u.protocol!=='https:'||u.username||u.password||u.port&&u.port!=='443'||!u.hostname||net.isIP(u.hostname)||u.hostname==='localhost'||u.hostname.endsWith('.localhost')||u.hostname.endsWith('.local')||u.hostname.endsWith('.internal')) return null;
+  if(u.protocol!=='https:'||u.username||u.password||u.port&&u.port!=='443'||!u.hostname||(u.hostname.startsWith('[')&&u.hostname.endsWith(']'))||net.isIP(u.hostname)||u.hostname==='localhost'||u.hostname.endsWith('.localhost')||u.hostname.endsWith('.local')||u.hostname.endsWith('.internal')) return null;
   return u;
 }
 export async function resolvePinned(host, resolver=dns.lookup) {
@@ -40,7 +40,7 @@ export async function probe(raw,{resolver=dns.lookup,request=https.request}={}) 
       if(status<200||status>=300){res.destroy();return finish({outcome:'unhealthy',reason:'HTTP_FAILURE',status,type});}
       try {
         await boundedBody(res);
-        const format=/mpegurl/.test(type)||/\\.m3u8$/i.test(u.pathname)?'hls':/dash\\+xml/.test(type)||/\\.mpd$/i.test(u.pathname)?'dash':type==='video/mp4'?'mp4':'unknown';
+        const format=/mpegurl/.test(type)||/\.m3u8$/i.test(u.pathname)?'hls':/dash\+xml/.test(type)||/\.mpd$/i.test(u.pathname)?'dash':type==='video/mp4'?'mp4':'unknown';
         finish({outcome:'inconclusive',reason:'HTTP_ONLY_NOT_PLAYBACK_PROOF',status,type,format});
       }catch{finish({outcome:'inconclusive',reason:'BODY_LIMIT',status,type});}
     });
