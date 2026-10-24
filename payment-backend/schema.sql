@@ -127,3 +127,15 @@ CREATE TABLE IF NOT EXISTS guest_channel_previews (
   CHECK (expires_at>started_at)
 );
 CREATE INDEX IF NOT EXISTS guest_channel_previews_token_idx ON guest_channel_previews(token_hash);
+
+
+-- Hot-path indexes for payment recovery and active TV pairing lookups.
+CREATE INDEX IF NOT EXISTS payment_orders_user_recovery_idx
+  ON payment_orders (user_id, created_at DESC)
+  WHERE order_tracking_id IS NOT NULL AND status IN ('pending','failed');
+CREATE INDEX IF NOT EXISTS payment_orders_recovery_cursor_idx
+  ON payment_orders (id)
+  WHERE order_tracking_id IS NOT NULL AND status IN ('pending','failed');
+CREATE INDEX IF NOT EXISTS tv_pairings_active_token_idx
+  ON tv_pairings (device_token_hash)
+  WHERE approved_at IS NOT NULL AND revoked_at IS NULL;

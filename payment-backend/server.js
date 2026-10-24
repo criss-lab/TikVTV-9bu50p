@@ -9,7 +9,7 @@ const paymentEnvironment = String(process.env.PESAPAL_ENVIRONMENT || '').trim().
 const environmentConfigured = paymentEnvironment === 'live' || paymentEnvironment === 'sandbox';
 const live = paymentEnvironment === 'live';
 const base = live ? 'https://pay.pesapal.com/v3' : 'https://cybqa.pesapal.com/pesapalv3';
-const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: true }, max: 5, idleTimeoutMillis: 10000, connectionTimeoutMillis: 10000 }) : null;
+const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: true }, max: Math.min(10, Math.max(2, Number(process.env.PG_POOL_MAX || 5))), idleTimeoutMillis: 10000, connectionTimeoutMillis: 3000, statement_timeout: 8000, query_timeout: 9000, application_name: 'tikvtv-payment-api' }) : null;
 const cataloguePool = process.env.IPTV_DATABASE_URL ? new Pool({ connectionString: process.env.IPTV_DATABASE_URL, ssl: { rejectUnauthorized: true }, max: 3, connectionTimeoutMillis: 3000, statement_timeout: 8000, application_name: 'tikvtv-approved-catalogue' }) : null;
 const allowedOrigins = new Set((process.env.CORS_ORIGINS || 'https://streamora.co.ke,https://www.streamora.co.ke').split(',').map(x => x.trim()).filter(Boolean));
 const json = (res, status, data) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); res.end(JSON.stringify(data)); };
