@@ -333,7 +333,7 @@ async function fetchApprovedCatalogue(): Promise<IPTVChannel[]> {
   const configuredBase = (import.meta.env.VITE_PAYMENT_API_URL as string | undefined) || 'https://tikvtv-payment-api.onrender.com'; const base = configuredBase.endsWith('/') ? configuredBase.slice(0, -1) : configuredBase;
   const approved: IPTVChannel[] = [];
   let after = 0;
-  for (let page = 0; page < 200; page++) {
+  for (let page = 0; page < 500; page++) {
     const response = await fetch(`${base}/v1/catalogue?limit=100&after=${after}`, { signal: AbortSignal.timeout(12000) });
     if (!response.ok) throw new Error('Approved catalogue unavailable');
     const payload = await response.json();
