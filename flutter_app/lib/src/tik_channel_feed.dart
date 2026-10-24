@@ -128,7 +128,7 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
   }
 
   void _onPageChanged(int index) {
-    if (!mounted || index < 0 || index >= widget.channels.length) return;
+    if (!mounted || index < 0 || index >= widget.channels.length || index == _index) return;
     // Update selection immediately, but wait for a short settle window before
     // creating a native decoder. Fast multi-page swipes won't open every stream.
     setState(() { _index = index; _showHints = index == 0; });
