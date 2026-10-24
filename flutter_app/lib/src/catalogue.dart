@@ -218,20 +218,23 @@ class ChannelCatalogue extends ChangeNotifier {
             pendingLogo = RegExp(r'tvg-logo="([^"]+)"').firstMatch(line)?.group(1);
           } else if (line.isNotEmpty && !line.startsWith('#')) {
             final uri = Uri.tryParse(line);
-            if (pendingId != null && uri != null &&
+            final streamName = pendingName?.trim();
+            final identity = (pendingId?.trim().isNotEmpty == true ? pendingId!.trim() : streamName ?? '');
+            if (identity.isNotEmpty && uri != null &&
                 (uri.scheme == 'https' || uri.scheme == 'http') &&
-                uri.host.isNotEmpty && !blocked.contains(pendingId) &&
-                seen.add('$pendingId|$line')) {
+                uri.host.isNotEmpty &&
+                (pendingId == null || !blocked.contains(pendingId)) &&
+                seen.add('$identity|$line')) {
               count++;
-              final index = known[pendingId];
+              final index = pendingId == null ? null : known[pendingId];
               // Expand the browsable catalogue with distinct public-feed entries. Keep
               // provenance in IDs and do not label these as subscription-approved.
-              if (importedUrls.add(line) && pendingName != null && pendingName.isNotEmpty) {
+              if (importedUrls.add(line) && streamName != null && streamName.isNotEmpty) {
                 final sourceKey = entry.key.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
-                final safeId = pendingId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
+                final safeId = identity.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
                 imported.add(Channel('feed-$sourceKey-$safeId-${imported.length}', pendingName, pendingLogo ?? '', 'INT', [line]));
               }
-              if (approvedFreeTvIds.contains(pendingId) && index != null &&
+              if (pendingId != null && approvedFreeTvIds.contains(pendingId) && index != null &&
                   approvedUrls.putIfAbsent(pendingId, () => parsed[index].urls.toSet()).add(line)) {
                 final ch = parsed[index];
                 parsed[index] = Channel(ch.id, ch.name, ch.logo, ch.country,
