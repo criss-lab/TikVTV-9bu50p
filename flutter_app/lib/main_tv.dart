@@ -52,6 +52,7 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
   Channel? selected;
   String query = '';
   bool openingChannel = false;
+  String? tuneError;
   Timer? remoteTimer;
   bool remotePolling = false;
   int remoteCursor = 0;
@@ -78,6 +79,15 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
         } else if (['up','down','left','right'].contains(command)) {
           final direction = <String, TraversalDirection>{'up':TraversalDirection.up,'down':TraversalDirection.down,'left':TraversalDirection.left,'right':TraversalDirection.right}[command]!;
           FocusScope.of(context).focusInDirection(direction);
+        } else if (command == 'previous' || command == 'next') {
+          // Channel switching is handled by the fullscreen player, which owns
+          // its decoder lease; never open a second route from remote polling.
+          if (selected != null && !openingChannel) {
+            final channels = catalogue.channels;
+            final index = channels.indexWhere((c) => c.id == selected!.id);
+            final next = index + (command == 'next' ? 1 : -1);
+            if (next >= 0 && next < channels.length) unawaited(tune(channels[next]));
+          }
         } else if (command == 'play_pause' && player.controller != null) {
           final controller = player.controller!;
           if (controller.value.isPlaying) { await controller.pause(); } else if (!gate.locked) { await controller.play(); }
@@ -122,7 +132,7 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
     // Keep one decoder/open attempt and one fullscreen route at a time.
     if (openingChannel) return;
     openingChannel = true;
-    setState(() => selected = channel);
+    setState(() { selected = channel; tuneError = null; });
     try {
       await player.open(channel); // The shared player enforces the access gate.
       if (!mounted) return;
@@ -134,6 +144,9 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
         builder: (_) => TvPlayer(channel: channel, player: player, gate: gate),
       ));
       player.stopIfCurrent(channel.id, lease: playbackLease);
+    } catch (error, stack) {
+      debugPrint('TV channel open failed: $error\\n$stack');
+      if (mounted) setState(() => tuneError = 'Could not open ${channel.name}. Check the stream or network and retry.');
     } finally {
       openingChannel = false;
       if (mounted) setState(() => selected = null);
@@ -190,7 +203,8 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
           Row(children: [const Text('Country  '), DropdownButton<String>(value: countries.contains(country) ? country : 'All', items: ['All',...countries].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setState(() => country = v ?? 'All')), const SizedBox(width: 18), const Text('Category  '), DropdownButton<String>(value: categories.contains(category) ? category : 'All', items: ['All',...categories].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setState(() => category = v ?? 'All'))]),
           const SizedBox(height: 12),
           if (catalogue.loading) const LinearProgressIndicator(),
-          if (catalogue.error != null) Text('Catalogue unavailable: ${catalogue.error}', style: const TextStyle(color: Colors.orange)),
+          if (catalogue.error != null) Row(children: [Expanded(child: Text('Catalogue unavailable: ${catalogue.error}', style: const TextStyle(color: Colors.orange))), TextButton.icon(onPressed: () => catalogue.load(force: true), icon: const Icon(Icons.refresh), label: const Text('Retry'))]),
+          if (tuneError != null) Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Text(tuneError!, style: const TextStyle(color: Colors.orangeAccent))),
           Padding(padding: const EdgeInsets.symmetric(vertical: 18), child: Row(children: [const Icon(Icons.sensors, color: Color(0xFF32CED0), size: 22), const SizedBox(width: 10), Text('Live channels', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800)), const SizedBox(width: 12), Text('${channels.length} available', style: const TextStyle(color: Colors.white60, fontSize: 15))])),
           Expanded(child: section == 3 ? NativeHotScreen(channels: all, onSelect: tune) : channels.isEmpty
             ? const Center(child: Text('No channels available. Refresh or change your search.'))
