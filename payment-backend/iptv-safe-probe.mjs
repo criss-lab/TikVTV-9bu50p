@@ -25,7 +25,7 @@ export async function boundedBody(stream, max=4096) {
   }
   return Buffer.concat(chunks);
 }
-export async function probe(raw,{resolver=dns.lookup,request=https.request}={}) {
+export async function fetchBounded(raw,{resolver=dns.lookup,request=https.request,maxBytes=65536}={}) {
   const u=validateTarget(raw);
   if(!u) return {outcome:'inconclusive',reason:'URL_POLICY'};
   let ip;try {ip=await resolvePinned(u.hostname,resolver);}catch{return {outcome:'inconclusive',reason:'DNS_POLICY'};}
@@ -39,13 +39,19 @@ export async function probe(raw,{resolver=dns.lookup,request=https.request}={}) 
       if(status===401||status===403){res.destroy();return finish({outcome:'inconclusive',reason:'AUTH_REQUIRED',status,type});}
       if(status<200||status>=300){res.destroy();return finish({outcome:'unhealthy',reason:'HTTP_FAILURE',status,type});}
       try {
-        await boundedBody(res);
+        const body=await boundedBody(res,maxBytes);
         const format=/mpegurl/.test(type)||/\.m3u8$/i.test(u.pathname)?'hls':/dash\+xml/.test(type)||/\.mpd$/i.test(u.pathname)?'dash':type==='video/mp4'?'mp4':'unknown';
-        finish({outcome:'inconclusive',reason:'HTTP_ONLY_NOT_PLAYBACK_PROOF',status,type,format});
+        finish({outcome:'inconclusive',reason:'HTTP_ONLY_NOT_PLAYBACK_PROOF',status,type,format,body});
       }catch{finish({outcome:'inconclusive',reason:'BODY_LIMIT',status,type});}
     });
     req.on('timeout',()=>req.destroy(Error('TIMEOUT')));
     req.on('error',e=>finish({outcome:'inconclusive',reason:e.message==='TIMEOUT'?'TIMEOUT':'NETWORK_ERROR'}));
     req.end();
   });
+}
+
+// Compatibility API: callers needing only metadata never receive a body buffer.
+export async function probe(raw,options={}) {
+  const {body,...result}=await fetchBounded(raw,{...options,maxBytes:4096});
+  return result;
 }
