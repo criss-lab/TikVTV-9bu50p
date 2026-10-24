@@ -196,7 +196,7 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
           const SizedBox(height: 12),
           FilledButton.icon(onPressed: _retryScanner, icon: const Icon(Icons.refresh), label: const Text('Retry camera')),
         ]))))),
-          IgnorePointer(child: Center(child: Container(width: 215, height: 215, decoration: BoxDecoration(border: Border.all(color: const Color(0xFF32CED0), width: 3), borderRadius: BorderRadius.circular(20)))),
+          IgnorePointer(child: Center(child: Container(width: 215, height: 215, decoration: BoxDecoration(border: Border.all(color: const Color(0xFF32CED0), width: 3), borderRadius: BorderRadius.circular(20))))),
           const Positioned(left: 12, right: 12, bottom: 12, child: IgnorePointer(child: Text('Align the TV QR code inside the frame', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, shadows: [Shadow(color: Colors.black, blurRadius: 8)])))),
         ]))),
         if (scanFeedback != null) Padding(padding: const EdgeInsets.all(8), child: Text(scanFeedback!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.orangeAccent))),
