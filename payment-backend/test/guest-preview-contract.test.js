@@ -50,7 +50,7 @@ test('guest claim requires authenticated identity and cannot reset an existing a
 
 test('signed-in viewing access prioritizes paid entitlement and does not restore free previews after paid expiry', async () => {
   const server = await read('../server.js');
-  const start = server.indexOf("url.pathname === '/v1/viewing-access'");
+  const start = server.indexOf("path === '/v1/viewing-access'");
   const end = server.indexOf("url.pathname === '/v1/catalogue'", start);
   const route = server.slice(start, end);
   assert.ok(start >= 0 && end > start, 'signed-in viewing route exists');
