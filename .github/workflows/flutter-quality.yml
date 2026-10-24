@@ -31,6 +31,28 @@ jobs:
       - name: Configure Android networking
         run: python3 tool/configure_android.py
       - run: flutter pub get
+      - name: Verify Supabase endpoint is configured and reachable
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          python3 - <<'PY'
+          import os, sys, urllib.request, urllib.error, json
+          url = os.environ.get('SUPABASE_URL', '').rstrip('/')
+          key = os.environ.get('SUPABASE_ANON_KEY', '')
+          if not url.startswith('https://') or not key:
+              sys.exit('::error::Missing/invalid shared VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY; Flutter must use the same public endpoint as the web frontend.')
+          print('Supabase URL configured:', url)
+          req = urllib.request.Request(url + '/auth/v1/health', headers={'apikey': key, 'Accept': 'application/json'})
+          try:
+              with urllib.request.urlopen(req, timeout=15) as response:
+                  body = response.read(4096).decode('utf-8', 'replace')
+                  if response.status < 200 or response.status >= 300:
+                      sys.exit(f'::error::Supabase Auth health returned HTTP {response.status}')
+                  print('Supabase Auth health HTTP', response.status, body[:300])
+          except Exception as exc:
+              sys.exit(f'::error::Configured Supabase-compatible endpoint health check failed: {exc}')
+          PY
       - name: Check formatting
         run: dart format lib test
       - run: flutter analyze
