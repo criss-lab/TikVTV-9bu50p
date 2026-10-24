@@ -56,7 +56,16 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
   Future<void> _openLandscape() async {
     if (_gate.locked || _player.channel?.id != widget.channels[_index].id) return;
     await Navigator.of(context).push<void>(MaterialPageRoute(
-      builder: (_) => _LandscapePlayer(player: _player, gate: _gate),
+      builder: (_) => _LandscapePlayer(
+        player: _player,
+        gate: _gate,
+        channels: widget.channels,
+        currentIndex: _index,
+        onPlayChannel: (index) {
+          Navigator.of(context).pop();
+          _focus(index);
+        },
+      ),
     ));
   }
 
@@ -351,7 +360,10 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
 class _LandscapePlayer extends StatefulWidget {
   final SharedPlayback player;
   final PlaybackGate gate;
-  const _LandscapePlayer({required this.player, required this.gate});
+  final List<Channel> channels;
+  final int currentIndex;
+  final ValueChanged<int> onPlayChannel;
+  const _LandscapePlayer({required this.player, required this.gate, required this.channels, required this.currentIndex, required this.onPlayChannel});
   @override
   State<_LandscapePlayer> createState() => _LandscapePlayerState();
 }
@@ -362,6 +374,7 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
   double _gestureStartY = 0;
   double _gestureStartValue = 0;
   bool _gestureBusy = false;
+  bool _showNextSuggestion = false;
 
   @override
   void initState() {
@@ -446,11 +459,7 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
           )),
           Expanded(flex: 2, child: GestureDetector(
             behavior: HitTestBehavior.translucent,
-            onTap: () async {
-              if (controller.value.isPlaying) { await controller.pause(); }
-              else if (!widget.gate.locked) { await controller.play(); }
-              _refresh();
-            },
+            onTap: () => setState(() => _showNextSuggestion = !_showNextSuggestion),
             child: const SizedBox.expand(),
           )),
           Expanded(child: GestureDetector(
@@ -462,6 +471,64 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
             child: const SizedBox.expand(),
           )),
         ])),
+        if (playable && _showNextSuggestion && widget.channels.length > widget.currentIndex + 1)
+          Positioned(
+            right: 24, top: 24, bottom: 24, width: 270,
+            child: Center(child: Material(
+              color: Colors.black.withValues(alpha: 0.82),
+              borderRadius: BorderRadius.circular(20),
+              clipBehavior: Clip.antiAlias,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      const Expanded(child: Text('Up next for you', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))),
+                      IconButton(
+                        tooltip: 'Dismiss suggestion',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => setState(() => _showNextSuggestion = false),
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                      ),
+                    ]),
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 84, width: double.infinity,
+                      decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(12)),
+                      clipBehavior: Clip.antiAlias,
+                      child: widget.channels[widget.currentIndex + 1].logo.isEmpty
+                        ? const Center(child: Icon(Icons.live_tv, color: Colors.white70, size: 38))
+                        : Image.network(
+                            widget.channels[widget.currentIndex + 1].logo,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.live_tv, color: Colors.white70, size: 38)),
+                          ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(widget.channels[widget.currentIndex + 1].name,
+                      maxLines: 2, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15)),
+                    const SizedBox(height: 4),
+                    Text(widget.channels[widget.currentIndex + 1].country,
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                    const SizedBox(height: 12),
+                    SizedBox(width: double.infinity, child: FilledButton.icon(
+                      onPressed: () => widget.onPlayChannel(widget.currentIndex + 1),
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('Play next channel'),
+                    )),
+                    TextButton(
+                      onPressed: () => setState(() => _showNextSuggestion = false),
+                      child: const Text('Keep watching'),
+                    ),
+                  ],
+                ),
+              ),
+            )),
+          ),
         if (playable) Center(child: IgnorePointer(child: AnimatedOpacity(
           opacity: _gestureValue == null ? 0 : 1,
           duration: const Duration(milliseconds: 120),
