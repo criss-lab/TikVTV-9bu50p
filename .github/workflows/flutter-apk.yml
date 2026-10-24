@@ -65,6 +65,15 @@ jobs:
           assert features.get('android.hardware.camera.autofocus') == 'false', 'Autofocus must remain optional for devices without camera hardware'
           print('Generated Android camera permission and optional feature verified')
           PY
+      - name: Enforce persistent signing for production tags
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          for secret in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!secret}" ]; then
+              echo "::error::Production release blocked: missing $secret"
+              exit 1
+            fi
+          done
       - name: Configure persistent signing when provisioned
         run: python3 tool/configure_signing.py
       - name: Build obfuscated Flutter release APK
