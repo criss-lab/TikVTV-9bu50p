@@ -1,5 +1,6 @@
 // Run from payment-backend with IPTV_DATABASE_URL (Supabase direct/pooled Postgres URL).
 // This imports discovery metadata only; it never proxies or publishes unreviewed streams.
+// Playlist URLs are configured in iptv.sources; verify repository paths before enabling them.
 import crypto from 'node:crypto';
 import pg from 'pg';
 const connectionString = process.env.IPTV_DATABASE_URL;
