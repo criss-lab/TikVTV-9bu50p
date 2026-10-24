@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
+import 'package:screen_brightness/screen_brightness.dart';
+import 'package:volume_controller/volume_controller.dart';
 import 'catalogue.dart';
 import 'playback.dart';
 import 'playback_gate.dart';
@@ -54,7 +56,16 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
   Future<void> _openLandscape() async {
     if (_gate.locked || _player.channel?.id != widget.channels[_index].id) return;
     await Navigator.of(context).push<void>(MaterialPageRoute(
-      builder: (_) => _LandscapePlayer(player: _player, gate: _gate),
+      builder: (_) => _LandscapePlayer(
+        player: _player,
+        gate: _gate,
+        channels: widget.channels,
+        currentIndex: _index,
+        onPlayChannel: (index) {
+          Navigator.of(context).pop();
+          _focus(index);
+        },
+      ),
     ));
   }
 
@@ -349,17 +360,31 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
 class _LandscapePlayer extends StatefulWidget {
   final SharedPlayback player;
   final PlaybackGate gate;
-  const _LandscapePlayer({required this.player, required this.gate});
+  final List<Channel> channels;
+  final int currentIndex;
+  final ValueChanged<int> onPlayChannel;
+  const _LandscapePlayer({required this.player, required this.gate, required this.channels, required this.currentIndex, required this.onPlayChannel});
   @override
   State<_LandscapePlayer> createState() => _LandscapePlayerState();
 }
 
 class _LandscapePlayerState extends State<_LandscapePlayer> {
+  double? _gestureValue;
+  String? _gestureKind;
+  double _gestureStartY = 0;
+  double _gestureStartValue = 0;
+  bool _gestureBusy = false;
+  bool _showNextSuggestion = false;
+  Timer? _suggestionTimer;
+  double _lastAppliedValue = -1;
+  bool _applyingNativeValue = false;
+
   @override
   void initState() {
     super.initState();
     widget.player.addListener(_refresh);
     widget.gate.addListener(_refresh);
+    VolumeController.instance.showSystemUI = false;
     SystemChrome.setPreferredOrientations(const [
       DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight,
     ]);
@@ -368,8 +393,62 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
 
   void _refresh() { if (mounted) setState(() {}); }
 
+  void _showSuggestion() {
+    if (widget.currentIndex + 1 >= widget.channels.length) return;
+    _suggestionTimer?.cancel();
+    setState(() => _showNextSuggestion = true);
+    _suggestionTimer = Timer(const Duration(seconds: 8), () {
+      if (mounted) setState(() => _showNextSuggestion = false);
+    });
+  }
+
+  void _dismissSuggestion() {
+    _suggestionTimer?.cancel();
+    if (mounted) setState(() => _showNextSuggestion = false);
+  }
+
+  Future<void> _beginSwipe(bool leftSide, double y) async {
+    if (_gestureBusy) return;
+    _gestureBusy = true;
+    try {
+      final value = leftSide ? await VolumeController.instance.getVolume() : await ScreenBrightness.instance.application;
+      if (!mounted) return;
+      setState(() {
+        _gestureKind = leftSide ? 'volume' : 'brightness';
+        _gestureStartValue = value.clamp(0.0, 1.0);
+        _gestureValue = _gestureStartValue;
+        _gestureStartY = y;
+      });
+    } catch (e) { debugPrint('Landscape swipe control read failed: $e'); }
+    finally { _gestureBusy = false; }
+  }
+
+  void _updateSwipe(double y) {
+    final kind = _gestureKind;
+    if (kind == null) return;
+    final next = (_gestureStartValue + (_gestureStartY - y) / 220).clamp(0.0, 1.0).toDouble();
+    setState(() => _gestureValue = next);
+    // Native calls can be expensive; avoid duplicate values during high-rate touch events.
+    if (_applyingNativeValue || (next - _lastAppliedValue).abs() < 0.015) return;
+    _lastAppliedValue = next;
+    _applyingNativeValue = true;
+    final apply = kind == 'volume'
+      ? VolumeController.instance.setVolume(next)
+      : ScreenBrightness.instance.setApplicationScreenBrightness(next);
+    unawaited(apply.catchError((Object e) {
+      debugPrint('Landscape $kind adjustment failed: $e');
+    }).whenComplete(() { _applyingNativeValue = false; }));
+  }
+
+  void _endSwipe() {
+    if (_gestureKind == null) return;
+    _lastAppliedValue = -1;
+    setState(() { _gestureKind = null; _gestureValue = null; });
+  }
+
   @override
   void dispose() {
+    _suggestionTimer?.cancel();
     widget.player.removeListener(_refresh);
     widget.gate.removeListener(_refresh);
     SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
@@ -393,15 +472,110 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
           ? 'Viewing access ended. Return to the feed to unlock.'
           : widget.player.error ?? 'Connecting to live channel…',
           textAlign: TextAlign.center)),
-        if (playable) Center(child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: () async {
-            if (controller.value.isPlaying) { await controller.pause(); }
-            else if (!widget.gate.locked) { await controller.play(); }
-            _refresh();
-          },
-          child: const SizedBox.expand(),
-        )),
+        if (playable) Positioned.fill(child: Row(children: [
+          Expanded(child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onVerticalDragStart: (details) => _beginSwipe(true, details.globalPosition.dy),
+            onVerticalDragUpdate: (details) => _updateSwipe(details.globalPosition.dy),
+            onVerticalDragEnd: (_) => _endSwipe(),
+            onVerticalDragCancel: _endSwipe,
+            child: const SizedBox.expand(),
+          )),
+          Expanded(flex: 2, child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: _showSuggestion,
+            child: const SizedBox.expand(),
+          )),
+          Expanded(child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onVerticalDragStart: (details) => _beginSwipe(false, details.globalPosition.dy),
+            onVerticalDragUpdate: (details) => _updateSwipe(details.globalPosition.dy),
+            onVerticalDragEnd: (_) => _endSwipe(),
+            onVerticalDragCancel: _endSwipe,
+            child: const SizedBox.expand(),
+          )),
+        ])),
+        if (playable && _showNextSuggestion && widget.channels.length > widget.currentIndex + 1)
+          Positioned(
+            right: 24, top: 24, bottom: 24, width: 270,
+            child: Center(child: Material(
+              color: Colors.black.withValues(alpha: 0.82),
+              borderRadius: BorderRadius.circular(20),
+              clipBehavior: Clip.antiAlias,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      const Expanded(child: Text('Up next for you', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))),
+                      IconButton(
+                        tooltip: 'Dismiss suggestion',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _dismissSuggestion,
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                      ),
+                    ]),
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 84, width: double.infinity,
+                      decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(12)),
+                      clipBehavior: Clip.antiAlias,
+                      child: widget.channels[widget.currentIndex + 1].logo.isEmpty
+                        ? const Center(child: Icon(Icons.live_tv, color: Colors.white70, size: 38))
+                        : Image.network(
+                            widget.channels[widget.currentIndex + 1].logo,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.live_tv, color: Colors.white70, size: 38)),
+                          ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(widget.channels[widget.currentIndex + 1].name,
+                      maxLines: 2, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15)),
+                    const SizedBox(height: 4),
+                    Text(widget.channels[widget.currentIndex + 1].country,
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                    const SizedBox(height: 12),
+                    SizedBox(width: double.infinity, child: FilledButton.icon(
+                      onPressed: () => widget.onPlayChannel(widget.currentIndex + 1),
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('Play next channel'),
+                    )),
+                    TextButton(
+                      onPressed: _dismissSuggestion,
+                      child: const Text('Keep watching'),
+                    ),
+                  ],
+                ),
+              ),
+            )),
+          ),
+        if (playable) Center(child: IgnorePointer(child: AnimatedOpacity(
+          opacity: _gestureValue == null ? 0 : 1,
+          duration: const Duration(milliseconds: 120),
+          child: Container(
+            width: 108, padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.65), borderRadius: BorderRadius.circular(16)),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(_gestureKind == 'brightness' ? Icons.brightness_6 : Icons.volume_up, color: Colors.white, size: 28),
+              const SizedBox(height: 10),
+              SizedBox(height: 100, width: 12, child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Align(alignment: Alignment.bottomCenter, child: FractionallySizedBox(
+                  heightFactor: (_gestureValue ?? 0).clamp(0.0, 1.0),
+                  widthFactor: 1,
+                  child: const ColoredBox(color: Colors.white),
+                )),
+              )),
+              const SizedBox(height: 8),
+              Text('${((_gestureValue ?? 0) * 100).round()}%', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              Text(_gestureKind == 'brightness' ? 'Brightness' : 'Volume', style: const TextStyle(color: Colors.white70, fontSize: 11)),
+            ]),
+          ),
+        ))),
         Positioned(top: 8, left: 8, child: IconButton.filledTonal(
           tooltip: 'Return to portrait', onPressed: () => Navigator.of(context).pop(),
           icon: const Icon(Icons.fullscreen_exit),
