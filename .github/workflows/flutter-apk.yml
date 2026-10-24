@@ -62,6 +62,7 @@ jobs:
           assert 'android.permission.CAMERA' in permissions, 'Camera permission missing from generated runner'
           features = {node.get(ns + 'name'): node.get(ns + 'required') for node in root.findall('uses-feature')}
           assert features.get('android.hardware.camera') == 'false', 'Camera must remain optional for Android TV'
+          assert features.get('android.hardware.camera.autofocus') == 'false', 'Autofocus must remain optional for devices without camera hardware'
           print('Generated Android camera permission and optional feature verified')
           PY
       - name: Configure persistent signing when provisioned
