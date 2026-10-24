@@ -52,9 +52,31 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
   Channel? selected;
   String query = '';
   bool openingChannel = false;
+  String? tuneError;
   Timer? remoteTimer;
   bool remotePolling = false;
   int remoteCursor = 0;
+  bool switchingChannel = false;
+  final tvPlayerKey = GlobalKey<_TvPlayerState>();
+  Future<void> switchChannel(int direction) async {
+    if (!mounted || switchingChannel || !openingChannel || selected == null) return;
+    final channels = catalogue.channels;
+    final index = channels.indexWhere((channel) => channel.id == selected!.id);
+    final next = index + direction;
+    if (index < 0 || next < 0 || next >= channels.length) return;
+    switchingChannel = true;
+    final channel = channels[next];
+    try {
+      await player.open(channel);
+      if (!mounted || !openingChannel) return;
+      setState(() => selected = channel);
+      tvPlayerKey.currentState?.setChannel(channel);
+      if (!gate.locked && player.controller != null) unawaited(library.recordWatch(channel.id));
+    } catch (error) {
+      debugPrint('Remote channel switch failed: $error');
+      if (mounted) setState(() => tuneError = 'Could not switch channel. Please retry.');
+    } finally { switchingChannel = false; }
+  }
   Future<void> connectPhone() async {
     await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => const TvPairingScreen()));
     if (mounted) { await gate.refresh(); refresh(); }
@@ -78,6 +100,8 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
         } else if (['up','down','left','right'].contains(command)) {
           final direction = <String, TraversalDirection>{'up':TraversalDirection.up,'down':TraversalDirection.down,'left':TraversalDirection.left,'right':TraversalDirection.right}[command]!;
           FocusScope.of(context).focusInDirection(direction);
+        } else if (command == 'previous' || command == 'next') {
+          await switchChannel(command == 'next' ? 1 : -1);
         } else if (command == 'play_pause' && player.controller != null) {
           final controller = player.controller!;
           if (controller.value.isPlaying) { await controller.pause(); } else if (!gate.locked) { await controller.play(); }
@@ -122,18 +146,20 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
     // Keep one decoder/open attempt and one fullscreen route at a time.
     if (openingChannel) return;
     openingChannel = true;
-    setState(() => selected = channel);
+    setState(() { selected = channel; tuneError = null; });
     try {
       await player.open(channel); // The shared player enforces the access gate.
       if (!mounted) return;
       if (!gate.locked && player.controller != null) {
         unawaited(library.recordWatch(channel.id));
       }
-      final playbackLease = player.lease;
       await Navigator.push(context, MaterialPageRoute<void>(
-        builder: (_) => TvPlayer(channel: channel, player: player, gate: gate),
+        builder: (_) => TvPlayer(key: tvPlayerKey, channel: channel, player: player, gate: gate),
       ));
-      player.stopIfCurrent(channel.id, lease: playbackLease);
+      if (selected != null) player.stopIfCurrent(selected!.id, lease: player.lease);
+    } catch (error, stack) {
+      debugPrint('TV channel open failed: $error\\n$stack');
+      if (mounted) setState(() => tuneError = 'Could not open ${channel.name}. Check the stream or network and retry.');
     } finally {
       openingChannel = false;
       if (mounted) setState(() => selected = null);
@@ -190,7 +216,8 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
           Row(children: [const Text('Country  '), DropdownButton<String>(value: countries.contains(country) ? country : 'All', items: ['All',...countries].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setState(() => country = v ?? 'All')), const SizedBox(width: 18), const Text('Category  '), DropdownButton<String>(value: categories.contains(category) ? category : 'All', items: ['All',...categories].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setState(() => category = v ?? 'All'))]),
           const SizedBox(height: 12),
           if (catalogue.loading) const LinearProgressIndicator(),
-          if (catalogue.error != null) Text('Catalogue unavailable: ${catalogue.error}', style: const TextStyle(color: Colors.orange)),
+          if (catalogue.error != null) Row(children: [Expanded(child: Text('Catalogue unavailable: ${catalogue.error}', style: const TextStyle(color: Colors.orange))), TextButton.icon(onPressed: () => catalogue.load(force: true), icon: const Icon(Icons.refresh), label: const Text('Retry'))]),
+          if (tuneError != null) Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Text(tuneError!, style: const TextStyle(color: Colors.orangeAccent))),
           Padding(padding: const EdgeInsets.symmetric(vertical: 18), child: Row(children: [const Icon(Icons.sensors, color: Color(0xFF32CED0), size: 22), const SizedBox(width: 10), Text('Live channels', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800)), const SizedBox(width: 12), Text('${channels.length} available', style: const TextStyle(color: Colors.white60, fontSize: 15))])),
           Expanded(child: section == 3 ? NativeHotScreen(channels: all, onSelect: tune) : channels.isEmpty
             ? const Center(child: Text('No channels available. Refresh or change your search.'))
@@ -237,7 +264,22 @@ class TvPlayer extends StatefulWidget {
 }
 
 class _TvPlayerState extends State<TvPlayer> {
+  late Channel activeChannel;
+  void setChannel(Channel channel) { if (!mounted) return; setState(() => activeChannel = channel); showControls(); }
   bool retrying = false;
+  bool controlsVisible = true;
+  Timer? controlsTimer;
+  void showControls() {
+    controlsTimer?.cancel();
+    if (mounted) setState(() => controlsVisible = true);
+    controlsTimer = Timer(const Duration(seconds: 7), () { if (mounted) setState(() => controlsVisible = false); });
+  }
+  Future<void> togglePlayback() async {
+    final controller = widget.player.controller;
+    if (widget.gate.locked || controller == null || !controller.value.isInitialized) return;
+    if (controller.value.isPlaying) { await controller.pause(); } else { await controller.play(); }
+    showControls();
+  }
   Future<void> openPremium() async {
     await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => const NativePremiumScreen()));
     if (mounted) await widget.gate.refresh();
@@ -246,7 +288,7 @@ class _TvPlayerState extends State<TvPlayer> {
     if (retrying || widget.gate.locked) return;
     setState(() => retrying = true);
     try {
-      await widget.player.open(widget.channel);
+      await widget.player.open(activeChannel);
     } finally {
       if (mounted) setState(() => retrying = false);
     }
@@ -254,20 +296,30 @@ class _TvPlayerState extends State<TvPlayer> {
   @override
   void initState() {
     super.initState();
+    activeChannel = widget.channel;
     widget.player.addListener(refresh);
     widget.gate.addListener(refresh);
+    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) showControls(); });
   }
   void refresh() { if (mounted) setState(() {}); }
   @override
   void dispose() {
     widget.player.removeListener(refresh);
     widget.gate.removeListener(refresh);
+    controlsTimer?.cancel();
     super.dispose();
   }
   @override
   Widget build(BuildContext context) {
     final controller = widget.player.controller;
-    return Scaffold(body: Stack(children: [
+    return Scaffold(body: Focus(onKeyEvent: (node, event) {
+      if (event is! KeyDownEvent) return KeyEventResult.ignored;
+      if (event.logicalKey == LogicalKeyboardKey.mediaPlayPause) {
+        unawaited(togglePlayback()); return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp || event.logicalKey == LogicalKeyboardKey.arrowDown) { showControls(); }
+      return KeyEventResult.ignored;
+    }, child: Stack(children: [
       Positioned.fill(child: widget.gate.locked
         ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
             const Icon(Icons.lock_outline, size: 58),
@@ -286,13 +338,14 @@ class _TvPlayerState extends State<TvPlayer> {
               Text(widget.player.error ?? 'Connecting to live channel…', textAlign: TextAlign.center),
               if (!widget.player.loading) TextButton.icon(onPressed: retrying ? null : retry, icon: const Icon(Icons.refresh), label: Text(retrying ? 'Retrying…' : 'Retry channel')),
             ]))),
-      Positioned(left: 24, top: 24, child: Text(widget.channel.name, style: const TextStyle(fontSize: 22, shadows: [Shadow(blurRadius: 8)]))),
+      if (controlsVisible) Positioned(left: 24, top: 24, child: Text(activeChannel.name, style: const TextStyle(fontSize: 22, shadows: [Shadow(blurRadius: 8)]))),
       if (!widget.gate.locked && widget.player.buffering) const Positioned(right: 24, top: 24, child: Chip(avatar: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)), label: Text('Buffering'))),
-      Positioned(left: 24, bottom: 24, child: ElevatedButton.icon(
+      if (controlsVisible && !widget.gate.locked) Positioned(right: 24, bottom: 24, child: ElevatedButton.icon(onPressed: togglePlayback, icon: Icon(controller?.value.isPlaying == true ? Icons.pause : Icons.play_arrow), label: Text(controller?.value.isPlaying == true ? 'Pause' : 'Play'))),
+      if (controlsVisible) Positioned(left: 24, bottom: 24, child: ElevatedButton.icon(
         autofocus: true,
         onPressed: () => Navigator.pop(context),
         icon: const Icon(Icons.arrow_back), label: const Text('Back to channels'),
       )),
-    ]));
+    ])));
   }
 }
