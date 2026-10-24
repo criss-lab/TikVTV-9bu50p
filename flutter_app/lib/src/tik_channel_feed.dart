@@ -274,18 +274,14 @@ class _TikChannelFeedState extends State<TikChannelFeed> with WidgetsBindingObse
                   CircularProgressIndicator(), SizedBox(height: 12),
                   Text('Checking your access…', style: TextStyle(color: Colors.white70)),
                 ])),
+              // A transient guest API failure should not cover the welcome channel with a blocker card.
+              // Keep artwork visible and offer a small retry affordance; never bypass server access.
               if (selected && _gate.locked && _gate.ready && _gate.verificationUnavailable)
-                Center(child: Container(margin: const EdgeInsets.symmetric(horizontal: 20), padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: const Color(0xFF151720), borderRadius: BorderRadius.circular(18)), child: Column(
-                  mainAxisSize: MainAxisSize.min, children: [
-                    const Icon(Icons.verified_user_outlined, size: 36, color: Colors.white70),
-                    const SizedBox(height: 12),
-                    Text(NativeBackend.instance.signedIn ? 'Access check temporarily unavailable' : 'Your free welcome preview is loading', textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Text(NativeBackend.instance.signedIn ? 'We could not verify this channel yet. Please retry; do not pay again.' : 'No account or payment is required for your first three channel previews. Please retry while we connect to the preview service.', textAlign: TextAlign.center),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(onPressed: () => unawaited(_gate.refresh()), icon: const Icon(Icons.refresh), label: const Text('Retry now')),
-                  ],
-                ))),
+                Positioned(top: 14, right: 14, child: ActionChip(
+                  avatar: const Icon(Icons.refresh, size: 18),
+                  label: const Text('Retry connection'),
+                  onPressed: () => unawaited(_gate.refresh()),
+                )),
               if (selected && _gate.locked && _gate.ready && !_gate.verificationUnavailable)
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
