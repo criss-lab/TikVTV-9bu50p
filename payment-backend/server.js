@@ -318,7 +318,16 @@ async function route(req, res) {
           : /password authentication|authentication failed/i.test(message) ? 'AUTHENTICATION'
           : /relation .* does not exist|permission denied|column .* does not exist/i.test(message) ? 'SQL_SCHEMA_OR_PERMISSION'
           : 'OTHER';
-        console.error('Approved catalogue source failed', { source: index === 0 ? (cataloguePool ? 'primary' : 'infinity') : 'infinity', code, category });
+        const tlsReason = category !== 'TLS_VERIFICATION' ? undefined
+          : /self.signed/i.test(message) ? 'SELF_SIGNED_CERTIFICATE'
+          : /unable to verify|unable to get local issuer|certificate chain/i.test(message) ? 'UNTRUSTED_CERTIFICATE_CHAIN'
+          : /hostname|altname|does not match/i.test(message) ? 'HOSTNAME_MISMATCH'
+          : /certificate has expired|CERT_HAS_EXPIRED/i.test(message) ? 'EXPIRED_CERTIFICATE'
+          : /SSL is not enabled|SSL off|does not support SSL/i.test(message) ? 'SERVER_SSL_UNAVAILABLE'
+          : /SSL required|no pg_hba.conf entry/i.test(message) ? 'SERVER_REQUIRES_SSL'
+          : /wrong version number|unsupported protocol/i.test(message) ? 'TLS_PROTOCOL_MISMATCH'
+          : 'OTHER_TLS_ERROR';
+        console.error('Approved catalogue source failed', { source: index === 0 ? (cataloguePool ? 'primary' : 'infinity') : 'infinity', code, category, ...(tlsReason ? { tlsReason } : {}) });
       });
       if (!sourceRows.length) return json(res, 503, { error: 'Catalogue temporarily unavailable' });
       const seen = new Set();
