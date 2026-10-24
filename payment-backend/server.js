@@ -10,6 +10,7 @@ const environmentConfigured = paymentEnvironment === 'live' || paymentEnvironmen
 const live = paymentEnvironment === 'live';
 const base = live ? 'https://pay.pesapal.com/v3' : 'https://cybqa.pesapal.com/pesapalv3';
 const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: true }, max: Math.min(10, Math.max(2, Number(process.env.PG_POOL_MAX || 5))), idleTimeoutMillis: 10000, connectionTimeoutMillis: 3000, statement_timeout: 8000, query_timeout: 9000, application_name: 'tikvtv-payment-api' }) : null;
+const cataloguePool = process.env.IPTV_DATABASE_URL ? new Pool({ connectionString: process.env.IPTV_DATABASE_URL, ssl: { rejectUnauthorized: true }, max: 3, connectionTimeoutMillis: 3000, statement_timeout: 8000, application_name: 'tikvtv-approved-catalogue' }) : null;
 const allowedOrigins = new Set((process.env.CORS_ORIGINS || 'https://streamora.co.ke,https://www.streamora.co.ke').split(',').map(x => x.trim()).filter(Boolean));
 const json = (res, status, data) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); res.end(JSON.stringify(data)); };
 const configured = () => Boolean(environmentConfigured && process.env.PESAPAL_CONSUMER_KEY && process.env.PESAPAL_CONSUMER_SECRET && process.env.PESAPAL_IPN_ID);
@@ -272,11 +273,11 @@ async function route(req, res) {
   // Production catalogue is fail-closed: discovery imports are never automatically published.
   if (req.method === 'GET' && url.pathname === '/v1/catalogue') {
     try {
-      requireDb();
+      if (!cataloguePool) return json(res, 503, { error: 'Approved catalogue database is not configured' });
       const limit = Math.min(100, Math.max(1, Number.parseInt(url.searchParams.get('limit') || '30', 10) || 30));
       const cursor = Math.max(0, Number.parseInt(url.searchParams.get('after') || '0', 10) || 0);
       if (!Number.isSafeInteger(cursor)) return json(res, 400, { error: 'Invalid catalogue cursor' });
-      const result = await pool.query(`SELECT id,name,stream_url,country,logo_url,category,language,url_hash FROM (
+      const result = await cataloguePool.query(`SELECT id,name,stream_url,country,logo_url,category,language,url_hash FROM (
           SELECT DISTINCT ON (t.url_hash) t.id,t.name,t.stream_url,t.country,t.logo_url,t.category,t.language,t.url_hash
           FROM iptv.streams t JOIN iptv.sources s ON s.id=t.source_id
           WHERE s.enabled=TRUE AND s.publication_approved=TRUE AND t.rights_status='approved' AND t.health_status='healthy'
