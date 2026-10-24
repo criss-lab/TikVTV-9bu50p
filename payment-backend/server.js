@@ -292,7 +292,7 @@ async function route(req, res) {
       // The API cursor is a global offset across the merged catalogue, not a database row ID.
       // Overscan each source so cross-source URL deduplication does not prematurely end a page.
       const scanLimit = Math.min(50000, cursor + limit + 5000);
-      const sourceRows = await Promise.all(cataloguePools.map(async ({ pool, prefix }, sourceIndex) => {
+      const sourceResults = await Promise.allSettled(cataloguePools.map(async ({ pool, prefix }, sourceIndex) => {
         const result = await pool.query(`SELECT id,name,stream_url,country,logo_url,category,language,url_hash FROM (
             SELECT DISTINCT ON (t.url_hash) t.id,t.name,t.stream_url,t.country,t.logo_url,t.category,t.language,t.url_hash
             FROM iptv.streams t JOIN iptv.sources s ON s.id=t.source_id
@@ -302,6 +302,9 @@ async function route(req, res) {
           ) approved ORDER BY id LIMIT $1`, [scanLimit]);
         return result.rows.map(row => ({ ...row, id: prefix + String(row.id), _sourceIndex: sourceIndex, _numericId: Number(row.id) || 0 }));
       }));
+      const sourceRows = sourceResults.filter(result => result.status === 'fulfilled').map(result => result.value);
+      if (!sourceRows.length) return json(res, 503, { error: 'Catalogue temporarily unavailable' });
+      if (sourceResults.some(result => result.status === 'rejected')) console.error('One approved catalogue source is unavailable');
       const seen = new Set();
       const merged = sourceRows.flat()
         .sort((a, b) => a._sourceIndex - b._sourceIndex || a._numericId - b._numericId)
