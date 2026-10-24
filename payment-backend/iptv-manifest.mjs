@@ -32,7 +32,7 @@ export function inspectHls(body,base) {
 export function inspectDash(body,base) {
   if(typeof body!=='string'||Buffer.byteLength(body)>65536)return {ok:false,reason:'MANIFEST_SIZE'};
   if(/<!DOCTYPE|<!ENTITY/i.test(body))return {ok:false,reason:'XML_ENTITY_BLOCKED'};
-  if(!/<MPD(?:\s|>)/.test(body)||!/<Period(?:\s|>)/.test(body)||!/<AdaptationSet(?:\s|>)/.test(body))return {ok:false,reason:'DASH_STRUCTURE'};
+  if(!/<MPD(?:\s|>)/.test(body)||!/<Period(?:\s|>)/.test(body)||!/<AdaptationSet(?:\s|\/?>)/.test(body))return {ok:false,reason:'DASH_STRUCTURE'};
   // Full DASH template expansion and actual segment validation belong to the playback stage.
   return {ok:true,format:'dash',kind:'manifest_only',references:[],reason:'SEGMENT_VALIDATION_REQUIRED'};
 }
