@@ -375,6 +375,9 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
   double _gestureStartValue = 0;
   bool _gestureBusy = false;
   bool _showNextSuggestion = false;
+  Timer? _suggestionTimer;
+  double _lastAppliedValue = -1;
+  bool _applyingNativeValue = false;
 
   @override
   void initState() {
@@ -389,6 +392,20 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
   }
 
   void _refresh() { if (mounted) setState(() {}); }
+
+  void _showSuggestion() {
+    if (widget.currentIndex + 1 >= widget.channels.length) return;
+    _suggestionTimer?.cancel();
+    setState(() => _showNextSuggestion = true);
+    _suggestionTimer = Timer(const Duration(seconds: 8), () {
+      if (mounted) setState(() => _showNextSuggestion = false);
+    });
+  }
+
+  void _dismissSuggestion() {
+    _suggestionTimer?.cancel();
+    if (mounted) setState(() => _showNextSuggestion = false);
+  }
 
   Future<void> _beginSwipe(bool leftSide, double y) async {
     if (_gestureBusy) return;
@@ -409,22 +426,29 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
   void _updateSwipe(double y) {
     final kind = _gestureKind;
     if (kind == null) return;
-    final next = (_gestureStartValue + (_gestureStartY - y) / 220).clamp(0.0, 1.0);
+    final next = (_gestureStartValue + (_gestureStartY - y) / 220).clamp(0.0, 1.0).toDouble();
     setState(() => _gestureValue = next);
-    if (kind == 'volume') {
-      unawaited(VolumeController.instance.setVolume(next).catchError((Object e) { debugPrint('Volume adjustment failed: $e'); }));
-    } else {
-      unawaited(ScreenBrightness.instance.setApplicationScreenBrightness(next).catchError((Object e) { debugPrint('Brightness adjustment failed: $e'); }));
-    }
+    // Native calls can be expensive; avoid duplicate values during high-rate touch events.
+    if (_applyingNativeValue || (next - _lastAppliedValue).abs() < 0.015) return;
+    _lastAppliedValue = next;
+    _applyingNativeValue = true;
+    final apply = kind == 'volume'
+      ? VolumeController.instance.setVolume(next)
+      : ScreenBrightness.instance.setApplicationScreenBrightness(next);
+    unawaited(apply.catchError((Object e) {
+      debugPrint('Landscape $kind adjustment failed: $e');
+    }).whenComplete(() { _applyingNativeValue = false; }));
   }
 
   void _endSwipe() {
     if (_gestureKind == null) return;
+    _lastAppliedValue = -1;
     setState(() { _gestureKind = null; _gestureValue = null; });
   }
 
   @override
   void dispose() {
+    _suggestionTimer?.cancel();
     widget.player.removeListener(_refresh);
     widget.gate.removeListener(_refresh);
     SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
@@ -459,7 +483,7 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
           )),
           Expanded(flex: 2, child: GestureDetector(
             behavior: HitTestBehavior.translucent,
-            onTap: () => setState(() => _showNextSuggestion = !_showNextSuggestion),
+            onTap: _showSuggestion,
             child: const SizedBox.expand(),
           )),
           Expanded(child: GestureDetector(
@@ -489,7 +513,7 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
                       IconButton(
                         tooltip: 'Dismiss suggestion',
                         visualDensity: VisualDensity.compact,
-                        onPressed: () => setState(() => _showNextSuggestion = false),
+                        onPressed: _dismissSuggestion,
                         icon: const Icon(Icons.close, color: Colors.white70),
                       ),
                     ]),
@@ -521,7 +545,7 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
                       label: const Text('Play next channel'),
                     )),
                     TextButton(
-                      onPressed: () => setState(() => _showNextSuggestion = false),
+                      onPressed: _dismissSuggestion,
                       child: const Text('Keep watching'),
                     ),
                   ],
