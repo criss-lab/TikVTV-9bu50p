@@ -172,7 +172,9 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
         ]))))),
         if (scannerFailure != null) Padding(padding: const EdgeInsets.all(8), child: Text(scannerFailure!, textAlign: TextAlign.center)),
         if (scannerDiagnostic != null) Padding(padding: const EdgeInsets.all(8), child: SelectableText('Camera diagnostic: $scannerDiagnostic', textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: Colors.white54))),
-        TextButton.icon(onPressed: () { _stopScanner(); scannerShouldRun = false;\n          scannerAttempt++;\n          setState(() { scanning = false; message = null; }); }, icon: const Icon(Icons.close), label: const Text('Close scanner')),
+        TextButton.icon(onPressed: () { _stopScanner(); scannerShouldRun = false;
+          scannerAttempt++;
+          setState(() { scanning = false; message = null; }); }, icon: const Icon(Icons.close), label: const Text('Close scanner')),
       ],
       if (!scanning && challenge == null) FilledButton.icon(onPressed: _openScanner, icon: const Icon(Icons.qr_code_scanner), label: const Text('Scan TV QR code')),
       if (challenge == null) ...[
