@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'tv_pairing_api.dart';
+import 'qr_pairing_parser.dart';
 
 class PhoneTvConnectScreen extends StatefulWidget {
   const PhoneTvConnectScreen({super.key});
@@ -11,7 +12,7 @@ class PhoneTvConnectScreen extends StatefulWidget {
   State<PhoneTvConnectScreen> createState() => _PhoneTvConnectScreenState();
 }
 class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with WidgetsBindingObserver {
-  final MobileScannerController scannerController = MobileScannerController(autoStart: false, facing: CameraFacing.back, detectionSpeed: DetectionSpeed.noDuplicates);
+  final MobileScannerController scannerController = MobileScannerController(autoStart: false, facing: CameraFacing.back, detectionSpeed: DetectionSpeed.normal, formats: const [BarcodeFormat.qrCode]);
   final manualLink = TextEditingController();
   bool scannerStarting = false;
   bool scannerShouldRun = false;
@@ -21,6 +22,8 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
   String? scannerFailure;
   String? scanFeedback;
   DateTime? lastInvalidScan;
+  int decodedQrCount = 0;
+  String? decodedQrPayload;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -39,7 +42,7 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
   }
 
   void _requestScannerStart() {
-    if (!mounted || !scanning || !scannerShouldRun || kIsWeb) return;
+    if (!mounted || !scanning || !scannerShouldRun  ) return;
     if (scannerStarting) {
       scannerStartQueued = true;
       return;
@@ -48,7 +51,7 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
   }
 
   Future<void> _startScanner() async {
-    if (!mounted || !scanning || !scannerShouldRun || kIsWeb || scannerStarting) return;
+    if (!mounted || !scanning || !scannerShouldRun || scannerStarting) return;
     scannerStarting = true;
     final attempt = ++scannerAttempt;
     try {
@@ -84,7 +87,7 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
   }
 
   void _openScanner() {
-    setState(() { scanning = true; scannerFailure = null; scannerDiagnostic = null; scanFeedback = null; message = null; });
+    setState(() { scanning = true; scannerFailure = null; scannerDiagnostic = null; scanFeedback = null; decodedQrPayload = null; decodedQrCount = 0; message = null; });
     scannerShouldRun = true;
     WidgetsBinding.instance.addPostFrameCallback((_) => _requestScannerStart());
   }
@@ -101,21 +104,17 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
   }
 
   void _acceptLink(String input) {
-    final uri = Uri.tryParse(input.trim());
-    if (uri?.scheme != 'https' || !['streamora.co.ke','www.streamora.co.ke'].contains(uri?.host) || uri?.path != '/tv-pair') { setState(() => message = 'Enter the complete HTTPS pairing link shown on your TV.'); return; }
-    final value = uri!.queryParameters['challenge'];
-    if (value == null || value.length != 43 || !RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(value)) {
-      setState(() => message = 'Invalid TV pairing challenge. Generate a fresh link on your TV.');
+    final value = QrPairingParser.challenge(input);
+    if (value == null) {
+      setState(() => message = 'Invalid TV pairing link. Generate a fresh QR on the TV.');
       return;
     }
-    // Invalidate any in-flight camera start before leaving scanner mode; otherwise
-    // a slow platform start can finish after a successful QR decode and keep camera active.
     scannerShouldRun = false;
     scannerAttempt++;
     scannerStartQueued = false;
     code.clear();
-    setState(() { challenge = value; scanning = false; message = null; });
-    _stopScanner();
+    setState(() { challenge = value; scanning = false; scanFeedback = null; decodedQrPayload = null; message = null; });
+    unawaited(_stopScanner());
   }
   String? challenge, pairingId, message;
   bool scanning = false, busy = false;
@@ -144,19 +143,19 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
     for (final barcode in capture.barcodes) {
       final value = barcode.rawValue?.trim();
       if (value == null || value.isEmpty) continue;
-      final uri = Uri.tryParse(value);
-      if (uri?.scheme == 'https' &&
-          ['streamora.co.ke', 'www.streamora.co.ke'].contains(uri?.host) &&
-          uri?.path == '/tv-pair' &&
-          RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(uri?.queryParameters['challenge'] ?? '')) {
+      final parsed = QrPairingParser.challenge(value);
+      if (parsed != null) {
         _acceptLink(value);
         return;
       }
-      // Do not display arbitrary QR contents: they may contain private data.
       final now = DateTime.now();
-      if (lastInvalidScan == null || now.difference(lastInvalidScan!) > const Duration(seconds: 2)) {
+      if (lastInvalidScan == null || now.difference(lastInvalidScan!) > const Duration(seconds: 2) || decodedQrPayload != value) {
         lastInvalidScan = now;
-        setState(() => scanFeedback = 'QR detected, but it is not a TikVTV TV pairing code. Open Connect phone on the TV and scan that QR.');
+        setState(() {
+          decodedQrCount++;
+          decodedQrPayload = value;
+          scanFeedback = 'QR decoded successfully (#$decodedQrCount). This is not a TikVTV pairing QR. The decoded information is shown below; it will not be opened or executed.';
+        });
       }
       return;
     }
@@ -200,6 +199,12 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
           const Positioned(left: 12, right: 12, bottom: 12, child: IgnorePointer(child: Text('Align the TV QR code inside the frame', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, shadows: [Shadow(color: Colors.black, blurRadius: 8)])))),
         ]))),
         if (scanFeedback != null) Padding(padding: const EdgeInsets.all(8), child: Text(scanFeedback!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.orangeAccent))),
+        if (scanning) Padding(padding: const EdgeInsets.all(6), child: Text('QR detector active • decoded: $decodedQrCount', textAlign: TextAlign.center)),
+        if (decodedQrPayload != null) Padding(padding: const EdgeInsets.all(8), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Decoded QR information (untrusted):', style: TextStyle(fontWeight: FontWeight.bold)),
+          SelectableText(decodedQrPayload!, maxLines: 5),
+          TextButton.icon(onPressed: () { Clipboard.setData(ClipboardData(text: decodedQrPayload!)); }, icon: const Icon(Icons.copy), label: const Text('Copy decoded information')),
+        ])),
         if (scannerFailure != null) Padding(padding: const EdgeInsets.all(8), child: Text(scannerFailure!, textAlign: TextAlign.center)),
         if (scannerDiagnostic != null) Padding(padding: const EdgeInsets.all(8), child: SelectableText('Camera diagnostic: $scannerDiagnostic', textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: Colors.white54))),
         TextButton.icon(onPressed: () { scannerShouldRun = false;
