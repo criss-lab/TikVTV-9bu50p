@@ -97,17 +97,47 @@ jobs:
             CERT="$("$APKSIGNER" verify --print-certs "$APK")"
             echo "$CERT" | grep -q 'Signer #1 certificate SHA-256 digest:'
           fi
+      - name: Verify packaged TV identity, launcher and APK integrity
+        run: |
+          set -euo pipefail
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
+          test -x "$AAPT"
+          "$AAPT" dump badging "$APK" > build/tv-badging.txt
+          grep -Fq "package: name='com.tikvtvz.app.tv'" build/tv-badging.txt
+          grep -Fq "android.intent.category.LEANBACK_LAUNCHER" build/tv-badging.txt || "$AAPT" dump xmltree "$APK" AndroidManifest.xml | grep -Fq 'LEANBACK_LAUNCHER'
+          python3 - "$APK" <<'PY'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as apk:
+              assert apk.testzip() is None, 'TV APK archive is corrupt'
+              names = set(apk.namelist())
+              assert 'AndroidManifest.xml' in names, 'Missing manifest'
+              assert 'classes.dex' in names, 'Missing Android classes'
+              assert any(x.startswith('lib/') and x.endswith('/libflutter.so') for x in names), 'Missing Flutter engine'
+          print('Verified TV APK package identity, launcher and ZIP integrity')
+          PY
       - name: Verify TV package and artifact
         run: |
           test -s build/app/outputs/flutter-apk/app-release.apk
           cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/TikVTV-TV-preview.apk
           sha256sum build/app/outputs/flutter-apk/TikVTV-TV-preview.apk > build/app/outputs/flutter-apk/TV-SHA256SUMS.txt
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/TikVTV-TV-preview.apk > build/app/outputs/flutter-apk/TV-SIGNER-DETAILS.txt
+          grep -E 'Signer #1 certificate SHA-256 digest:' build/app/outputs/flutter-apk/TV-SIGNER-DETAILS.txt > build/app/outputs/flutter-apk/TV-SIGNER-SHA256.txt
+          test -s build/app/outputs/flutter-apk/TV-SIGNER-SHA256.txt
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo 'WARNING: CI debug-key signing is temporary. This preview may not update an existing installation.' > build/app/outputs/flutter-apk/TV-INSTALL-NOTICE.txt
+          else
+            echo 'Persistent signing configured. Installed updates require the same signing certificate.' > build/app/outputs/flutter-apk/TV-INSTALL-NOTICE.txt
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: TikVTV-TV-preview-${{ github.run_number }}
           path: |
             flutter_app/build/app/outputs/flutter-apk/TikVTV-TV-preview.apk
             flutter_app/build/app/outputs/flutter-apk/TV-SHA256SUMS.txt
+            flutter_app/build/app/outputs/flutter-apk/TV-SIGNER-SHA256.txt
+            flutter_app/build/app/outputs/flutter-apk/TV-INSTALL-NOTICE.txt
           if-no-files-found: error
           retention-days: 30
       - name: Publish directly downloadable rolling TV preview
@@ -118,4 +148,4 @@ jobs:
           if ! gh release view preview-tv-latest >/dev/null 2>&1; then
             gh release create preview-tv-latest --target "$GITHUB_SHA" --title "TikVTV Android TV preview" --notes "Dedicated Flutter Android TV preview. Verify TV-SHA256SUMS.txt. Preview signing may change between runs; not a Play Store production release." --prerelease
           fi
-          gh release upload preview-tv-latest build/app/outputs/flutter-apk/TikVTV-TV-preview.apk build/app/outputs/flutter-apk/TV-SHA256SUMS.txt --clobber
+          gh release upload preview-tv-latest build/app/outputs/flutter-apk/TikVTV-TV-preview.apk build/app/outputs/flutter-apk/TV-SHA256SUMS.txt build/app/outputs/flutter-apk/TV-SIGNER-SHA256.txt build/app/outputs/flutter-apk/TV-INSTALL-NOTICE.txt --clobber
