@@ -276,11 +276,13 @@ async function route(req, res) {
       const limit = Math.min(100, Math.max(1, Number.parseInt(url.searchParams.get('limit') || '30', 10) || 30));
       const cursor = Math.max(0, Number.parseInt(url.searchParams.get('after') || '0', 10) || 0);
       if (!Number.isSafeInteger(cursor)) return json(res, 400, { error: 'Invalid catalogue cursor' });
-      const result = await pool.query(`SELECT DISTINCT ON (t.url_hash) t.id,t.name,t.stream_url,t.country,t.logo_url,t.category,t.language,t.url_hash
-        FROM iptv.streams t JOIN iptv.sources s ON s.id=t.source_id
-        WHERE s.enabled=TRUE AND s.publication_approved=TRUE AND t.rights_status='approved' AND t.health_status='healthy'
-          AND t.id>$1 AND t.stream_url LIKE 'https://%'
-        ORDER BY t.url_hash,t.id LIMIT $2`, [cursor, limit]);
+      const result = await pool.query(`SELECT id,name,stream_url,country,logo_url,category,language,url_hash FROM (
+          SELECT DISTINCT ON (t.url_hash) t.id,t.name,t.stream_url,t.country,t.logo_url,t.category,t.language,t.url_hash
+          FROM iptv.streams t JOIN iptv.sources s ON s.id=t.source_id
+          WHERE s.enabled=TRUE AND s.publication_approved=TRUE AND t.rights_status='approved' AND t.health_status='healthy'
+            AND t.stream_url LIKE 'https://%'
+          ORDER BY t.url_hash,t.id
+        ) approved WHERE id>$1 ORDER BY id LIMIT $2`, [cursor, limit]);
       return json(res, 200, { channels: result.rows.map(({url_hash, ...channel}) => channel), next_cursor: result.rows.length ? result.rows[result.rows.length-1].id : null, publication: 'approved_only' });
     } catch (e) { console.error('Catalogue query failed:', e.message); return json(res, 503, { error: 'Catalogue temporarily unavailable' }); }
   }
