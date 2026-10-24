@@ -265,7 +265,7 @@ class TvPlayer extends StatefulWidget {
 
 class _TvPlayerState extends State<TvPlayer> {
   late Channel activeChannel;
-  void setChannel(Channel channel) { if (mounted) setState(() { activeChannel = channel; showControls(); }); }
+  void setChannel(Channel channel) { if (!mounted) return; setState(() => activeChannel = channel); showControls(); }
   bool retrying = false;
   bool controlsVisible = true;
   Timer? controlsTimer;
