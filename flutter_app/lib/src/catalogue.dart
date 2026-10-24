@@ -14,6 +14,7 @@ class Channel {
 class ChannelCatalogue extends ChangeNotifier {
   // Additional sources are discovered but only explicitly approved channel IDs
   // may enter a subscription-backed catalogue. Review distribution rights first.
+  // Optional feeds may expand the free catalogue; never treat their entries as paid/approved entitlements.
   static const approvedFreeTvIds = <String>{};
   static const maxOptionalPlaylistBytes = 8 * 1024 * 1024;
   int discoveredFreeTv = 0;
@@ -197,6 +198,8 @@ class ChannelCatalogue extends ChangeNotifier {
         }
       }));
       final approvedUrls = <String, Set<String>>{};
+      final imported = <Channel>[];
+      final importedUrls = parsed.expand((channel) => channel.urls).toSet();
       for (final entry in extra) {
         var count = 0;
         if (!entry.value.startsWith('#EXTM3U')) {
@@ -204,11 +207,15 @@ class ChannelCatalogue extends ChangeNotifier {
           continue;
         }
         String? pendingId;
+        String? pendingName;
+        String? pendingLogo;
         final seen = <String>{};
         for (final raw in const LineSplitter().convert(entry.value)) {
           final line = raw.trim();
           if (line.startsWith('#EXTINF:')) {
             pendingId = RegExp(r'tvg-id="([^"]+)"').firstMatch(line)?.group(1);
+            pendingName = line.contains(',') ? line.substring(line.lastIndexOf(',') + 1).trim() : null;
+            pendingLogo = RegExp(r'tvg-logo="([^"]+)"').firstMatch(line)?.group(1);
           } else if (line.isNotEmpty && !line.startsWith('#')) {
             final uri = Uri.tryParse(line);
             if (pendingId != null && uri != null &&
@@ -217,6 +224,13 @@ class ChannelCatalogue extends ChangeNotifier {
                 seen.add('$pendingId|$line')) {
               count++;
               final index = known[pendingId];
+              // Expand the browsable catalogue with distinct public-feed entries. Keep
+              // provenance in IDs and do not label these as subscription-approved.
+              if (importedUrls.add(line) && pendingName != null && pendingName.isNotEmpty) {
+                final sourceKey = entry.key.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
+                final safeId = (pendingId ?? pendingName).replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
+                imported.add(Channel('feed-$sourceKey-$safeId-${imported.length}', pendingName, pendingLogo ?? '', 'INT', [line]));
+              }
               if (approvedFreeTvIds.contains(pendingId) && index != null &&
                   approvedUrls.putIfAbsent(pendingId, () => parsed[index].urls.toSet()).add(line)) {
                 final ch = parsed[index];
@@ -226,13 +240,18 @@ class ChannelCatalogue extends ChangeNotifier {
               }
             }
             pendingId = null;
+            pendingName = null;
+            pendingLogo = null;
           }
         }
         nextDiscoveredBySource[entry.key] = count;
       }
       discoveredBySource..clear()..addAll(nextDiscoveredBySource);
       discoveredFreeTv = discoveredBySource['free-tv'] ?? 0;
-      // Merge only rights-approved and healthy additions, deduplicated against existing URLs.
+      // Imported public feeds are clearly source-tagged and remain separate from
+      // payment-API approved entries; deduplicate by stream URL before publishing.
+      parsed.addAll(imported);
+      // Merge only backend-approved catalogue additions, deduplicated against existing URLs.
       try {
         final knownUrls = parsed.expand((channel) => channel.urls).toSet();
         for (final channel in await _approvedCatalogue()) {
