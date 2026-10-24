@@ -17,6 +17,8 @@ class ChannelCatalogue extends ChangeNotifier {
   static const approvedFreeTvIds = <String>{};
   static const maxOptionalPlaylistBytes = 8 * 1024 * 1024;
   int discoveredFreeTv = 0;
+  int approvedImportedCount = 0;
+  int get primaryChannelCount => channels.length - approvedImportedCount;
   int get playableChannelCount => channels.length;
   int get playableStreamCount => channels.fold<int>(0, (total, channel) => total + channel.urls.length);
   int get discoveredOptionalEntries => discoveredBySource.values.fold<int>(0, (total, count) => total + count);
@@ -44,7 +46,8 @@ class ChannelCatalogue extends ChangeNotifier {
     if (_pending != null) return _pending!;
     if (!force && channels.isNotEmpty && _loadedAt != null &&
         DateTime.now().difference(_loadedAt!) < const Duration(hours: 6)) {
-      return Future.value();
+      // Refresh the independently published catalogue even while primary cache is fresh.
+      return _refreshApprovedOnly();
     }
     _pending = _loadAndFetch(force).whenComplete(() => _pending = null);
     return _pending!;
@@ -62,15 +65,32 @@ class ChannelCatalogue extends ChangeNotifier {
           channels = List.unmodifiable(saved.map((v) => Channel(v['id'] as String, v['name'] as String,
             v['logo'] as String, v['country'] as String, List<String>.from(v['urls'] as List), categories: List<String>.from(v['categories'] as List? ?? const []), languages: List<String>.from(v['languages'] as List? ?? const []))));
           _loadedAt = DateTime.fromMillisecondsSinceEpoch(data['timestamp'] as int);
+          approvedImportedCount = channels.where((channel) => channel.id.startsWith('approved-')).length;
           notifyListeners();
         }
       } catch (e) { debugPrint('Catalogue cache unavailable: $e'); }
     }
     if (!force && channels.isNotEmpty && _loadedAt != null &&
         DateTime.now().difference(_loadedAt!) < const Duration(hours: 6)) {
+      await _refreshApprovedOnly();
       return;
     }
     await _fetch();
+  }
+
+  Future<void> _refreshApprovedOnly() async {
+    try {
+      final additions = await _approvedCatalogue();
+      final primary = channels.where((channel) => !channel.id.startsWith('approved-')).toList();
+      final seen = primary.expand((channel) => channel.urls).toSet();
+      final approved = <Channel>[];
+      for (final channel in additions) {
+        if (seen.add(channel.urls.first)) approved.add(channel);
+      }
+      approvedImportedCount = approved.length;
+      channels = List.unmodifiable([...primary, ...approved]);
+      notifyListeners();
+    } catch (error) { debugPrint('Approved catalogue refresh deferred: $error'); }
   }
 
   Future<List<Channel>> _approvedCatalogue() async {
@@ -219,6 +239,7 @@ class ChannelCatalogue extends ChangeNotifier {
           if (knownUrls.add(channel.urls.first)) parsed.add(channel);
         }
       } catch (e) { debugPrint('Approved catalogue unavailable; retaining existing channels: $e'); }
+      approvedImportedCount = parsed.where((channel) => channel.id.startsWith('approved-')).length;
       channels = List.unmodifiable(parsed);
       _loadedAt = DateTime.now();
       try {
