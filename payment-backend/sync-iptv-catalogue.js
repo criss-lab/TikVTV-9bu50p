@@ -7,7 +7,10 @@ const connectionString = process.env.IPTV_DATABASE_URL;
 if (!connectionString) throw new Error('IPTV_DATABASE_URL is required');
 const caPem = process.env.IPTV_DATABASE_CA_PEM;
 if (!caPem) throw new Error('IPTV_DATABASE_CA_PEM secret is required to verify database TLS');
-const pool = new pg.Pool({connectionString,ssl:{ca:caPem.replace(/\\n/g, '\n'),rejectUnauthorized:true},max:2});
+const dbUrl = new URL(connectionString);
+// pg parses sslmode from the URI and can override an explicit CA object.
+for (const key of ['sslmode','sslrootcert','sslcert','sslkey']) dbUrl.searchParams.delete(key);
+const pool = new pg.Pool({connectionString:dbUrl.toString(),ssl:{ca:caPem.replace(/\\n/g, '\n'),rejectUnauthorized:true},max:2});
 const maxBytes = 32*1024*1024;
 const maxEntries = 250000;
 function publicHttpUrl(value) {
