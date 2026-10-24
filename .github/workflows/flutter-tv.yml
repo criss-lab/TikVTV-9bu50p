@@ -48,6 +48,18 @@ jobs:
         run: |
           python3 tool/configure_android.py
           python3 tool/configure_tv.py
+      - name: Verify TV manifest does not require camera hardware
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('android/app/src/main/AndroidManifest.xml').getroot()
+          ns = '{http://schemas.android.com/apk/res/android}'
+          features = {node.get(ns + 'name'): node.get(ns + 'required') for node in root.findall('uses-feature')}
+          for feature in ('android.hardware.camera', 'android.hardware.camera.autofocus'):
+              assert features.get(feature) == 'false', f'{feature} must be optional for camera-less TV devices'
+          assert features.get('android.software.leanback') == 'true', 'TV launcher must require Leanback'
+          print('Verified: Android TV requires Leanback but not camera or autofocus')
+          PY
       - name: Configure persistent signing when provisioned
         run: python3 tool/configure_signing.py
       - name: Prepare Android NDK with retry for corrupted SDK downloads
