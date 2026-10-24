@@ -212,6 +212,13 @@ class ChannelCatalogue extends ChangeNotifier {
       }
       discoveredBySource..clear()..addAll(nextDiscoveredBySource);
       discoveredFreeTv = discoveredBySource['free-tv'] ?? 0;
+      // Merge only rights-approved and healthy additions, deduplicated against existing URLs.
+      try {
+        final knownUrls = parsed.expand((channel) => channel.urls).toSet();
+        for (final channel in await _approvedCatalogue()) {
+          if (knownUrls.add(channel.urls.first)) parsed.add(channel);
+        }
+      } catch (e) { debugPrint('Approved catalogue unavailable; retaining existing channels: $e'); }
       channels = List.unmodifiable(parsed);
       _loadedAt = DateTime.now();
       try {
