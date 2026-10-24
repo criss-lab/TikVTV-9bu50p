@@ -14,6 +14,8 @@ class _TvPairingScreenState extends State<TvPairingScreen> {
   Timer? timer;
   bool polling = false;
   bool starting = false;
+  int consecutivePollFailures = 0;
+  String? connectionWarning;
   DateTime? expiresAt;
   int generation = 0;
   int get secondsLeft => expiresAt == null ? 0 : expiresAt!.difference(DateTime.now()).inSeconds.clamp(0, 300);
@@ -27,7 +29,7 @@ class _TvPairingScreenState extends State<TvPairingScreen> {
     starting = true;
     timer?.cancel();
     final current = ++generation;
-    if (mounted) setState(() { pairing = null; message = null; expiresAt = null; });
+    if (mounted) setState(() { pairing = null; message = null; connectionWarning = null; consecutivePollFailures = 0; expiresAt = null; });
     try {
       final data = await TvPairingApi.start();
       if (!mounted || current != generation) return;
@@ -48,7 +50,9 @@ class _TvPairingScreenState extends State<TvPairingScreen> {
     try {
       final result = await TvPairingApi.status(pairing!['poll_token'] as String);
       if (!mounted || current != generation) return;
-      if (result['device_token'] is String) {
+      consecutivePollFailures = 0;
+      if (connectionWarning != null) setState(() => connectionWarning = null);
+      if (result['device_token'] is String && (result['device_token'] as String).isNotEmpty) {
         timer?.cancel();
         await NativeBackend.instance.setTvDeviceToken(result['device_token'] as String);
         if (mounted && current == generation) Navigator.pop(context, true);
@@ -56,7 +60,13 @@ class _TvPairingScreenState extends State<TvPairingScreen> {
         timer?.cancel();
         setState(() { pairing = null; message = 'This pairing was already claimed. Generate a new QR code.'; });
       }
-    } catch(e) { if (mounted && current == generation) { timer?.cancel(); setState(() { pairing = null; message = e.toString(); }); } }
+    } catch(e) {
+      // A dropped request must not destroy a valid, unexpired pairing QR.
+      if (mounted && current == generation) {
+        consecutivePollFailures++;
+        if (consecutivePollFailures >= 2) setState(() => connectionWarning = 'Connection interrupted. Retrying automatically while this QR remains valid.');
+      }
+    }
     finally { polling = false; }
   }
   @override
@@ -78,6 +88,7 @@ class _TvPairingScreenState extends State<TvPairingScreen> {
         SelectableText('${pairing!['display_code']}', style: const TextStyle(fontSize: 42, fontWeight: FontWeight.bold, letterSpacing: 8)),
         Text('Expires in ${secondsLeft ~/ 60}:${(secondsLeft % 60).toString().padLeft(2, '0')}. Do not share this code with strangers.'),
       ],
+      if (connectionWarning != null) Padding(padding: const EdgeInsets.all(8), child: Text(connectionWarning!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.orangeAccent))),
       if (message != null) Text(message!, style: const TextStyle(color: Colors.orangeAccent)),
       const SizedBox(height: 18),
       OutlinedButton.icon(onPressed: starting ? null : start, icon: const Icon(Icons.refresh), label: Text(starting ? 'Generating QR code…' : 'Generate new QR code')),
