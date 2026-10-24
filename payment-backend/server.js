@@ -13,7 +13,17 @@ const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env
 const cataloguePool = process.env.IPTV_DATABASE_URL ? new Pool({ connectionString: process.env.IPTV_DATABASE_URL, ssl: { rejectUnauthorized: true }, max: 3, connectionTimeoutMillis: 3000, statement_timeout: 8000, application_name: 'tikvtv-approved-catalogue' }) : null;
 // Optional second approved catalogue. Set this to infinity-vpn's dedicated Postgres connection string.
 // Never use a browser anon key here; this connection stays server-side.
-const infinityCataloguePool = process.env.INFINITY_IPTV_DATABASE_URL ? new Pool({ connectionString: process.env.INFINITY_IPTV_DATABASE_URL, ssl: { rejectUnauthorized: true }, max: 2, connectionTimeoutMillis: 3000, statement_timeout: 8000, application_name: 'tikvtv-infinity-catalogue' }) : null;
+// node-postgres connection-string SSL parameters override the explicit ssl object.
+// Remove those parameters and configure verified TLS in one place. Never disable verification.
+function infinityConnectionOptions(connectionString) {
+  const uri = new URL(connectionString);
+  if (!['postgres:', 'postgresql:'].includes(uri.protocol)) throw new Error('Infinity database URL must be PostgreSQL');
+  for (const key of ['sslmode', 'sslcert', 'sslkey', 'sslrootcert', 'uselibpqcompat']) uri.searchParams.delete(key);
+  const ca = String(process.env.INFINITY_IPTV_CA_CERT || '').replace(/\\n/g, '\\n').trim();
+  if (process.env.INFINITY_IPTV_CA_CERT && !ca.includes('-----BEGIN CERTIFICATE-----')) throw new Error('Infinity CA certificate must be PEM encoded');
+  return { connectionString: uri.toString(), ssl: { rejectUnauthorized: true, ...(ca ? { ca } : {}) } };
+}
+const infinityCataloguePool = process.env.INFINITY_IPTV_DATABASE_URL ? new Pool({ ...infinityConnectionOptions(process.env.INFINITY_IPTV_DATABASE_URL), max: 2, connectionTimeoutMillis: 3000, statement_timeout: 8000, application_name: 'tikvtv-infinity-catalogue' }) : null;
 const cataloguePools = [
   ...(cataloguePool ? [{ pool: cataloguePool, prefix: '' }] : []),
   ...(infinityCataloguePool ? [{ pool: infinityCataloguePool, prefix: 'infinity-' }] : []),
