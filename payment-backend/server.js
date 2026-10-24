@@ -10,6 +10,7 @@ const environmentConfigured = paymentEnvironment === 'live' || paymentEnvironmen
 const live = paymentEnvironment === 'live';
 const base = live ? 'https://pay.pesapal.com/v3' : 'https://cybqa.pesapal.com/pesapalv3';
 const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: true }, max: 5, idleTimeoutMillis: 10000, connectionTimeoutMillis: 10000 }) : null;
+const cataloguePool = process.env.IPTV_DATABASE_URL ? new Pool({ connectionString: process.env.IPTV_DATABASE_URL, ssl: { rejectUnauthorized: true }, max: 3, connectionTimeoutMillis: 3000, statement_timeout: 8000, application_name: 'tikvtv-approved-catalogue' }) : null;
 const allowedOrigins = new Set((process.env.CORS_ORIGINS || 'https://streamora.co.ke,https://www.streamora.co.ke').split(',').map(x => x.trim()).filter(Boolean));
 const json = (res, status, data) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); res.end(JSON.stringify(data)); };
 const configured = () => Boolean(environmentConfigured && process.env.PESAPAL_CONSUMER_KEY && process.env.PESAPAL_CONSUMER_SECRET && process.env.PESAPAL_IPN_ID);
@@ -269,6 +270,27 @@ async function route(req, res) {
       })),
     });
   }
+  // Production catalogue is fail-closed: discovery imports are never automatically published.
+  if (req.method === 'GET' && url.pathname === '/v1/catalogue') {
+    try {
+      if (!cataloguePool) return json(res, 503, { error: 'Approved catalogue database is not configured' });
+      const rawLimit = url.searchParams.get('limit') || '30';
+      const rawCursor = url.searchParams.get('after') || '0';
+      if (!/^\d+$/.test(rawLimit) || !/^\d+$/.test(rawCursor)) return json(res, 400, { error: 'Invalid catalogue pagination' });
+      const requestedLimit = Number(rawLimit);
+      const cursor = Number(rawCursor);
+      if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || !Number.isSafeInteger(cursor) || cursor < 0) return json(res, 400, { error: 'Invalid catalogue pagination' });
+      const limit = Math.min(100, requestedLimit);
+      const result = await cataloguePool.query(`SELECT id,name,stream_url,country,logo_url,category,language,url_hash FROM (
+          SELECT DISTINCT ON (t.url_hash) t.id,t.name,t.stream_url,t.country,t.logo_url,t.category,t.language,t.url_hash
+          FROM iptv.streams t JOIN iptv.sources s ON s.id=t.source_id
+          WHERE s.enabled=TRUE AND s.publication_approved=TRUE AND t.rights_status='approved' AND t.health_status='healthy'
+            AND t.stream_url LIKE 'https://%'
+          ORDER BY t.url_hash,t.id
+        ) approved WHERE id>$1 ORDER BY id LIMIT $2`, [cursor, limit]);
+      return json(res, 200, { channels: result.rows.map(({url_hash, ...channel}) => channel), next_cursor: result.rows.length ? result.rows[result.rows.length-1].id : null, publication: 'approved_only' });
+    } catch (e) { console.error('Catalogue query failed:', e.message); return json(res, 503, { error: 'Catalogue temporarily unavailable' }); }
+  }
   if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: 'ok', service: 'tikvtv-payment-backend', database_configured: Boolean(pool), auth_validation_configured: authConfigured(), pesapal_credentials_present: configured(), environment: environmentConfigured ? paymentEnvironment : 'invalid' });
   if (req.method === 'GET' && url.pathname === '/pesapal/readiness') {
     if (!pool || !configured() || !authConfigured()) return json(res, 503, { ready: false, reason: !pool ? 'database_missing' : !environmentConfigured ? 'pesapal_environment_invalid' : !configured() ? 'pesapal_configuration_missing' : 'account_validation_configuration_missing' });
@@ -281,11 +303,13 @@ async function route(req, res) {
           to_regclass('public.pesapal_ipn_events') IS NOT NULL AS pesapal_ipn_events,
           to_regclass('public.free_preview_sessions') IS NOT NULL AS free_preview_sessions,
           to_regclass('public.free_channel_previews') IS NOT NULL AS free_channel_previews,
+          to_regclass('public.guest_preview_installations') IS NOT NULL AS guest_preview_installations,
+          to_regclass('public.guest_channel_previews') IS NOT NULL AS guest_channel_previews,
           to_regclass('public.pesapal_ipn_events_notification_tracking_status_key') IS NOT NULL AS ipn_status_history_index,
           (SELECT is_nullable = 'YES' FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'payment_orders' AND column_name = 'order_tracking_id') AS order_tracking_id_nullable,
           (SELECT COUNT(*)::int FROM information_schema.columns WHERE table_schema='public' AND table_name='payment_orders' AND column_name IN ('pesapal_payment_method','pesapal_confirmation_code','raw_ipn','paid_at')) AS payment_activation_columns
       `);
-      if (!schema.rows[0]?.payment_orders || !schema.rows[0]?.subscriptions || !schema.rows[0]?.pesapal_ipn_events || !schema.rows[0]?.free_preview_sessions || !schema.rows[0]?.free_channel_previews || !schema.rows[0]?.ipn_status_history_index || schema.rows[0]?.order_tracking_id_nullable !== true || schema.rows[0]?.payment_activation_columns !== 4) {
+      if (!schema.rows[0]?.payment_orders || !schema.rows[0]?.subscriptions || !schema.rows[0]?.pesapal_ipn_events || !schema.rows[0]?.free_preview_sessions || !schema.rows[0]?.free_channel_previews || !schema.rows[0]?.guest_preview_installations || !schema.rows[0]?.guest_channel_previews || !schema.rows[0]?.ipn_status_history_index || schema.rows[0]?.order_tracking_id_nullable !== true || schema.rows[0]?.payment_activation_columns !== 4) {
         return json(res, 503, { ready: false, reason: 'payment_schema_missing' });
       }
       await token();
@@ -306,6 +330,62 @@ async function route(req, res) {
       requireDb(); const owned = await pool.query('SELECT 1 FROM payment_orders WHERE order_tracking_id=$1 AND user_id=$2', [body.order_tracking_id, user.id]); if (!owned.rowCount) return json(res, 404, { error: 'Payment order not found' });
       return json(res, 200, await verifyAndActivate(body.order_tracking_id));
     } catch (e) { console.error('Payment status check failed:', e.message); return json(res, e.status || 502, { error: e.message || 'Status check failed' }); }
+  }
+  if (req.method === 'POST' && url.pathname === '/v1/guest/start') {
+    try {
+      requireDb();
+      const secret = crypto.randomBytes(32).toString('base64url');
+      const hash = crypto.createHash('sha256').update(secret).digest('hex');
+      await pool.query('INSERT INTO guest_preview_installations(token_hash) VALUES($1)', [hash]);
+      return json(res, 201, { guest_token: secret, previews_limit: 3 });
+    } catch (e) { return json(res, 503, { error: 'Guest preview unavailable' }); }
+  }
+  if (req.method === 'GET' && url.pathname === '/v1/guest/viewing-access') {
+    try {
+      requireDb();
+      const secret = (req.headers.authorization || '').replace(/^Bearer /, '');
+      if (!/^[A-Za-z0-9_-]{43}$/.test(secret)) return json(res, 401, { error: 'Guest session required' });
+      const hash = crypto.createHash('sha256').update(secret).digest('hex');
+      const channel = url.searchParams.get('channel_id')?.trim();
+      if (!channel || channel.length > 200) return json(res, 400, { error: 'Invalid channel' });
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const guest = await client.query('SELECT claimed_user_id FROM guest_preview_installations WHERE token_hash=$1 FOR UPDATE', [hash]);
+        if (!guest.rowCount || guest.rows[0].claimed_user_id) { await client.query('ROLLBACK'); return json(res, 403, { error: 'Guest session unavailable; sign in to continue' }); }
+        let preview = await client.query('SELECT expires_at FROM guest_channel_previews WHERE token_hash=$1 AND channel_id=$2', [hash, channel]);
+        const existingPreview = preview.rowCount > 0;
+        const count = await client.query('SELECT COUNT(*)::int AS used FROM guest_channel_previews WHERE token_hash=$1', [hash]);
+        const used = count.rows[0].used;
+        if (!preview.rowCount && used < 3) preview = await client.query("INSERT INTO guest_channel_previews(token_hash,channel_id) VALUES($1,$2) RETURNING expires_at", [hash,channel]);
+        const allocated = used + (preview.rowCount && used < 3 && !existingPreview ? 1 : 0);
+        await client.query('COMMIT');
+        const expiry = preview.rows[0]?.expires_at || null;
+        return json(res, 200, { active:false, allowed: Boolean(expiry && new Date(expiry).getTime()>Date.now()), preview_ends_at:expiry, previews_used:allocated, previews_limit:3, stage:'guest' });
+      } catch(e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+    } catch(e) { console.error('Guest preview failed:',e.message); return json(res,503,{error:'Guest preview unavailable'}); }
+  }
+  if (req.method === 'POST' && url.pathname === '/v1/guest/claim') {
+    try {
+      const user = await authenticate(req); requireDb();
+      const body = await readBody(req);
+      if (typeof body.guest_token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(body.guest_token)) return json(res,400,{error:'Invalid guest token'});
+      const hash = crypto.createHash('sha256').update(body.guest_token).digest('hex');
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const guest = await client.query('SELECT claimed_user_id FROM guest_preview_installations WHERE token_hash=$1 FOR UPDATE',[hash]);
+        if (!guest.rowCount || (guest.rows[0].claimed_user_id && guest.rows[0].claimed_user_id!==user.id)) { await client.query('ROLLBACK'); return json(res,403,{error:'Guest preview already claimed or missing'}); }
+        const prior = await client.query('SELECT 1 FROM subscriptions WHERE user_id=$1',[user.id]);
+        const previous = await client.query('SELECT 1 FROM free_channel_previews WHERE user_id=$1 LIMIT 1',[user.id]);
+        if (prior.rowCount || previous.rowCount) { await client.query('ROLLBACK'); return json(res,409,{error:'Existing account preview cannot be reset'}); }
+        const other = await client.query('SELECT 1 FROM guest_preview_installations WHERE claimed_user_id=$1 AND token_hash<>$2',[user.id,hash]);
+        if (other.rowCount) { await client.query('ROLLBACK'); return json(res,409,{error:'Account already claimed a guest preview'}); }
+        await client.query('UPDATE guest_preview_installations SET claimed_user_id=$1,claimed_at=COALESCE(claimed_at,NOW()) WHERE token_hash=$2',[user.id,hash]);
+        await client.query('COMMIT');
+        return json(res,200,{claimed:true,previews_limit:7});
+      } catch(e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+    } catch(e) { console.error('Guest claim failed:',e.message); return json(res,e.status||503,{error:'Guest claim unavailable'}); }
   }
   if (req.method === 'GET' && url.pathname === '/v1/viewing-access') {
     try {
