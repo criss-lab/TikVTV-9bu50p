@@ -330,7 +330,7 @@ async function fetchExtraSources(): Promise<IPTVChannel[]> {
 }
 
 async function fetchApprovedCatalogue(): Promise<IPTVChannel[]> {
-  const base = ((import.meta.env.VITE_PAYMENT_API_URL as string | undefined) || 'https://tikvtv-payment-api.onrender.com').replace(/\\/$/, '');
+  const configuredBase = (import.meta.env.VITE_PAYMENT_API_URL as string | undefined) || 'https://tikvtv-payment-api.onrender.com'; const base = configuredBase.endsWith('/') ? configuredBase.slice(0, -1) : configuredBase;
   const approved: IPTVChannel[] = [];
   let after = 0;
   for (let page = 0; page < 200; page++) {
