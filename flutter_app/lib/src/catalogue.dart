@@ -228,7 +228,7 @@ class ChannelCatalogue extends ChangeNotifier {
               // provenance in IDs and do not label these as subscription-approved.
               if (importedUrls.add(line) && pendingName != null && pendingName.isNotEmpty) {
                 final sourceKey = entry.key.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
-                final safeId = (pendingId ?? pendingName).replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
+                final safeId = pendingId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
                 imported.add(Channel('feed-$sourceKey-$safeId-${imported.length}', pendingName, pendingLogo ?? '', 'INT', [line]));
               }
               if (approvedFreeTvIds.contains(pendingId) && index != null &&
