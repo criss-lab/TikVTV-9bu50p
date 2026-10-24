@@ -49,10 +49,8 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
     scannerStarting = true;
     final attempt = ++scannerAttempt;
     try {
-      await scannerController.stop();
-      if (!mounted || !scanning || !scannerShouldRun || attempt != scannerAttempt) return;
-      await Future<void>.delayed(const Duration(milliseconds: 250));
-      if (!mounted || !scanning || !scannerShouldRun || attempt != scannerAttempt) return;
+      // The controller starts stopped (autoStart: false). Calling stop before
+      // the first start can race the platform camera session on Android.
       await scannerController.start();
       if (mounted && attempt == scannerAttempt && scannerShouldRun) {
         setState(() { scannerFailure = null; scannerDiagnostic = null; });
@@ -92,11 +90,10 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
     if (!mounted || !scanning) return;
     scannerShouldRun = true;
     scannerAttempt++;
-    try {
-      await scannerController.stop();
-    } catch (e) {
-      debugPrint('Scanner stop before retry: $e');
-    }
+    scannerStartQueued = true;
+    if (scannerStarting) return; // Let the existing start settle first.
+    scannerStartQueued = false;
+    await _stopScanner();
     if (mounted && scanning && scannerShouldRun) _requestScannerStart();
   }
 
@@ -125,7 +122,16 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
   @override
   void initState() { super.initState(); WidgetsBinding.instance.addObserver(this); load(); }
   @override
-  void dispose() { WidgetsBinding.instance.removeObserver(this); scannerController.dispose(); manualLink.dispose(); code.dispose(); super.dispose(); }
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    scannerShouldRun = false;
+    scannerAttempt++;
+    scannerStartQueued = false;
+    unawaited(scannerController.dispose());
+    manualLink.dispose();
+    code.dispose();
+    super.dispose();
+  }
   Future<void> load() async {
     try { final result = await TvPairingApi.devices(); if (mounted) setState(() => devices = result); }
     catch (e) { if (mounted) setState(() => message = e.toString()); }
@@ -177,8 +183,10 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
         ]))))),
         if (scannerFailure != null) Padding(padding: const EdgeInsets.all(8), child: Text(scannerFailure!, textAlign: TextAlign.center)),
         if (scannerDiagnostic != null) Padding(padding: const EdgeInsets.all(8), child: SelectableText('Camera diagnostic: $scannerDiagnostic', textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: Colors.white54))),
-        TextButton.icon(onPressed: () { _stopScanner(); scannerShouldRun = false;
+        TextButton.icon(onPressed: () { scannerShouldRun = false;
           scannerAttempt++;
+          scannerStartQueued = false;
+          unawaited(_stopScanner());
           setState(() { scanning = false; message = null; }); }, icon: const Icon(Icons.close), label: const Text('Close scanner')),
       ],
       if (!scanning && challenge == null) FilledButton.icon(onPressed: _openScanner, icon: const Icon(Icons.qr_code_scanner), label: const Text('Scan TV QR code')),
