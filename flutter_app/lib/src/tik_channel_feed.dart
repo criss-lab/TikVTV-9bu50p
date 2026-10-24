@@ -380,6 +380,8 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
   bool _applyingNativeValue = false;
   double? _pendingNativeValue;
   String? _pendingNativeKind;
+  int _gestureEpoch = 0;
+  int? _pendingNativeEpoch;
 
   @override
   void initState() {
@@ -412,9 +414,10 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
   Future<void> _beginSwipe(bool leftSide, double y) async {
     if (_gestureBusy) return;
     _gestureBusy = true;
+    final epoch = ++_gestureEpoch;
     try {
       final value = leftSide ? await VolumeController.instance.getVolume() : await ScreenBrightness.instance.application;
-      if (!mounted) return;
+      if (!mounted || epoch != _gestureEpoch) return;
       setState(() {
         _gestureKind = leftSide ? 'volume' : 'brightness';
         _gestureStartValue = value.clamp(0.0, 1.0);
@@ -438,6 +441,7 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
     _lastAppliedValue = next;
     _pendingNativeKind = kind;
     _pendingNativeValue = next;
+    _pendingNativeEpoch = _gestureEpoch;
     if (!_applyingNativeValue) unawaited(_drainNativeUpdates());
   }
 
@@ -445,11 +449,12 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
     if (_applyingNativeValue) return;
     _applyingNativeValue = true;
     try {
-      while (mounted && _pendingNativeValue != null && _pendingNativeKind != null) {
+      while (mounted && _pendingNativeValue != null && _pendingNativeKind != null && _pendingNativeEpoch == _gestureEpoch) {
         final value = _pendingNativeValue!;
         final kind = _pendingNativeKind!;
         _pendingNativeValue = null;
         _pendingNativeKind = null;
+        _pendingNativeEpoch = null;
         try {
           if (kind == 'volume') {
             await VolumeController.instance.setVolume(value);
@@ -469,9 +474,16 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
   }
 
   void _endSwipe() {
-    if (_gestureKind == null) return;
+    // Invalidate an outstanding async system-value read and discard values
+    // queued by a gesture that has already ended. An in-flight platform call
+    // cannot be cancelled, but stale queued writes must never run afterward.
+    ++_gestureEpoch;
+    _pendingNativeValue = null;
+    _pendingNativeKind = null;
+    _pendingNativeEpoch = null;
     _lastAppliedValue = -1;
-    setState(() { _gestureKind = null; _gestureValue = null; });
+    if (_gestureKind == null) return;
+    if (mounted) setState(() { _gestureKind = null; _gestureValue = null; });
   }
 
   @override
