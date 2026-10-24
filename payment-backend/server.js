@@ -307,8 +307,18 @@ async function route(req, res) {
         if (result.status !== 'rejected') return;
         const error = result.reason;
         // Log only PostgreSQL's structured error code, never messages, SQL, URLs or credentials.
-        const code = typeof error?.code === 'string' && /^[A-Z0-9]{5}$/.test(error.code) ? error.code : 'CONNECTION_OR_QUERY_ERROR';
-        console.error('Approved catalogue source failed', { source: index === 0 ? (cataloguePool ? 'primary' : 'infinity') : 'infinity', code });
+        const code = typeof error?.code === 'string' && /^[A-Z0-9]{5}$/.test(error.code) ? error.code : 'NON_SQL_ERROR';
+        const message = String(error?.message || '');
+        // Classify known network/TLS errors without printing raw messages (which may contain hostnames).
+        const category = /ENETUNREACH|EHOSTUNREACH|network is unreachable/i.test(message) || ['ENETUNREACH', 'EHOSTUNREACH'].includes(error?.code) ? 'NETWORK_UNREACHABLE'
+          : /ENOTFOUND|EAI_AGAIN|getaddrinfo/i.test(message) ? 'DNS_RESOLUTION'
+          : /ETIMEDOUT|timeout|Connection terminated due to connection timeout/i.test(message) ? 'CONNECTION_TIMEOUT'
+          : /ECONNREFUSED/i.test(message) ? 'CONNECTION_REFUSED'
+          : /certificate|self.signed|unable to verify|SSL|TLS/i.test(message) ? 'TLS_VERIFICATION'
+          : /password authentication|authentication failed/i.test(message) ? 'AUTHENTICATION'
+          : /relation .* does not exist|permission denied|column .* does not exist/i.test(message) ? 'SQL_SCHEMA_OR_PERMISSION'
+          : 'OTHER';
+        console.error('Approved catalogue source failed', { source: index === 0 ? (cataloguePool ? 'primary' : 'infinity') : 'infinity', code, category });
       });
       if (!sourceRows.length) return json(res, 503, { error: 'Catalogue temporarily unavailable' });
       const seen = new Set();
