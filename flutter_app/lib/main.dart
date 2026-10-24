@@ -126,6 +126,11 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
     searchOpen = tab == 1;
     WidgetsBinding.instance.addObserver(this);
     catalogue.load();
+    // Start guest enrollment while the catalogue loads, before the first focused video.
+    // Never allocate a preview until the viewer actually focuses a channel.
+    unawaited(nativeBackend.restoreGuest().then((_) async {
+      if (!nativeBackend.signedIn && !nativeBackend.tvPaired) await nativeBackend.ensureGuestSession();
+    }).catchError((Object error) { debugPrint('Guest session prewarm deferred: $error'); }));
     _catalogueRefresh = Timer.periodic(const Duration(hours: 1), (_) => unawaited(catalogue.load()));
     unawaited(library.load().then((_) async {
       final prefs = await SharedPreferences.getInstance();
