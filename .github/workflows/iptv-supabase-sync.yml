@@ -36,5 +36,4 @@ jobs:
       - name: Sync unreviewed source discoveries into isolated IPTV schema
         env:
           IPTV_DATABASE_URL: ${{ secrets.IPTV_DATABASE_URL }}
-          IPTV_DATABASE_CA_PEM: ${{ secrets.IPTV_DATABASE_CA_PEM }}
         run: node sync-iptv-catalogue.js
