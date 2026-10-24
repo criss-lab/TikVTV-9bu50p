@@ -475,6 +475,7 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
         if (playable) Positioned.fill(child: Row(children: [
           Expanded(child: GestureDetector(
             behavior: HitTestBehavior.translucent,
+            onTap: _showSuggestion,
             onVerticalDragStart: (details) => _beginSwipe(true, details.globalPosition.dy),
             onVerticalDragUpdate: (details) => _updateSwipe(details.globalPosition.dy),
             onVerticalDragEnd: (_) => _endSwipe(),
@@ -488,6 +489,7 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
           )),
           Expanded(child: GestureDetector(
             behavior: HitTestBehavior.translucent,
+            onTap: _showSuggestion,
             onVerticalDragStart: (details) => _beginSwipe(false, details.globalPosition.dy),
             onVerticalDragUpdate: (details) => _updateSwipe(details.globalPosition.dy),
             onVerticalDragEnd: (_) => _endSwipe(),
