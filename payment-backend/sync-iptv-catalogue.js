@@ -80,9 +80,15 @@ async function run(source) {
   await pool.query('update iptv.sources set last_checked_at=now(),last_error=$2 where id=$1',[id,String(e.message).slice(0,300)]);
   await pool.query("update iptv.sync_runs set completed_at=now(),status='failure',error=$2 where id=$1",[runId,String(e.message).slice(0,300)]);
   console.error(id+': '+e.message);
+  return false;
  }
+ return true;
 }
 try{
  const result=await pool.query("select id,playlist_url from iptv.sources where enabled=true and kind='m3u' order by id");
- for(const source of result.rows) await run(source);
+ if (!result.rows.length) throw new Error('No enabled IPTV sources configured');
+ let failed=0;
+ for(const source of result.rows) if(!(await run(source))) failed++;
+ if(failed) process.exitCode=1;
+ console.log(JSON.stringify({sources:result.rows.length,failed,publication:'review_required'}));
 }finally{await pool.end();}
