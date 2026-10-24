@@ -19,6 +19,8 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
   String? scannerDiagnostic;
   int scannerAttempt = 0;
   String? scannerFailure;
+  String? scanFeedback;
+  DateTime? lastInvalidScan;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -82,7 +84,7 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
   }
 
   void _openScanner() {
-    setState(() { scanning = true; scannerFailure = null; scannerDiagnostic = null; message = null; });
+    setState(() { scanning = true; scannerFailure = null; scannerDiagnostic = null; scanFeedback = null; message = null; });
     scannerShouldRun = true;
     WidgetsBinding.instance.addPostFrameCallback((_) => _requestScannerStart());
   }
@@ -140,11 +142,23 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
   void scan(BarcodeCapture capture) {
     if (!mounted || !scanning || challenge != null) return;
     for (final barcode in capture.barcodes) {
-      final value = barcode.rawValue;
-      if (value != null) {
-        final uri = Uri.tryParse(value.trim());
-        if (uri?.scheme == 'https' && ['streamora.co.ke','www.streamora.co.ke'].contains(uri?.host) && uri?.path == '/tv-pair' && RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(uri?.queryParameters['challenge'] ?? '')) { _acceptLink(value); return; }
+      final value = barcode.rawValue?.trim();
+      if (value == null || value.isEmpty) continue;
+      final uri = Uri.tryParse(value);
+      if (uri?.scheme == 'https' &&
+          ['streamora.co.ke', 'www.streamora.co.ke'].contains(uri?.host) &&
+          uri?.path == '/tv-pair' &&
+          RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(uri?.queryParameters['challenge'] ?? '')) {
+        _acceptLink(value);
+        return;
       }
+      // Do not display arbitrary QR contents: they may contain private data.
+      final now = DateTime.now();
+      if (lastInvalidScan == null || now.difference(lastInvalidScan!) > const Duration(seconds: 2)) {
+        lastInvalidScan = now;
+        setState(() => scanFeedback = 'QR detected, but it is not a TikVTV TV pairing code. Open Connect phone on the TV and scan that QR.');
+      }
+      return;
     }
   }
   Future<void> approve() async {
@@ -173,7 +187,7 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
       const SizedBox(height: 20),
       if (kIsWeb) const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('On web, allow camera access in your browser. Use HTTPS and a device with a camera.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white70))),
       if (scanning) ...[
-        SizedBox(height: 290, child: MobileScanner(controller: scannerController, onDetect: scan, errorBuilder: (context, error) => Center(child: Padding(padding: const EdgeInsets.all(16), child: Column(mainAxisSize: MainAxisSize.min, children: [
+        SizedBox(height: 290, child: ClipRRect(borderRadius: BorderRadius.circular(18), child: Stack(fit: StackFit.expand, children: [MobileScanner(controller: scannerController, onDetect: scan, errorBuilder: (context, error) => Center(child: Padding(padding: const EdgeInsets.all(16), child: Column(mainAxisSize: MainAxisSize.min, children: [
           const Icon(Icons.no_photography_outlined, size: 42, color: Colors.orangeAccent),
           const SizedBox(height: 12),
           Text(error.errorCode == MobileScannerErrorCode.permissionDenied
@@ -182,6 +196,10 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
           const SizedBox(height: 12),
           FilledButton.icon(onPressed: _retryScanner, icon: const Icon(Icons.refresh), label: const Text('Retry camera')),
         ]))))),
+          IgnorePointer(child: Center(child: Container(width: 215, height: 215, decoration: BoxDecoration(border: Border.all(color: const Color(0xFF32CED0), width: 3), borderRadius: BorderRadius.circular(20)))),
+          const Positioned(left: 12, right: 12, bottom: 12, child: IgnorePointer(child: Text('Align the TV QR code inside the frame', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, shadows: [Shadow(color: Colors.black, blurRadius: 8)])))),
+        ]))),
+        if (scanFeedback != null) Padding(padding: const EdgeInsets.all(8), child: Text(scanFeedback!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.orangeAccent))),
         if (scannerFailure != null) Padding(padding: const EdgeInsets.all(8), child: Text(scannerFailure!, textAlign: TextAlign.center)),
         if (scannerDiagnostic != null) Padding(padding: const EdgeInsets.all(8), child: SelectableText('Camera diagnostic: $scannerDiagnostic', textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: Colors.white54))),
         TextButton.icon(onPressed: () { scannerShouldRun = false;
