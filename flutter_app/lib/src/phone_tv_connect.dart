@@ -34,7 +34,7 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
       await scannerController.start();
       if (mounted && attempt == scannerAttempt) setState(() { scannerFailure = null; scannerDiagnostic = null; });
     } catch (e, stack) {
-      debugPrint('TV pairing scanner start failed (attempt $attempt): $e\\n$stack');
+      debugPrint('TV pairing scanner start failed (attempt $attempt): $e\n$stack');
       if (mounted && attempt == scannerAttempt) setState(() {
         scannerDiagnostic = e.toString();
         scannerFailure = 'Camera could not be initialized. Check Android Camera permission, close apps using the camera, then retry. If it still fails, share the diagnostic below.';
@@ -115,7 +115,7 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
           const SizedBox(height: 12),
           Text(error.errorCode == MobileScannerErrorCode.permissionDenied
               ? 'Camera permission was denied. Allow Camera for TikVTV in Android Settings, then return and retry.'
-              : 'Unable to start the camera. Close other camera apps and retry. Error: ${error.errorCode.name}\\n${error.toString()}', textAlign: TextAlign.center),
+              : 'Unable to start the camera. Close other camera apps and retry. Error: ${error.errorCode.name}\n${error.toString()}', textAlign: TextAlign.center),
           const SizedBox(height: 12),
           FilledButton.icon(onPressed: _retryScanner, icon: const Icon(Icons.refresh), label: const Text('Retry camera')),
         ]))))),
