@@ -22,6 +22,8 @@ try {
       to_regclass('public.subscriptions') IS NOT NULL AS subscriptions,
       to_regclass('public.pesapal_ipn_events') IS NOT NULL AS pesapal_ipn_events,
       to_regclass('public.free_preview_sessions') IS NOT NULL AS free_preview_sessions,
+      to_regclass('public.guest_preview_installations') IS NOT NULL AS guest_preview_installations,
+      to_regclass('public.guest_channel_previews') IS NOT NULL AS guest_channel_previews,
       (SELECT is_nullable = 'YES'
          FROM information_schema.columns
         WHERE table_schema = 'public'
@@ -30,7 +32,7 @@ try {
       to_regclass('public.pesapal_ipn_events_notification_tracking_status_key') IS NOT NULL AS ipn_status_history_index
   `);
   const tables = result.rows[0];
-  if (!tables.payment_orders || !tables.subscriptions || !tables.pesapal_ipn_events || !tables.free_preview_sessions) {
+  if (!tables.payment_orders || !tables.subscriptions || !tables.pesapal_ipn_events || !tables.free_preview_sessions || !tables.guest_preview_installations || !tables.guest_channel_previews) {
     throw new Error('Required payment and viewing-access tables were not created.');
   }
   if (!tables.ipn_status_history_index) {
