@@ -144,6 +144,13 @@ export default function Profile() {
       >
         Sign In / Sign Up
       </button>
+      <button
+        onClick={scanQrCode}
+        disabled={scanningQr}
+        className="bg-white/10 border border-white/15 text-white font-semibold px-8 py-3 rounded-full text-sm disabled:opacity-60"
+      >
+        {scanningQr ? 'Opening camera…' : 'Scan QR with camera'}
+      </button>
       {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
     </div>
   );
