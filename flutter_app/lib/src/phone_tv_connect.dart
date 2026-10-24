@@ -13,6 +13,8 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
   final MobileScannerController scannerController = MobileScannerController(autoStart: false, facing: CameraFacing.back, detectionSpeed: DetectionSpeed.noDuplicates);
   final manualLink = TextEditingController();
   bool scannerStarting = false;
+  String? scannerDiagnostic;
+  int scannerAttempt = 0;
   String? scannerFailure;
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -23,19 +25,30 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
   Future<void> _startScanner() async {
     if (!mounted || !scanning || scannerStarting) return;
     scannerStarting = true;
+    final attempt = ++scannerAttempt;
     try {
+      // Avoid stop/start races with lifecycle callbacks and stale camera sessions.
       await scannerController.stop();
-      if (!mounted || !scanning) return;
+      if (!mounted || !scanning || attempt != scannerAttempt) return;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
       await scannerController.start();
-      if (mounted) setState(() => scannerFailure = null);
-    } catch (e) {
-      debugPrint('TV pairing scanner start failed: $e');
-      if (mounted) setState(() => scannerFailure = 'Camera initialization failed. You can retry or enter the TV pairing link manually.');
+      if (mounted && attempt == scannerAttempt) setState(() { scannerFailure = null; scannerDiagnostic = null; });
+    } catch (e, stack) {
+      debugPrint('TV pairing scanner start failed (attempt $attempt): $e\\n$stack');
+      if (mounted && attempt == scannerAttempt) setState(() {
+        scannerDiagnostic = e.toString();
+        scannerFailure = 'Camera could not be initialized. Check Android Camera permission, close apps using the camera, then retry. If it still fails, share the diagnostic below.';
+      });
     } finally { scannerStarting = false; }
   }
   Future<void> _stopScanner() async { await scannerController.stop(); }
   void _openScanner() { setState(() { scanning = true; scannerFailure = null; message = null; }); WidgetsBinding.instance.addPostFrameCallback((_) => _startScanner()); }
-  Future<void> _retryScanner() async { await _stopScanner(); if (mounted) _startScanner(); }
+  Future<void> _retryScanner() async {
+    if (!mounted || scannerStarting) return;
+    scannerAttempt++;
+    try { await scannerController.stop(); } catch (e) { debugPrint('Scanner stop before retry: $e'); }
+    if (mounted && scanning) await _startScanner();
+  }
   void _acceptLink(String input) {
     final uri = Uri.tryParse(input.trim());
     if (uri?.scheme != 'https' || !['streamora.co.ke','www.streamora.co.ke'].contains(uri?.host) || uri?.path != '/tv-pair') { setState(() => message = 'Enter the complete HTTPS pairing link shown on your TV.'); return; }
@@ -102,11 +115,12 @@ class _PhoneTvConnectScreenState extends State<PhoneTvConnectScreen> with Widget
           const SizedBox(height: 12),
           Text(error.errorCode == MobileScannerErrorCode.permissionDenied
               ? 'Camera permission was denied. Allow Camera for TikVTV in Android Settings, then return and retry.'
-              : 'Unable to start the camera. Close other camera apps and retry. Details: ${error.errorCode.name}', textAlign: TextAlign.center),
+              : 'Unable to start the camera. Close other camera apps and retry. Error: ${error.errorCode.name}\\n${error.toString()}', textAlign: TextAlign.center),
           const SizedBox(height: 12),
           FilledButton.icon(onPressed: _retryScanner, icon: const Icon(Icons.refresh), label: const Text('Retry camera')),
         ]))))),
         if (scannerFailure != null) Padding(padding: const EdgeInsets.all(8), child: Text(scannerFailure!, textAlign: TextAlign.center)),
+        if (scannerDiagnostic != null) Padding(padding: const EdgeInsets.all(8), child: SelectableText('Camera diagnostic: $scannerDiagnostic', textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: Colors.white54))),
         TextButton.icon(onPressed: () { _stopScanner(); setState(() { scanning = false; message = null; }); }, icon: const Icon(Icons.close), label: const Text('Close scanner')),
       ],
       if (!scanning && challenge == null) FilledButton.icon(onPressed: _openScanner, icon: const Icon(Icons.qr_code_scanner), label: const Text('Scan TV QR code')),
