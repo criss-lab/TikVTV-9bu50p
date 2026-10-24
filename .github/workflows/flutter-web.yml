@@ -49,7 +49,7 @@ jobs:
             X-Content-Type-Options: nosniff
             Referrer-Policy: strict-origin-when-cross-origin
             X-Frame-Options: DENY
-            Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+            Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=()
           /index.html
             Cache-Control: no-cache, max-age=0, must-revalidate
           /flutter_bootstrap.js
@@ -58,6 +58,8 @@ jobs:
             Cache-Control: no-cache, max-age=0, must-revalidate
           EOF
           test -s build/web/_headers
+          grep -Fq 'Permissions-Policy: camera=(self)' build/web/_headers
+          ! grep -Fq 'Permissions-Policy: camera=()' build/web/_headers
       - uses: actions/upload-artifact@v4
         with:
           name: tikvtv-flutter-web
