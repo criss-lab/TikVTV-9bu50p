@@ -435,15 +435,56 @@ class _LandscapePlayerState extends State<_LandscapePlayer> {
           ? 'Viewing access ended. Return to the feed to unlock.'
           : widget.player.error ?? 'Connecting to live channel…',
           textAlign: TextAlign.center)),
-        if (playable) Center(child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: () async {
-            if (controller.value.isPlaying) { await controller.pause(); }
-            else if (!widget.gate.locked) { await controller.play(); }
-            _refresh();
-          },
-          child: const SizedBox.expand(),
-        )),
+        if (playable) Positioned.fill(child: Row(children: [
+          Expanded(child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onVerticalDragStart: (details) => _beginSwipe(true, details.globalPosition.dy),
+            onVerticalDragUpdate: (details) => _updateSwipe(details.globalPosition.dy),
+            onVerticalDragEnd: (_) => _endSwipe(),
+            onVerticalDragCancel: _endSwipe,
+            child: const SizedBox.expand(),
+          )),
+          Expanded(flex: 2, child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () async {
+              if (controller.value.isPlaying) { await controller.pause(); }
+              else if (!widget.gate.locked) { await controller.play(); }
+              _refresh();
+            },
+            child: const SizedBox.expand(),
+          )),
+          Expanded(child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onVerticalDragStart: (details) => _beginSwipe(false, details.globalPosition.dy),
+            onVerticalDragUpdate: (details) => _updateSwipe(details.globalPosition.dy),
+            onVerticalDragEnd: (_) => _endSwipe(),
+            onVerticalDragCancel: _endSwipe,
+            child: const SizedBox.expand(),
+          )),
+        ])),
+        if (playable) Center(child: IgnorePointer(child: AnimatedOpacity(
+          opacity: _gestureValue == null ? 0 : 1,
+          duration: const Duration(milliseconds: 120),
+          child: Container(
+            width: 108, padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.65), borderRadius: BorderRadius.circular(16)),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(_gestureKind == 'brightness' ? Icons.brightness_6 : Icons.volume_up, color: Colors.white, size: 28),
+              const SizedBox(height: 10),
+              SizedBox(height: 100, width: 12, child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Align(alignment: Alignment.bottomCenter, child: FractionallySizedBox(
+                  heightFactor: (_gestureValue ?? 0).clamp(0.0, 1.0),
+                  widthFactor: 1,
+                  child: const ColoredBox(color: Colors.white),
+                )),
+              )),
+              const SizedBox(height: 8),
+              Text(((_gestureValue ?? 0) * 100).round().toString() + '%', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              Text(_gestureKind == 'brightness' ? 'Brightness' : 'Volume', style: const TextStyle(color: Colors.white70, fontSize: 11)),
+            ]),
+          ),
+        ))),
         Positioned(top: 8, left: 8, child: IconButton.filledTonal(
           tooltip: 'Return to portrait', onPressed: () => Navigator.of(context).pop(),
           icon: const Icon(Icons.fullscreen_exit),
