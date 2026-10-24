@@ -56,6 +56,27 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
   Timer? remoteTimer;
   bool remotePolling = false;
   int remoteCursor = 0;
+  bool switchingChannel = false;
+  final tvPlayerKey = GlobalKey<_TvPlayerState>();
+  Future<void> switchChannel(int direction) async {
+    if (!mounted || switchingChannel || !openingChannel || selected == null) return;
+    final channels = catalogue.channels;
+    final index = channels.indexWhere((channel) => channel.id == selected!.id);
+    final next = index + direction;
+    if (index < 0 || next < 0 || next >= channels.length) return;
+    switchingChannel = true;
+    final channel = channels[next];
+    try {
+      await player.open(channel);
+      if (!mounted || !openingChannel) return;
+      setState(() => selected = channel);
+      tvPlayerKey.currentState?.setChannel(channel);
+      if (!gate.locked && player.controller != null) unawaited(library.recordWatch(channel.id));
+    } catch (error) {
+      debugPrint('Remote channel switch failed: $error');
+      if (mounted) setState(() => tuneError = 'Could not switch channel. Please retry.');
+    } finally { switchingChannel = false; }
+  }
   Future<void> connectPhone() async {
     await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => const TvPairingScreen()));
     if (mounted) { await gate.refresh(); refresh(); }
@@ -80,14 +101,7 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
           final direction = <String, TraversalDirection>{'up':TraversalDirection.up,'down':TraversalDirection.down,'left':TraversalDirection.left,'right':TraversalDirection.right}[command]!;
           FocusScope.of(context).focusInDirection(direction);
         } else if (command == 'previous' || command == 'next') {
-          // Channel switching is handled by the fullscreen player, which owns
-          // its decoder lease; never open a second route from remote polling.
-          if (selected != null && !openingChannel) {
-            final channels = catalogue.channels;
-            final index = channels.indexWhere((c) => c.id == selected!.id);
-            final next = index + (command == 'next' ? 1 : -1);
-            if (next >= 0 && next < channels.length) unawaited(tune(channels[next]));
-          }
+          await switchChannel(command == 'next' ? 1 : -1);
         } else if (command == 'play_pause' && player.controller != null) {
           final controller = player.controller!;
           if (controller.value.isPlaying) { await controller.pause(); } else if (!gate.locked) { await controller.play(); }
@@ -139,11 +153,10 @@ class _TvHomeState extends State<TvHome> with WidgetsBindingObserver {
       if (!gate.locked && player.controller != null) {
         unawaited(library.recordWatch(channel.id));
       }
-      final playbackLease = player.lease;
       await Navigator.push(context, MaterialPageRoute<void>(
-        builder: (_) => TvPlayer(channel: channel, player: player, gate: gate),
+        builder: (_) => TvPlayer(key: tvPlayerKey, channel: channel, player: player, gate: gate),
       ));
-      player.stopIfCurrent(channel.id, lease: playbackLease);
+      if (selected != null) player.stopIfCurrent(selected!.id, lease: player.lease);
     } catch (error, stack) {
       debugPrint('TV channel open failed: $error\\n$stack');
       if (mounted) setState(() => tuneError = 'Could not open ${channel.name}. Check the stream or network and retry.');
@@ -251,6 +264,8 @@ class TvPlayer extends StatefulWidget {
 }
 
 class _TvPlayerState extends State<TvPlayer> {
+  late Channel activeChannel;
+  void setChannel(Channel channel) { if (!mounted) return; setState(() => activeChannel = channel); showControls(); }
   bool retrying = false;
   bool controlsVisible = true;
   Timer? controlsTimer;
@@ -273,7 +288,7 @@ class _TvPlayerState extends State<TvPlayer> {
     if (retrying || widget.gate.locked) return;
     setState(() => retrying = true);
     try {
-      await widget.player.open(widget.channel);
+      await widget.player.open(activeChannel);
     } finally {
       if (mounted) setState(() => retrying = false);
     }
@@ -281,6 +296,7 @@ class _TvPlayerState extends State<TvPlayer> {
   @override
   void initState() {
     super.initState();
+    activeChannel = widget.channel;
     widget.player.addListener(refresh);
     widget.gate.addListener(refresh);
     WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) showControls(); });
@@ -322,7 +338,7 @@ class _TvPlayerState extends State<TvPlayer> {
               Text(widget.player.error ?? 'Connecting to live channel…', textAlign: TextAlign.center),
               if (!widget.player.loading) TextButton.icon(onPressed: retrying ? null : retry, icon: const Icon(Icons.refresh), label: Text(retrying ? 'Retrying…' : 'Retry channel')),
             ]))),
-      if (controlsVisible) Positioned(left: 24, top: 24, child: Text(widget.channel.name, style: const TextStyle(fontSize: 22, shadows: [Shadow(blurRadius: 8)]))),
+      if (controlsVisible) Positioned(left: 24, top: 24, child: Text(activeChannel.name, style: const TextStyle(fontSize: 22, shadows: [Shadow(blurRadius: 8)]))),
       if (!widget.gate.locked && widget.player.buffering) const Positioned(right: 24, top: 24, child: Chip(avatar: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)), label: Text('Buffering'))),
       if (controlsVisible && !widget.gate.locked) Positioned(right: 24, bottom: 24, child: ElevatedButton.icon(onPressed: togglePlayback, icon: Icon(controller?.value.isPlaying == true ? Icons.pause : Icons.play_arrow), label: Text(controller?.value.isPlaying == true ? 'Pause' : 'Play'))),
       if (controlsVisible) Positioned(left: 24, bottom: 24, child: ElevatedButton.icon(
