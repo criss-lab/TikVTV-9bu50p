@@ -13,7 +13,7 @@ dependencies:
   mobile_scanner: ^7.4.2
   qr_flutter: ^4.1.0
   video_player: ^2.9.2
-  screen_brightness: ^2.1.5
+  screen_brightness: ^2.1.11
   volume_controller: ^3.4.0
   audio_service: ^0.18.15
   url_launcher: ^6.3.1
