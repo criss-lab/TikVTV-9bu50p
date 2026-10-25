@@ -351,14 +351,14 @@ async function fetchApprovedCatalogue(): Promise<IPTVChannel[]> {
 export async function fetchAllChannels(): Promise<IPTVChannel[]> {
   if (memCache && memCache.length > 0) return memCache;
 
-    let previousCache: CacheData | null = null;
+  let previousCache: CacheData | null = null;
   try {
     // Preserve expired last-known-good data so a partial refresh cannot erase thousands of channels.
     const raw = localStorage.getItem(CACHE_KEY);
     if (raw) {
       const data: CacheData = JSON.parse(raw);
       if (Array.isArray(data.channels) && data.channels.length > 100 && Number.isFinite(data.timestamp)) previousCache = data;
-      if (Date.now() - data.timestamp < CACHE_TTL && data.channels.length > 100) {
+      if (Array.isArray(data.channels) && Number.isFinite(data.timestamp) && Date.now() - data.timestamp < CACHE_TTL && data.channels.length > 100) {
         console.log('[IPTV] Cache hit:', data.channels.length, 'channels');
         memCache = data.channels;
         return memCache;
