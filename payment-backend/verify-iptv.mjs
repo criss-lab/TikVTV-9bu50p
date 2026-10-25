@@ -1,12 +1,12 @@
-// Bounded, opt-in verification worker. Run with INFINITY_IPTV_DATABASE_URL and INFINITY_IPTV_CA_CERT.
+// Bounded, opt-in verification worker. Run with IPTV_DATABASE_URL and IPTV_CA_CERT.
 // Does not approve rights or sources. HTTPS only, no redirects, public DNS/IP only.
 import pg from 'pg';
 import { verifyPlayback } from './iptv-playback.mjs';
 const { Pool } = pg;
-const uri = new URL(process.env.INFINITY_IPTV_DATABASE_URL || 'postgres://missing:missing@localhost/missing');
+const uri = new URL(process.env.IPTV_DATABASE_URL || 'postgres://missing:missing@localhost/missing');
 for (const key of ['sslmode','sslcert','sslkey','sslrootcert','uselibpqcompat']) uri.searchParams.delete(key);
-const ca = (process.env.INFINITY_IPTV_CA_CERT || '').replace(/\\n/g,'\n').trim();
-if (!process.env.INFINITY_IPTV_DATABASE_URL || !ca.includes('-----BEGIN CERTIFICATE-----')) throw Error('Verified Infinity DB and CA required');
+const ca = (process.env.IPTV_CA_CERT || '').replace(/\\n/g,'\n').trim();
+if (!process.env.IPTV_DATABASE_URL || !/-----BEGIN CERTIFICATE-----[\s\S]+-----END CERTIFICATE-----/.test(ca)) throw Error('Verified Infinity DB and CA required');
 const pool = new Pool({connectionString:uri.toString(),ssl:{rejectUnauthorized:true,ca},max:1,connectionTimeoutMillis:4000,statement_timeout:8000,application_name:'tikvtv-stream-verifier'});
 const limit = Math.min(50,Math.max(1,Number(process.env.IPTV_VERIFY_BATCH || 10) || 10));
 let run;
