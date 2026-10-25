@@ -1,16 +1,18 @@
-// Run from payment-backend with IPTV_DATABASE_URL (Supabase direct/pooled Postgres URL).
+// Run from payment-backend with INFINITY_IPTV_DATABASE_URL and INFINITY_IPTV_CA_CERT.
 // This imports discovery metadata only; it never proxies or publishes unreviewed streams.
 // Playlist URLs are configured in iptv.sources; verify repository paths before enabling them.
 import crypto from 'node:crypto';
 import pg from 'pg';
-const connectionString = process.env.IPTV_DATABASE_URL;
-if (!connectionString) throw new Error('IPTV_DATABASE_URL is required');
-// Supabase pooler presents a certificate chain not trusted by the hosted runner.
-// Preserve TLS encryption with the existing URL only; certificate authentication
-// requires a trusted CA, which is not supplied in this single-secret setup.
+const connectionString = process.env.INFINITY_IPTV_DATABASE_URL;
+const ca = process.env.INFINITY_IPTV_CA_CERT?.replace(/\\n/g, '\n');
+if (!connectionString) throw new Error('INFINITY_IPTV_DATABASE_URL is required');
+if (!ca || !ca.includes('-----BEGIN CERTIFICATE-----') || !ca.includes('-----END CERTIFICATE-----')) {
+  throw new Error('INFINITY_IPTV_CA_CERT must contain a trusted PEM CA certificate');
+}
 const dbUrl = new URL(connectionString);
-for (const key of ['sslmode','sslrootcert','sslcert','sslkey']) dbUrl.searchParams.delete(key);
-const pool = new pg.Pool({connectionString:dbUrl.toString(),ssl:{rejectUnauthorized:false},max:2});
+if (!['postgres:', 'postgresql:'].includes(dbUrl.protocol)) throw new Error('PostgreSQL connection URL required');
+for (const key of ['sslmode', 'sslrootcert', 'sslcert', 'sslkey']) dbUrl.searchParams.delete(key);
+const pool = new pg.Pool({connectionString: dbUrl.toString(), ssl: {ca, rejectUnauthorized: true}, max: 2});
 const maxBytes = 32*1024*1024;
 const maxEntries = 250000;
 function publicHttpUrl(value) {
