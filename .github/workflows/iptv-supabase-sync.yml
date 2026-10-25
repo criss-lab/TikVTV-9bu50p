@@ -28,10 +28,10 @@ jobs:
           node-version: '22'
       - name: Validate secure database configuration
         env:
-          INFINITY_IPTV_DATABASE_URL: ${{ secrets.IPTV_DATABASE_URL }}
+          IPTV_DATABASE_URL: ${{ secrets.IPTV_DATABASE_URL }}
         run: |
-          if [ -z "$INFINITY_IPTV_DATABASE_URL" ]; then
-            echo "::error::Configure INFINITY_IPTV_DATABASE_URL as a GitHub Actions secret with the Infinity IPTV database connection string."
+          if [ -z "$IPTV_DATABASE_URL" ]; then
+            echo "::error::Configure IPTV_DATABASE_URL as a GitHub Actions secret with the Infinity IPTV database connection string."
             exit 1
           fi
           echo "IPTV database URL is present; TLS uses platform trust store."
@@ -41,5 +41,5 @@ jobs:
         run: node --check sync-iptv-catalogue.js
       - name: Sync unreviewed source discoveries into isolated IPTV schema
         env:
-          INFINITY_IPTV_DATABASE_URL: ${{ secrets.IPTV_DATABASE_URL }}
+          IPTV_DATABASE_URL: ${{ secrets.IPTV_DATABASE_URL }}
         run: node sync-iptv-catalogue.js
