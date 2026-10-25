@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Home, Search, Compass, Bookmark, Clock, Flame, Film, Calendar, User } from 'lucide-react';
+import { Home, Search, Compass, Bookmark, Clock, Flame, Film, Calendar, User, Crown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWatchHistory } from '@/hooks/useWatchHistory';
 
@@ -28,6 +28,17 @@ export default function BottomNav() {
         <AiSuggestionStrip />
       )}
 
+      {location.pathname !== '/premium' && (
+        <button
+          type="button"
+          onClick={() => navigate('/premium')}
+          aria-label="View Premium subscription and payment options"
+          className="mx-3 mb-1 flex w-[calc(100%-1.5rem)] items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/15 px-3 py-2 text-xs font-semibold text-white hover:bg-primary/25"
+        >
+          <Crown className="h-4 w-4 text-primary" />
+          Upgrade to Premium · Secure PesaPal payment
+        </button>
+      )}
       <div className="flex items-center justify-around px-0.5 pb-safe">
         {visibleTabs.map(tab => {
           const Icon      = tab.icon;
