@@ -12,9 +12,10 @@ import type { Language } from '@/types';
 interface Props {
   liveCount:     number;
   totalChannels: number;
+  infinityDiscoveries?: number | null;
 }
 
-export default function Header({ liveCount, totalChannels }: Props) {
+export default function Header({ liveCount, totalChannels, infinityDiscoveries }: Props) {
   const { user, logout }         = useAuthStore();
   const navigate                 = useNavigate();
   const t                        = useT();
@@ -58,6 +59,7 @@ export default function Header({ liveCount, totalChannels }: Props) {
             </>
           )}
           <span className="text-white/50 text-[11px]">{formatCount(totalChannels)} ch</span>
+          {infinityDiscoveries !== null && infinityDiscoveries !== undefined && <span className="text-white/50 text-[10px]" title="Infinity imported records, pending verification and rights approval">+{formatCount(infinityDiscoveries)} Infinity discovered · pending review</span>}
         </div>
 
         {/* Right controls */}
