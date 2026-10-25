@@ -320,7 +320,8 @@ async function route(req, res) {
             SELECT DISTINCT ON (t.url_hash) t.id,t.name,t.stream_url,t.country,t.logo_url,t.category,t.language,t.url_hash
             FROM iptv.streams t JOIN iptv.sources s ON s.id=t.source_id
             WHERE s.enabled=TRUE AND s.publication_approved=TRUE AND t.rights_status='approved'
-              -- Health probes are advisory: network/TLS failures and stale checks must not hide rights-approved streams. AND (t.stream_url LIKE 'https://%' OR t.stream_url LIKE 'http://%')
+              AND (t.stream_url LIKE 'https://%' OR t.stream_url LIKE 'http://%')
+              -- Health probes are advisory: stale or inconclusive checks must not hide rights-approved streams.
             ORDER BY t.url_hash,t.id
           ) approved ORDER BY id LIMIT $1`, [scanLimit]);
         return result.rows.map(row => ({ ...row, id: prefix + String(row.id), _sourceIndex: sourceIndex, _numericId: Number(row.id) || 0 }));
