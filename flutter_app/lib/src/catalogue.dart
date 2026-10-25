@@ -21,7 +21,20 @@ class ChannelCatalogue extends ChangeNotifier {
   int approvedImportedCount = 0;
   int get primaryChannelCount => channels.length - approvedImportedCount;
   int get playableChannelCount => channels.length;
-  int get playableStreamCount => channels.fold<int>(0, (total, channel) => total + channel.urls.length);
+  int get playableStreamCount => channels.expand((channel) => channel.urls).toSet().length;
+  int get uniqueChannelIdentityCount => channels.map((channel) => channel.id).toSet().length;
+  /// Global coverage metrics count distinct declared territories and languages,
+  /// not verified availability or licensed distribution in those territories.
+  int get declaredCountryCount => channels.map((c) => c.country.toUpperCase()).where((c) => c.isNotEmpty && c != 'INT').toSet().length;
+  int get declaredLanguageCount => channels.expand((c) => c.languages).map((l) => l.toLowerCase()).where((l) => l.isNotEmpty).toSet().length;
+  Map<String, int> get channelCountByCountry {
+    final counts = <String, int>{};
+    for (final channel in channels) {
+      final country = channel.country.toUpperCase();
+      counts.update(country, (n) => n + 1, ifAbsent: () => 1);
+    }
+    return Map.unmodifiable(counts);
+  }
   int get discoveredOptionalEntries => discoveredBySource.values.fold<int>(0, (total, count) => total + count);
   int get approvedOptionalSourceCount => approvedFreeTvIds.length;
   final Map<String, int> discoveredBySource = {};
@@ -31,6 +44,8 @@ class ChannelCatalogue extends ChangeNotifier {
     'free-tv': 'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8',
     'dearbulut': 'https://dearbulut.github.io/iptv/playlists/online.m3u',
     'iptv-org-index': 'https://iptv-org.github.io/iptv/index.m3u',
+    // Independent discovery feed: source claims are not distribution approval.
+    'shovo': 'https://shovo127.github.io/IPTV-By-Shovo/index.m3u',
   };
 
   static final ChannelCatalogue _instance = ChannelCatalogue._();
@@ -155,6 +170,9 @@ class ChannelCatalogue extends ChangeNotifier {
       for (final item in jsonDecode(results[3].body) as List<dynamic>) {
         if (item is Map && item['channel'] is String) blocked.add(item['channel'] as String);
       }
+      // Prefer unrestricted listings. A geo-blocked source is not an alternate
+      // route around a broadcaster's territorial rights.
+      final restrictedSources = <String, List<String>>{};
       final sources = <String, List<String>>{};
       final sourceUrls = <String, Set<String>>{};
       for (final item in streams) {
@@ -164,11 +182,18 @@ class ChannelCatalogue extends ChangeNotifier {
         if (id is! String || url is! String || blocked.contains(id)) { continue; }
         final uri = Uri.tryParse(url.trim());
         if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http') || uri.host.isEmpty) { continue; }
+        final labels = item['labels'];
+        final geoRestricted = labels is List && labels.any((label) => label.toString().toLowerCase() == 'geo-blocked');
+        if (geoRestricted) {
+          restrictedSources.putIfAbsent(id, () => <String>[]).add(url.trim());
+          continue;
+        }
         final list = sources.putIfAbsent(id, () => []);
         if (sourceUrls.putIfAbsent(id, () => <String>{}).add(url.trim())) {
           list.add(url.trim());
         }
       }
+      debugPrint('Excluded geo-restricted source listings for ${restrictedSources.length} channels; no proxy or location spoofing attempted.');
       final parsed = <Channel>[];
       for (final item in metadata) {
         if (item is! Map || item['is_nsfw'] == true || item['closed'] != null || blocked.contains(item['id'])) { continue; }
@@ -209,6 +234,9 @@ class ChannelCatalogue extends ChangeNotifier {
         String? pendingId;
         String? pendingName;
         String? pendingLogo;
+        String? pendingCountry;
+        String? pendingLanguage;
+        bool pendingGeoBlocked = false;
         final seen = <String>{};
         for (final raw in const LineSplitter().convert(entry.value)) {
           final line = raw.trim();
@@ -216,7 +244,20 @@ class ChannelCatalogue extends ChangeNotifier {
             pendingId = RegExp(r'tvg-id="([^"]+)"').firstMatch(line)?.group(1);
             pendingName = line.contains(',') ? line.substring(line.lastIndexOf(',') + 1).trim() : null;
             pendingLogo = RegExp(r'tvg-logo="([^"]+)"').firstMatch(line)?.group(1);
+            pendingCountry = RegExp(r'tvg-country="([^"]+)"').firstMatch(line)?.group(1);
+            pendingLanguage = RegExp(r'tvg-language="([^"]+)"').firstMatch(line)?.group(1);
+            pendingGeoBlocked = line.toLowerCase().contains('[geo-blocked]') ||
+                (entry.key == 'free-tv' && line.contains('Ⓖ'));
           } else if (line.isNotEmpty && !line.startsWith('#')) {
+            if (pendingGeoBlocked) {
+              pendingId = null;
+              pendingName = null;
+              pendingLogo = null;
+              pendingCountry = null;
+              pendingLanguage = null;
+              pendingGeoBlocked = false;
+              continue;
+            }
             final uri = Uri.tryParse(line);
             final streamName = pendingName?.trim();
             final identity = (pendingId?.trim().isNotEmpty == true ? pendingId!.trim() : streamName ?? '');
@@ -232,7 +273,13 @@ class ChannelCatalogue extends ChangeNotifier {
               if (importedUrls.add(line) && streamName != null && streamName.isNotEmpty) {
                 final sourceKey = entry.key.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
                 final safeId = identity.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
-                imported.add(Channel('feed-$sourceKey-$safeId-${imported.length}', streamName, pendingLogo ?? '', 'INT', [line]));
+                final rawCountry = pendingCountry?.trim() ?? '';
+                final validCountry = rawCountry.length == 2 && rawCountry.codeUnits.every((unit) =>
+                    (unit >= 65 && unit <= 90) || (unit >= 97 && unit <= 122));
+                imported.add(Channel('feed-$sourceKey-$safeId-${imported.length}',
+                    streamName, pendingLogo ?? '', validCountry ? rawCountry.toUpperCase() : 'INT', [line],
+                    languages: pendingLanguage == null ? const [] : pendingLanguage.split(';')
+                        .map((value) => value.trim()).where((value) => value.isNotEmpty).toList()));
               }
               if (pendingId != null && approvedFreeTvIds.contains(pendingId) && index != null &&
                   approvedUrls.putIfAbsent(pendingId, () => parsed[index].urls.toSet()).add(line)) {
@@ -245,6 +292,9 @@ class ChannelCatalogue extends ChangeNotifier {
             pendingId = null;
             pendingName = null;
             pendingLogo = null;
+            pendingCountry = null;
+            pendingLanguage = null;
+            pendingGeoBlocked = false;
           }
         }
         nextDiscoveredBySource[entry.key] = count;
