@@ -2236,7 +2236,7 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
     if (raw) {
       const cached: CacheData = JSON.parse(raw);
       if (Array.isArray(cached.channels) && cached.channels.length > 100 && Number.isFinite(cached.timestamp)) previousCache = cached;
-      if (Date.now() - cached.timestamp < CACHE_TTL && cached.channels.length > 100) {
+      if (Array.isArray(cached.channels) && Number.isFinite(cached.timestamp) && Date.now() - cached.timestamp < CACHE_TTL && cached.channels.length > 100) {
         memCache = cached.channels;
         backgroundRefresh ??= fetchExtraSources().finally(() => { backgroundRefresh = null; });
         return memCache;
