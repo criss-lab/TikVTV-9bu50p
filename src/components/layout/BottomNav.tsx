@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Home, Search, Compass, Bookmark, Clock, Flame, Film, Calendar, User } from 'lucide-react';
+import { Home, Search, Compass, Bookmark, Clock, Flame, Film, Calendar, User, Crown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWatchHistory } from '@/hooks/useWatchHistory';
 
@@ -10,6 +10,7 @@ const tabs = [
   { id: 'trending', path: '/trending',  icon: Flame,    label: 'Hot' },
   { id: 'clips',    path: '/clips',     icon: Film,     label: 'Clips' },
   { id: 'epg',      path: '/epg',       icon: Calendar, label: 'Guide' },
+  { id: 'premium',  path: '/premium',   icon: Crown,    label: 'Premium' },
   { id: 'profile',  path: '/profile',   icon: User,     label: 'Profile' },
 ];
 
@@ -19,7 +20,7 @@ export default function BottomNav() {
   const { history } = useWatchHistory();
 
   // Only show 5 most relevant tabs based on available space
-  const visibleTabs = tabs.slice(0, 7);
+  const visibleTabs = tabs.slice(0, 8);
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 glass-panel border-x-0 border-b-0 shadow-[0_-12px_36px_rgba(0,0,0,0.35)]">
