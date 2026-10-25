@@ -29,6 +29,7 @@ jobs:
       - name: Validate secure database configuration
         env:
           INFINITY_IPTV_DATABASE_URL: ${{ secrets.INFINITY_IPTV_DATABASE_URL }}
+          INFINITY_IPTV_CA_CERT: ${{ secrets.INFINITY_IPTV_CA_CERT }}
         run: |
           if [ -z "$INFINITY_IPTV_DATABASE_URL" ]; then
             echo "::error::Configure INFINITY_IPTV_DATABASE_URL as a GitHub Actions secret with the Infinity IPTV database connection string."
