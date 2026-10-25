@@ -23,6 +23,18 @@ class ChannelCatalogue extends ChangeNotifier {
   int get playableChannelCount => channels.length;
   int get playableStreamCount => channels.expand((channel) => channel.urls).toSet().length;
   int get uniqueChannelIdentityCount => channels.map((channel) => channel.id).toSet().length;
+  /// Global coverage metrics count distinct declared territories and languages,
+  /// not verified availability or licensed distribution in those territories.
+  int get declaredCountryCount => channels.map((c) => c.country.toUpperCase()).where((c) => c.isNotEmpty && c != 'INT').toSet().length;
+  int get declaredLanguageCount => channels.expand((c) => c.languages).map((l) => l.toLowerCase()).where((l) => l.isNotEmpty).toSet().length;
+  Map<String, int> get channelCountByCountry {
+    final counts = <String, int>{};
+    for (final channel in channels) {
+      final country = channel.country.toUpperCase();
+      counts.update(country, (n) => n + 1, ifAbsent: () => 1);
+    }
+    return Map.unmodifiable(counts);
+  }
   int get discoveredOptionalEntries => discoveredBySource.values.fold<int>(0, (total, count) => total + count);
   int get approvedOptionalSourceCount => approvedFreeTvIds.length;
   final Map<String, int> discoveredBySource = {};
