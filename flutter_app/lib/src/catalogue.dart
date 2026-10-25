@@ -21,7 +21,8 @@ class ChannelCatalogue extends ChangeNotifier {
   int approvedImportedCount = 0;
   int get primaryChannelCount => channels.length - approvedImportedCount;
   int get playableChannelCount => channels.length;
-  int get playableStreamCount => channels.fold<int>(0, (total, channel) => total + channel.urls.length);
+  int get playableStreamCount => channels.expand((channel) => channel.urls).toSet().length;
+  int get uniqueChannelIdentityCount => channels.map((channel) => channel.id).toSet().length;
   int get discoveredOptionalEntries => discoveredBySource.values.fold<int>(0, (total, count) => total + count);
   int get approvedOptionalSourceCount => approvedFreeTvIds.length;
   final Map<String, int> discoveredBySource = {};
@@ -31,6 +32,8 @@ class ChannelCatalogue extends ChangeNotifier {
     'free-tv': 'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8',
     'dearbulut': 'https://dearbulut.github.io/iptv/playlists/online.m3u',
     'iptv-org-index': 'https://iptv-org.github.io/iptv/index.m3u',
+    // Independent discovery feed: source claims are not distribution approval.
+    'shovo': 'https://shovo127.github.io/IPTV-By-Shovo/index.m3u',
   };
 
   static final ChannelCatalogue _instance = ChannelCatalogue._();
@@ -227,7 +230,8 @@ class ChannelCatalogue extends ChangeNotifier {
             pendingId = RegExp(r'tvg-id="([^"]+)"').firstMatch(line)?.group(1);
             pendingName = line.contains(',') ? line.substring(line.lastIndexOf(',') + 1).trim() : null;
             pendingLogo = RegExp(r'tvg-logo="([^"]+)"').firstMatch(line)?.group(1);
-            pendingGeoBlocked = line.toLowerCase().contains('[geo-blocked]');
+            pendingGeoBlocked = line.toLowerCase().contains('[geo-blocked]') ||
+                (entry.key == 'free-tv' && line.contains('Ⓖ'));
           } else if (line.isNotEmpty && !line.startsWith('#')) {
             if (pendingGeoBlocked) {
               pendingId = null;
