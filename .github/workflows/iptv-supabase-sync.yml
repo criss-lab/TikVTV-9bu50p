@@ -29,12 +29,17 @@ jobs:
       - name: Validate secure database configuration
         env:
           IPTV_DATABASE_URL: ${{ secrets.IPTV_DATABASE_URL }}
+          IPTV_CA_CERT: ${{ secrets.IPTV_CA_CERT }}
         run: |
           if [ -z "$IPTV_DATABASE_URL" ]; then
             echo "::error::Configure IPTV_DATABASE_URL as a GitHub Actions secret with the Infinity IPTV database connection string."
             exit 1
           fi
-          echo "IPTV database URL is present; TLS uses platform trust store."
+          if [ -z "$IPTV_CA_CERT" ]; then
+            echo "::error::Configure existing IPTV_CA_CERT repository secret with the database CA PEM."
+            exit 1
+          fi
+          echo "IPTV database URL and trusted CA are configured."
       - name: Install dependencies
         run: npm install --omit=dev --no-audit --no-fund
       - name: Validate importer syntax
@@ -42,4 +47,5 @@ jobs:
       - name: Sync unreviewed source discoveries into isolated IPTV schema
         env:
           IPTV_DATABASE_URL: ${{ secrets.IPTV_DATABASE_URL }}
+          IPTV_CA_CERT: ${{ secrets.IPTV_CA_CERT }}
         run: node sync-iptv-catalogue.js
