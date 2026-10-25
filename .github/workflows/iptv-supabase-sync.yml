@@ -6,6 +6,10 @@ on:
       - '.github/workflows/iptv-supabase-sync.yml'
       - 'payment-backend/sync-iptv-catalogue.js'
       - 'payment-backend/package.json'
+      - 'payment-backend/verify-iptv.mjs'
+      - 'payment-backend/iptv-playback.mjs'
+      - 'payment-backend/iptv-safe-probe.mjs'
+      - 'payment-backend/iptv-manifest.mjs'
   workflow_dispatch:
   schedule:
     - cron: '17 3 * * *'
@@ -43,9 +47,17 @@ jobs:
       - name: Install dependencies
         run: npm install --omit=dev --no-audit --no-fund
       - name: Validate importer syntax
-        run: node --check sync-iptv-catalogue.js
+        run: |
+          node --check sync-iptv-catalogue.js
+          node --check verify-iptv.mjs
       - name: Sync unreviewed source discoveries into isolated IPTV schema
         env:
           IPTV_DATABASE_URL: ${{ secrets.IPTV_DATABASE_URL }}
           IPTV_CA_CERT: ${{ secrets.IPTV_CA_CERT }}
         run: node sync-iptv-catalogue.js
+      - name: Bounded verification of discovered streams
+        env:
+          IPTV_DATABASE_URL: ${{ secrets.IPTV_DATABASE_URL }}
+          IPTV_CA_CERT: ${{ secrets.IPTV_CA_CERT }}
+          IPTV_VERIFY_BATCH: '50'
+        run: node verify-iptv.mjs
