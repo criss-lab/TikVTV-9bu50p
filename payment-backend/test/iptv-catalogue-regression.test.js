@@ -15,6 +15,9 @@ test('catalogue refresh retains last-known-good data after a large unexpected sh
   assert.ok(frontendSource.includes('freshChannels.length < previousCache.channels.length * 0.65'));
   assert.ok(frontendSource.includes('freshChannels = previousCache.channels'));
   assert.ok(frontendSource.includes('unexpected shrink'));
+  assert.ok(frontendSource.includes('previousCache?.channels?.length'));
+  assert.ok(frontendSource.includes('Persist the expanded catalogue'));
+  assert.ok(frontendSource.includes('parsedChannels.length'));
 });
 
 test('cached catalogue shape and timestamp are validated before reuse', () => {
