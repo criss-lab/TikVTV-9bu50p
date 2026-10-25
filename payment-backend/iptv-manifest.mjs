@@ -3,7 +3,9 @@ import { validateTarget } from './iptv-safe-probe.mjs';
 const absolute = (base,relative) => {
   try {
     const url=new URL(relative,base);
-    return validateTarget(url.href) ? url.href : null;
+    const origin = new URL(base);
+    // Permit HTTP media for HTTP playlists, but never downgrade HTTPS playlists.
+    return validateTarget(url.href) && !(origin.protocol === 'https:' && url.protocol !== 'https:') ? url.href : null;
   } catch {return null;}
 };
 export function inspectHls(body,base) {
