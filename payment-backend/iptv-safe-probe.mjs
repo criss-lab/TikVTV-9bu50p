@@ -14,8 +14,11 @@ export function validateTarget(raw) {
 }
 export async function resolvePinned(host, resolver=dns.lookup) {
   const found=await resolver(host,{all:true,verbatim:true});
-  if(!Array.isArray(found)||!found.length||found.some(x=>x.family!==4||!publicIPv4(x.address))) throw Error('DNS_POLICY');
-  return found[0].address;
+  if(!Array.isArray(found)||!found.length) throw Error('DNS_EMPTY');
+  const ipv4=found.filter(x=>x.family===4);
+  if(!ipv4.length) throw Error('DNS_NO_IPV4');
+  if(ipv4.some(x=>!publicIPv4(x.address))) throw Error('DNS_POLICY');
+  return ipv4[0].address;
 }
 export async function boundedBody(stream, max=4096) {
   let bytes=0;const chunks=[];
@@ -29,7 +32,7 @@ export async function boundedBody(stream, max=4096) {
 export async function fetchBounded(raw,{resolver=dns.lookup,request,maxBytes=65536}={}) {
   const u=validateTarget(raw);
   if(!u) return {outcome:'inconclusive',reason:'URL_POLICY'};
-  let ip;try {ip=await resolvePinned(u.hostname,resolver);}catch{return {outcome:'inconclusive',reason:'DNS_POLICY'};}
+  let ip;try {ip=await resolvePinned(u.hostname,resolver);}catch(e){return {outcome:'inconclusive',reason:['DNS_EMPTY','DNS_NO_IPV4','DNS_POLICY'].includes(e?.message)?e.message:'DNS_RESOLUTION_ERROR'};}
   const started=Date.now();
   return new Promise(resolve=>{
     let settled=false;
@@ -49,7 +52,7 @@ export async function fetchBounded(raw,{resolver=dns.lookup,request,maxBytes=655
     req.on('timeout',()=>req.destroy(Error('TIMEOUT')));
     req.on('error',e=>{
       const code=String(e?.code||'');
-      const reason=e.message==='TIMEOUT'?'TIMEOUT':({ENOTFOUND:'DNS_NOT_FOUND',EAI_AGAIN:'DNS_TEMPORARY',ECONNREFUSED:'CONNECTION_REFUSED',ECONNRESET:'CONNECTION_RESET',ETIMEDOUT:'CONNECT_TIMEOUT',EHOSTUNREACH:'HOST_UNREACHABLE',ENETUNREACH:'NETWORK_UNREACHABLE',CERT_HAS_EXPIRED:'TLS_CERT_EXPIRED',UNABLE_TO_VERIFY_LEAF_SIGNATURE:'TLS_CERT_UNTRUSTED',ERR_TLS_CERT_ALTNAME_INVALID:'TLS_HOSTNAME_MISMATCH'}[code]||'NETWORK_ERROR');
+      const reason=e.message==='TIMEOUT'?'TIMEOUT':({ENOTFOUND:'DNS_NOT_FOUND',EAI_AGAIN:'DNS_TEMPORARY',ECONNREFUSED:'CONNECTION_REFUSED',ECONNRESET:'CONNECTION_RESET',ETIMEDOUT:'CONNECT_TIMEOUT',EHOSTUNREACH:'HOST_UNREACHABLE',ENETUNREACH:'NETWORK_UNREACHABLE',CERT_HAS_EXPIRED:'TLS_CERT_EXPIRED',UNABLE_TO_VERIFY_LEAF_SIGNATURE:'TLS_CERT_UNTRUSTED',ERR_TLS_CERT_ALTNAME_INVALID:'TLS_HOSTNAME_MISMATCH',EPROTO:'TLS_PROTOCOL_ERROR',ERR_SSL_WRONG_VERSION_NUMBER:'TLS_PROTOCOL_ERROR',ERR_STREAM_PREMATURE_CLOSE:'STREAM_PREMATURE_CLOSE'}[code]||'NETWORK_ERROR');
       finish({outcome:'inconclusive',reason});
     });
     req.end();
