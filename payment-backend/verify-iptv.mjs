@@ -1,5 +1,5 @@
 // Bounded, opt-in verification worker. Run with IPTV_DATABASE_URL and IPTV_CA_CERT.
-// Does not approve rights or sources. HTTPS only, no redirects, public DNS/IP only.
+// Does not approve rights or sources. HTTP/HTTPS, no redirects, public DNS/IP only.
 import pg from 'pg';
 import { verifyPlayback } from './iptv-playback.mjs';
 const { Pool } = pg;
@@ -18,7 +18,7 @@ try {
     const result=await verifyPlayback(row.stream_url);
     await pool.query("INSERT INTO iptv.stream_checks(stream_id,outcome,http_status,media_type,playback_format,latency_ms,reason_code,checker_version) VALUES($1,$2,$3,$4,$5,$6,$7,'manifest-sample-v1')",[row.id,result.outcome,result.status||null,result.type||null,result.format||'unknown',result.latency||null,result.reason]);
     // HTTP-only results cannot promote a stream to healthy.
-    await pool.query("UPDATE iptv.streams SET checked_at=NOW(),health_status=CASE WHEN $2='unhealthy' THEN 'unhealthy' ELSE 'unknown' END WHERE id=$1",[row.id,result.outcome]);
+    await pool.query("UPDATE iptv.streams SET checked_at=NOW(),health_status=CASE WHEN $2='healthy' THEN 'healthy' WHEN $2='unhealthy' THEN 'unhealthy' ELSE 'unknown' END WHERE id=$1",[row.id,result.outcome]);
     checked++;if(result.outcome==='healthy')healthy++;else if(result.outcome==='unhealthy')unhealthy++;else inconclusive++;
   }
   await pool.query("UPDATE iptv.verification_runs SET status='completed',completed_at=NOW(),checked_count=$2,healthy_count=$3,unhealthy_count=$4,inconclusive_count=$5 WHERE id=$1",[run,checked,healthy,unhealthy,inconclusive]);
