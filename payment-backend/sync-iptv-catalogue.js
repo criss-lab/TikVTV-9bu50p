@@ -9,7 +9,7 @@ const dbUrl = new URL(connectionString);
 if (!['postgres:', 'postgresql:'].includes(dbUrl.protocol)) throw new Error('PostgreSQL connection URL required');
 for (const key of ['sslmode', 'sslrootcert', 'sslcert', 'sslkey']) dbUrl.searchParams.delete(key);
 const ca = process.env.IPTV_CA_CERT?.replace(/\\n/g, '\n');
-if (!ca || !/-----BEGIN CERTIFICATE-----[\\s\\S]+-----END CERTIFICATE-----/.test(ca)) {
+if (!ca || !/-----BEGIN CERTIFICATE-----[\s\S]+-----END CERTIFICATE-----/.test(ca)) {
   throw new Error('IPTV_CA_CERT must contain a PEM CA certificate');
 }
 const pool = new pg.Pool({connectionString: dbUrl.toString(), ssl: {ca, rejectUnauthorized: true}, max: 2});
