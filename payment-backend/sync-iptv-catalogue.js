@@ -1,18 +1,14 @@
-// Run from payment-backend with INFINITY_IPTV_DATABASE_URL and INFINITY_IPTV_CA_CERT.
+// Run from payment-backend with IPTV_DATABASE_URL and the platform trusted CA store.
 // This imports discovery metadata only; it never proxies or publishes unreviewed streams.
 // Playlist URLs are configured in iptv.sources; verify repository paths before enabling them.
 import crypto from 'node:crypto';
 import pg from 'pg';
-const connectionString = process.env.INFINITY_IPTV_DATABASE_URL;
-const ca = process.env.INFINITY_IPTV_CA_CERT?.replace(/\\n/g, '\n');
-if (!connectionString) throw new Error('INFINITY_IPTV_DATABASE_URL is required');
-if (!ca || !ca.includes('-----BEGIN CERTIFICATE-----') || !ca.includes('-----END CERTIFICATE-----')) {
-  throw new Error('INFINITY_IPTV_CA_CERT must contain a trusted PEM CA certificate');
-}
+const connectionString = process.env.IPTV_DATABASE_URL;
+if (!connectionString) throw new Error('IPTV_DATABASE_URL is required');
 const dbUrl = new URL(connectionString);
 if (!['postgres:', 'postgresql:'].includes(dbUrl.protocol)) throw new Error('PostgreSQL connection URL required');
 for (const key of ['sslmode', 'sslrootcert', 'sslcert', 'sslkey']) dbUrl.searchParams.delete(key);
-const pool = new pg.Pool({connectionString: dbUrl.toString(), ssl: {ca, rejectUnauthorized: true}, max: 2});
+const pool = new pg.Pool({connectionString: dbUrl.toString(), ssl: {rejectUnauthorized: true}, max: 2});
 const maxBytes = 32*1024*1024;
 const maxEntries = 250000;
 function publicHttpUrl(value) {
