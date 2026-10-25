@@ -155,6 +155,9 @@ class ChannelCatalogue extends ChangeNotifier {
       for (final item in jsonDecode(results[3].body) as List<dynamic>) {
         if (item is Map && item['channel'] is String) blocked.add(item['channel'] as String);
       }
+      // Prefer unrestricted listings. A geo-blocked source is not an alternate
+      // route around a broadcaster's territorial rights.
+      final restrictedSources = <String, List<String>>{};
       final sources = <String, List<String>>{};
       final sourceUrls = <String, Set<String>>{};
       for (final item in streams) {
@@ -164,11 +167,18 @@ class ChannelCatalogue extends ChangeNotifier {
         if (id is! String || url is! String || blocked.contains(id)) { continue; }
         final uri = Uri.tryParse(url.trim());
         if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http') || uri.host.isEmpty) { continue; }
+        final labels = item['labels'];
+        final geoRestricted = labels is List && labels.any((label) => label.toString().toLowerCase() == 'geo-blocked');
+        if (geoRestricted) {
+          restrictedSources.putIfAbsent(id, () => <String>[]).add(url.trim());
+          continue;
+        }
         final list = sources.putIfAbsent(id, () => []);
         if (sourceUrls.putIfAbsent(id, () => <String>{}).add(url.trim())) {
           list.add(url.trim());
         }
       }
+      debugPrint('Excluded geo-restricted source listings for ${restrictedSources.length} channels; no proxy or location spoofing attempted.');
       final parsed = <Channel>[];
       for (final item in metadata) {
         if (item is! Map || item['is_nsfw'] == true || item['closed'] != null || blocked.contains(item['id'])) { continue; }
