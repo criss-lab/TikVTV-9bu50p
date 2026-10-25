@@ -122,9 +122,16 @@ jobs:
           cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/TikVTV-TV-preview.apk
           sha256sum build/app/outputs/flutter-apk/TikVTV-TV-preview.apk > build/app/outputs/flutter-apk/TV-SHA256SUMS.txt
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
-          "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/TikVTV-TV-preview.apk > build/app/outputs/flutter-apk/TV-SIGNER-DETAILS.txt
-          grep -E 'Signer #1 certificate SHA-256 digest:' build/app/outputs/flutter-apk/TV-SIGNER-DETAILS.txt > build/app/outputs/flutter-apk/TV-SIGNER-SHA256.txt
-          test -s build/app/outputs/flutter-apk/TV-SIGNER-SHA256.txt
+          "$APKSIGNER" verify --verbose --print-certs build/app/outputs/flutter-apk/TikVTV-TV-preview.apk | tee build/app/outputs/flutter-apk/TV-SIGNER-DETAILS.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          details = Path('build/app/outputs/flutter-apk/TV-SIGNER-DETAILS.txt').read_text()
+          digest = next((line.strip() for line in details.splitlines()
+                         if 'certificate sha-256 digest:' in line.lower()), None)
+          if not digest:
+              raise SystemExit('APK signature verified, but apksigner did not report a certificate SHA-256 digest')
+          Path('build/app/outputs/flutter-apk/TV-SIGNER-SHA256.txt').write_text(digest + '\\n')
+          PY
           if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
             echo 'WARNING: CI debug-key signing is temporary. This preview may not update an existing installation.' > build/app/outputs/flutter-apk/TV-INSTALL-NOTICE.txt
           else
