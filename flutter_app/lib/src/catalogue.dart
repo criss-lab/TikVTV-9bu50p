@@ -273,8 +273,14 @@ class ChannelCatalogue extends ChangeNotifier {
               if (importedUrls.add(line) && streamName != null && streamName.isNotEmpty) {
                 final sourceKey = entry.key.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
                 final safeId = identity.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
-                imported.add(Channel('feed-$sourceKey-$safeId-${imported.length}', streamName, pendingLogo ?? '',
-                    (pendingCountry != null && RegExp(r'^[A-Za-z]{2}
+                final rawCountry = pendingCountry?.trim() ?? '';
+                final validCountry = rawCountry.length == 2 && rawCountry.codeUnits.every((unit) =>
+                    (unit >= 65 && unit <= 90) || (unit >= 97 && unit <= 122));
+                imported.add(Channel('feed-$sourceKey-$safeId-${imported.length}',
+                    streamName, pendingLogo ?? '', validCountry ? rawCountry.toUpperCase() : 'INT', [line],
+                    languages: pendingLanguage == null ? const [] : pendingLanguage!.split(';')
+                        .map((value) => value.trim()).where((value) => value.isNotEmpty).toList()));
+              }
               if (pendingId != null && approvedFreeTvIds.contains(pendingId) && index != null &&
                   approvedUrls.putIfAbsent(pendingId, () => parsed[index].urls.toSet()).add(line)) {
                 final ch = parsed[index];
