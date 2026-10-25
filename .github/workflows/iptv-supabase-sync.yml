@@ -28,23 +28,24 @@ jobs:
           node-version: '22'
       - name: Validate secure database configuration
         env:
-          INFINITY_IPTV_DATABASE_URL: ${{ secrets.INFINITY_IPTV_DATABASE_URL }}
+          IPTV_DATABASE_URL: ${{ secrets.IPTV_DATABASE_URL }}
+          IPTV_CA_CERT: ${{ secrets.IPTV_CA_CERT }}
         run: |
-          if [ -z "$INFINITY_IPTV_DATABASE_URL" ]; then
-            echo "::error::Configure INFINITY_IPTV_DATABASE_URL as a GitHub Actions secret with the Infinity IPTV database connection string."
+          if [ -z "$IPTV_DATABASE_URL" ]; then
+            echo "::error::Configure IPTV_DATABASE_URL as a GitHub Actions secret with the Infinity IPTV database connection string."
             exit 1
           fi
-          if [ -z "$INFINITY_IPTV_CA_CERT" ]; then
-            echo "::error::Configure INFINITY_IPTV_CA_CERT with the trusted Supabase database CA certificate."
+          if [ -z "$IPTV_CA_CERT" ]; then
+            echo "::error::Configure existing IPTV_CA_CERT repository secret with the database CA PEM."
             exit 1
           fi
-          echo "Infinity IPTV database URL and TLS CA secret are present."
+          echo "IPTV database URL and trusted CA are configured."
       - name: Install dependencies
         run: npm install --omit=dev --no-audit --no-fund
       - name: Validate importer syntax
         run: node --check sync-iptv-catalogue.js
       - name: Sync unreviewed source discoveries into isolated IPTV schema
         env:
-          INFINITY_IPTV_DATABASE_URL: ${{ secrets.INFINITY_IPTV_DATABASE_URL }}
-          INFINITY_IPTV_CA_CERT: ${{ secrets.INFINITY_IPTV_CA_CERT }}
+          IPTV_DATABASE_URL: ${{ secrets.IPTV_DATABASE_URL }}
+          IPTV_CA_CERT: ${{ secrets.IPTV_CA_CERT }}
         run: node sync-iptv-catalogue.js
