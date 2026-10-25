@@ -24,6 +24,16 @@ export default function Feed() {
   const [category,    setCategory]   = useState(catParam || 'all');
   const [activeIndex, setActiveIndex] = useState(0);
   const [showAuth,    setShowAuth]   = useState(false);
+  const [infinityDiscoveries, setInfinityDiscoveries] = useState<number | null>(null);
+  useEffect(() => {
+    const base = ((import.meta.env.VITE_PAYMENT_API_URL as string | undefined) || 'https://tikvtv-payment-api.onrender.com').replace(/\/$/, '');
+    const controller = new AbortController();
+    fetch(`${base}/v1/iptv/discoveries?limit=1`, { signal: controller.signal })
+      .then(response => { if (!response.ok) throw new Error('Discovery unavailable'); return response.json(); })
+      .then(data => { if (data.publication === 'metadata_only_unverified' && Number.isSafeInteger(data.total) && data.total >= 0) setInfinityDiscoveries(data.total); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
   const [deadIds,     setDeadIds]    = useState<Set<string>>(new Set());
   const [liveIds,     setLiveIds]    = useState<Set<string>>(new Set());
   const t = useT();
@@ -112,7 +122,7 @@ export default function Feed() {
   if (loading && liveChannels.length === 0) {
     return (
       <div className="h-screen bg-black flex flex-col overflow-hidden">
-        <Header liveCount={0} totalChannels={0} />
+        <Header liveCount={0} totalChannels={0} infinityDiscoveries={infinityDiscoveries} />
         <CategoryTabs activeCategory={category} onCategoryChange={handleCategoryChange} />
         <div className="flex-1 overflow-hidden">
           {[0, 1].map(i => <LoadingCard key={i} />)}
@@ -124,7 +134,7 @@ export default function Feed() {
   if (error && liveChannels.length === 0) {
     return (
       <div className="h-screen bg-black flex flex-col">
-        <Header liveCount={0} totalChannels={0} />
+        <Header liveCount={0} totalChannels={0} infinityDiscoveries={infinityDiscoveries} />
         <div className="flex-1 flex flex-col items-center justify-center gap-4">
           <Wifi className="w-12 h-12 text-white/20" />
           <p className="text-white/50 text-sm text-center px-8">{t('failedLoad')}</p>
@@ -141,7 +151,7 @@ export default function Feed() {
 
   return (
     <div className="h-screen bg-black flex flex-col overflow-hidden">
-      <Header liveCount={liveCount} totalChannels={total} />
+      <Header liveCount={liveCount} totalChannels={total} infinityDiscoveries={infinityDiscoveries} />
 
       {countryFilter ? (
         <div className="bg-black/60 backdrop-blur px-4 py-2 border-b border-white/5 flex items-center gap-2">

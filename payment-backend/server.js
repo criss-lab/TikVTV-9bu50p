@@ -293,7 +293,7 @@ async function route(req, res) {
   if (req.method === 'GET' && url.pathname === '/v1/iptv/discoveries') {
     if (!infinityCataloguePool) return json(res, 503, {error:'Discovery database not configured'});
     const limitRaw = url.searchParams.get('limit') || '50', afterRaw = url.searchParams.get('after') || '0';
-    if (!/^\\d+$/.test(limitRaw) || !/^\\d+$/.test(afterRaw)) return json(res,400,{error:'Invalid pagination'});
+    if (!/^\d+$/.test(limitRaw) || !/^\d+$/.test(afterRaw)) return json(res,400,{error:'Invalid pagination'});
     const limit = Number(limitRaw), after = Number(afterRaw);
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(after) || after < 0 || after > 1000000) return json(res,400,{error:'Invalid pagination'});
     try {
