@@ -2207,12 +2207,14 @@ async function fetchExtraSources(): Promise<void> {
         if (!response.ok || Number(response.headers.get('content-length') || 0) > MAX_SOURCE_BYTES) throw new Error('Source unavailable or oversized');
         const body = await response.text();
         if (body.length > MAX_SOURCE_BYTES || !body.includes('#EXTINF')) throw new Error('Invalid playlist');
+        const parsedChannels = parseM3U(body, tag);
         const batch: IPTVChannel[] = [];
-        for (const ch of parseM3U(body, tag)) {
+        for (const ch of parsedChannels) {
           const id = ch.id.toLowerCase(), stream = ch.streamUrl.trim();
           if (!browserHls(stream) || !ch.name || ch.name.length < 2 || existingIds.has(id) || existingUrls.has(stream)) continue;
           existingIds.add(id); existingUrls.add(stream); batch.push(ch);
         }
+        console.log(`[IPTV] Source ${tag}: parsed ${parsedChannels.length}, accepted ${batch.length}`);
         if (batch.length) {
           memCache = [...(memCache ?? []), ...batch];
           added += batch.length;
@@ -2224,7 +2226,11 @@ async function fetchExtraSources(): Promise<void> {
       }
     }
   }));
-  console.log('[IPTV] Background ingestion finished:', added, 'additional channels');
+  console.log('[IPTV] Background ingestion finished:', added, 'additional channels; catalogue total:', memCache?.length ?? 0);
+  // Persist the expanded catalogue, not just the smaller primary-only snapshot.
+  try {
+    if (memCache?.length) localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: memCache, timestamp: Date.now() }));
+  } catch { /* Storage quota or privacy mode; in-memory catalogue remains usable. */ }
 }
 
 export async function fetchAllChannels(): Promise<IPTVChannel[]> {
@@ -2266,13 +2272,15 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
       console.warn('[IPTV] Catalogue refresh rejected: unexpected shrink', { previous: previousCache.channels.length, fresh: freshChannels.length });
       freshChannels = previousCache.channels;
     }
+    console.log(`[IPTV] Primary: ${rawChannels.length} channel records, ${rawStreams.length} stream records; accepted ${freshChannels.length} playable channels`);
     memCache = freshChannels;
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: memCache, timestamp: Date.now() })); } catch { /* quota */ }
     backgroundRefresh ??= fetchExtraSources().finally(() => { backgroundRefresh = null; });
     return memCache;
   } catch (error) {
     console.warn('[IPTV] Primary catalogue unavailable:', error);
-    memCache = getFallbackChannels();
+    // Prefer the last-known-good catalogue over a tiny fallback when upstream is down.
+    memCache = previousCache?.channels?.length ? previousCache.channels : getFallbackChannels();
     return memCache;
   }
 }
