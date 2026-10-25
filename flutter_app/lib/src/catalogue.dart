@@ -219,6 +219,7 @@ class ChannelCatalogue extends ChangeNotifier {
         String? pendingId;
         String? pendingName;
         String? pendingLogo;
+        bool pendingGeoBlocked = false;
         final seen = <String>{};
         for (final raw in const LineSplitter().convert(entry.value)) {
           final line = raw.trim();
@@ -226,7 +227,15 @@ class ChannelCatalogue extends ChangeNotifier {
             pendingId = RegExp(r'tvg-id="([^"]+)"').firstMatch(line)?.group(1);
             pendingName = line.contains(',') ? line.substring(line.lastIndexOf(',') + 1).trim() : null;
             pendingLogo = RegExp(r'tvg-logo="([^"]+)"').firstMatch(line)?.group(1);
+            pendingGeoBlocked = line.toLowerCase().contains('[geo-blocked]');
           } else if (line.isNotEmpty && !line.startsWith('#')) {
+            if (pendingGeoBlocked) {
+              pendingId = null;
+              pendingName = null;
+              pendingLogo = null;
+              pendingGeoBlocked = false;
+              continue;
+            }
             final uri = Uri.tryParse(line);
             final streamName = pendingName?.trim();
             final identity = (pendingId?.trim().isNotEmpty == true ? pendingId!.trim() : streamName ?? '');
@@ -255,6 +264,7 @@ class ChannelCatalogue extends ChangeNotifier {
             pendingId = null;
             pendingName = null;
             pendingLogo = null;
+            pendingGeoBlocked = false;
           }
         }
         nextDiscoveredBySource[entry.key] = count;
