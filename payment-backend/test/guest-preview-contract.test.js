@@ -58,7 +58,7 @@ test('signed-in viewing access prioritizes paid entitlement and does not restore
   assert.match(route, /if \(prior\.rowCount\) return json\(res, 200, \{ active: false, allowed: false, expired: true/);
 });
 
-test('catalogue publication remains fail-closed and only approved, healthy HTTPS streams are selected', async () => {
+test('catalogue publication remains rights-gated without excluding inconclusive health probes', async () => {
   const server = await read('../server.js');
   const start = server.indexOf("url.pathname === '/v1/catalogue'");
   const end = server.indexOf("url.pathname === '/health'", start);
@@ -66,7 +66,9 @@ test('catalogue publication remains fail-closed and only approved, healthy HTTPS
   assert.ok(start >= 0 && end > start, 'catalogue route exists');
   assert.match(route, /if \(!cataloguePools\.length\) return json\(res, 503/);
   assert.match(route, /s\.enabled=TRUE AND s\.publication_approved=TRUE/);
-  assert.match(route, /t\.rights_status='approved' AND t\.health_status='healthy'/);
+  assert.match(route, /t\.rights_status='approved'/);
+  assert.doesNotMatch(route, /t\.health_status='healthy'/);
+  assert.doesNotMatch(route, /t\.checked_at\s*>=/);
   assert.match(route, /t\.stream_url LIKE 'https:\/\/%'/);
 });
 
