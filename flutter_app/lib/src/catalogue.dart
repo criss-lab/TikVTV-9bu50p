@@ -234,6 +234,8 @@ class ChannelCatalogue extends ChangeNotifier {
         String? pendingId;
         String? pendingName;
         String? pendingLogo;
+        String? pendingCountry;
+        String? pendingLanguage;
         bool pendingGeoBlocked = false;
         final seen = <String>{};
         for (final raw in const LineSplitter().convert(entry.value)) {
@@ -242,6 +244,8 @@ class ChannelCatalogue extends ChangeNotifier {
             pendingId = RegExp(r'tvg-id="([^"]+)"').firstMatch(line)?.group(1);
             pendingName = line.contains(',') ? line.substring(line.lastIndexOf(',') + 1).trim() : null;
             pendingLogo = RegExp(r'tvg-logo="([^"]+)"').firstMatch(line)?.group(1);
+            pendingCountry = RegExp(r'tvg-country="([^"]+)"').firstMatch(line)?.group(1);
+            pendingLanguage = RegExp(r'tvg-language="([^"]+)"').firstMatch(line)?.group(1);
             pendingGeoBlocked = line.toLowerCase().contains('[geo-blocked]') ||
                 (entry.key == 'free-tv' && line.contains('Ⓖ'));
           } else if (line.isNotEmpty && !line.startsWith('#')) {
@@ -249,6 +253,8 @@ class ChannelCatalogue extends ChangeNotifier {
               pendingId = null;
               pendingName = null;
               pendingLogo = null;
+              pendingCountry = null;
+              pendingLanguage = null;
               pendingGeoBlocked = false;
               continue;
             }
@@ -267,7 +273,60 @@ class ChannelCatalogue extends ChangeNotifier {
               if (importedUrls.add(line) && streamName != null && streamName.isNotEmpty) {
                 final sourceKey = entry.key.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
                 final safeId = identity.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
-                imported.add(Channel('feed-$sourceKey-$safeId-${imported.length}', streamName, pendingLogo ?? '', 'INT', [line]));
+                imported.add(Channel('feed-$sourceKey-$safeId-${imported.length}', streamName, pendingLogo ?? '',
+                    (pendingCountry?.trim().isNotEmpty == true && RegExp(r'^[A-Za-z]{2}
+              }
+              if (pendingId != null && approvedFreeTvIds.contains(pendingId) && index != null &&
+                  approvedUrls.putIfAbsent(pendingId, () => parsed[index].urls.toSet()).add(line)) {
+                final ch = parsed[index];
+                parsed[index] = Channel(ch.id, ch.name, ch.logo, ch.country,
+                    List.unmodifiable([...ch.urls, line]),
+                    categories: ch.categories, languages: ch.languages);
+              }
+            }
+            pendingId = null;
+            pendingName = null;
+            pendingLogo = null;
+            pendingCountry = null;
+            pendingLanguage = null;
+            pendingGeoBlocked = false;
+          }
+        }
+        nextDiscoveredBySource[entry.key] = count;
+      }
+      discoveredBySource..clear()..addAll(nextDiscoveredBySource);
+      discoveredFreeTv = discoveredBySource['free-tv'] ?? 0;
+      // Imported public feeds are clearly source-tagged and remain separate from
+      // payment-API approved entries; deduplicate by stream URL before publishing.
+      parsed.addAll(imported);
+      // Merge only backend-approved catalogue additions, deduplicated against existing URLs.
+      try {
+        final knownUrls = parsed.expand((channel) => channel.urls).toSet();
+        for (final channel in await _approvedCatalogue()) {
+          if (knownUrls.add(channel.urls.first)) parsed.add(channel);
+        }
+      } catch (e) { debugPrint('Approved catalogue unavailable; retaining existing channels: $e'); }
+      approvedImportedCount = parsed.where((channel) => channel.id.startsWith('approved-')).length;
+      channels = List.unmodifiable(parsed);
+      _loadedAt = DateTime.now();
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('channel_catalogue_v1', jsonEncode({
+          'timestamp': _loadedAt!.millisecondsSinceEpoch,
+          'channels': parsed.map((ch) => {'id': ch.id, 'name': ch.name,
+            'logo': ch.logo, 'country': ch.country, 'urls': ch.urls, 'categories': ch.categories, 'languages': ch.languages}).toList(),
+        }));
+      } catch (e) { debugPrint('Catalogue cache write failed: $e'); }
+    } catch (e) {
+      error = e.toString(); // Preserve last successful catalogue when offline.
+    } finally {
+      loading = false; notifyListeners();
+    }
+  }
+}
+).hasMatch(pendingCountry!.trim()))
+                        ? pendingCountry!.trim().toUpperCase() : 'INT', [line],
+                    languages: pendingLanguage == null ? const [] : pendingLanguage!.split(';').map((v) => v.trim()).where((v) => v.isNotEmpty).toList()));
               }
               if (pendingId != null && approvedFreeTvIds.contains(pendingId) && index != null &&
                   approvedUrls.putIfAbsent(pendingId, () => parsed[index].urls.toSet()).add(line)) {
