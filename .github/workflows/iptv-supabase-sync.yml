@@ -8,6 +8,7 @@ on:
       - 'payment-backend/package.json'
       - 'payment-backend/verify-iptv.mjs'
       - 'payment-backend/iptv-playback.mjs'
+      - 'payment-backend/iptv-decoder.mjs'
       - 'payment-backend/iptv-safe-probe.mjs'
       - 'payment-backend/iptv-manifest.mjs'
   workflow_dispatch:
@@ -30,6 +31,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install local media decoder
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -n 1
       - name: Validate secure database configuration
         env:
           IPTV_DATABASE_URL: ${{ secrets.IPTV_DATABASE_URL }}
