@@ -289,6 +289,23 @@ async function route(req, res) {
   }
   // Both catalogues use the same fail-closed publication gate. Infinity additions remain hidden
   // until their source is enabled, rights are approved, and health is verified.
+  // Private metadata inventory. Never feeds /v1/catalogue or exposes unreviewed playback URLs.
+  if (req.method === 'GET' && url.pathname === '/v1/admin/iptv/discoveries') {
+    const configured = process.env.IPTV_DISCOVERY_ADMIN_TOKEN || '';
+    const supplied = String(req.headers.authorization || '').match(/^Bearer (.+)$/)?.[1] || '';
+    const a = Buffer.from(configured), b = Buffer.from(supplied);
+    if (a.length < 32 || a.length !== b.length || !crypto.timingSafeEqual(a,b)) return json(res, 401, {error:'Unauthorized'});
+    if (!infinityCataloguePool) return json(res, 503, {error:'Discovery database not configured'});
+    const limitRaw = url.searchParams.get('limit') || '50', afterRaw = url.searchParams.get('after') || '0';
+    if (!/^\\d+$/.test(limitRaw) || !/^\\d+$/.test(afterRaw)) return json(res,400,{error:'Invalid pagination'});
+    const limit = Number(limitRaw), after = Number(afterRaw);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(after) || after < 0 || after > 1000000) return json(res,400,{error:'Invalid pagination'});
+    try {
+      const result = await infinityCataloguePool.query("SELECT id,name,country,category,language,health_status,rights_status,checked_at FROM iptv.streams ORDER BY id LIMIT $1 OFFSET $2",[limit,after]);
+      const total = await infinityCataloguePool.query("SELECT count(*)::integer AS total FROM iptv.streams");
+      return json(res,200,{publication:'private_discovery_only',total:total.rows[0].total,channels:result.rows,next_cursor:result.rows.length===limit?after+limit:null});
+    } catch(e) { console.error('Private discovery query failed',{code:e?.code || 'NON_SQL_ERROR'}); return json(res,503,{error:'Discovery inventory unavailable'}); }
+  }
   if (req.method === 'GET' && url.pathname === '/v1/catalogue') {
     try {
       if (!cataloguePools.length) return json(res, 503, { error: 'Approved catalogue database is not configured' });
