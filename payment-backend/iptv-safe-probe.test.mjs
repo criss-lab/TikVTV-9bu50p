@@ -37,3 +37,9 @@ test('connection failures remain inconclusive with actionable diagnostics',async
     assert.equal(result.outcome,'inconclusive');assert.equal(result.reason,expected);
   }
 });
+
+test('dual-stack public IPv4 and IPv6 does not falsely fail IPv4-only pinned probe',async()=>{
+ assert.equal(await resolvePinned('example.com',async()=>[{address:'2606:4700:4700::1111',family:6},{address:'8.8.8.8',family:4}]),'8.8.8.8');
+ await assert.rejects(resolvePinned('example.com',async()=>[{address:'::1',family:6}]),/DNS_NO_IPV4/);
+ await assert.rejects(resolvePinned('example.com',async()=>[{address:'8.8.8.8',family:4},{address:'127.0.0.1',family:4}]),/DNS_POLICY/);
+});
