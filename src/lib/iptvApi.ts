@@ -436,8 +436,9 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
     memCache = all;
     return memCache;
   } catch (err) {
-    console.error('[IPTV] Primary fetch failed, using fallback:', err);
-    memCache = getFallbackChannels();
+    console.error('[IPTV] Primary fetch failed:', err);
+    // Prefer the last-known-good catalogue over a tiny fallback when upstream is down.
+    memCache = previousCache?.channels?.length ? previousCache.channels : getFallbackChannels();
     return memCache;
   }
 }
