@@ -1,4 +1,4 @@
-// Run from payment-backend with IPTV_DATABASE_URL and the platform trusted CA store.
+// Run from payment-backend with IPTV_DATABASE_URL and IPTV_CA_CERT (verified CA PEM).
 // This imports discovery metadata only; it never proxies or publishes unreviewed streams.
 // Playlist URLs are configured in iptv.sources; verify repository paths before enabling them.
 import crypto from 'node:crypto';
@@ -8,7 +8,11 @@ if (!connectionString) throw new Error('IPTV_DATABASE_URL is required');
 const dbUrl = new URL(connectionString);
 if (!['postgres:', 'postgresql:'].includes(dbUrl.protocol)) throw new Error('PostgreSQL connection URL required');
 for (const key of ['sslmode', 'sslrootcert', 'sslcert', 'sslkey']) dbUrl.searchParams.delete(key);
-const pool = new pg.Pool({connectionString: dbUrl.toString(), ssl: {rejectUnauthorized: true}, max: 2});
+const ca = process.env.IPTV_CA_CERT?.replace(/\\n/g, '\n');
+if (!ca || !/-----BEGIN CERTIFICATE-----[\\s\\S]+-----END CERTIFICATE-----/.test(ca)) {
+  throw new Error('IPTV_CA_CERT must contain a PEM CA certificate');
+}
+const pool = new pg.Pool({connectionString: dbUrl.toString(), ssl: {ca, rejectUnauthorized: true}, max: 2});
 const maxBytes = 32*1024*1024;
 const maxEntries = 250000;
 function publicHttpUrl(value) {
