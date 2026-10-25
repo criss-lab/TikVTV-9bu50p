@@ -47,7 +47,11 @@ export async function fetchBounded(raw,{resolver=dns.lookup,request,maxBytes=655
       }catch{finish({outcome:'inconclusive',reason:'BODY_LIMIT',status,type});}
     });
     req.on('timeout',()=>req.destroy(Error('TIMEOUT')));
-    req.on('error',e=>finish({outcome:'inconclusive',reason:e.message==='TIMEOUT'?'TIMEOUT':'NETWORK_ERROR'}));
+    req.on('error',e=>{
+      const code=String(e?.code||'');
+      const reason=e.message==='TIMEOUT'?'TIMEOUT':({ENOTFOUND:'DNS_NOT_FOUND',EAI_AGAIN:'DNS_TEMPORARY',ECONNREFUSED:'CONNECTION_REFUSED',ECONNRESET:'CONNECTION_RESET',ETIMEDOUT:'CONNECT_TIMEOUT',EHOSTUNREACH:'HOST_UNREACHABLE',ENETUNREACH:'NETWORK_UNREACHABLE',CERT_HAS_EXPIRED:'TLS_CERT_EXPIRED',UNABLE_TO_VERIFY_LEAF_SIGNATURE:'TLS_CERT_UNTRUSTED',ERR_TLS_CERT_ALTNAME_INVALID:'TLS_HOSTNAME_MISMATCH'}[code]||'NETWORK_ERROR');
+      finish({outcome:'inconclusive',reason});
+    });
     req.end();
   });
 }

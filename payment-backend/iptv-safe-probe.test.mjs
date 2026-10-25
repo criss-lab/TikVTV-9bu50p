@@ -27,3 +27,13 @@ test('unsafe DNS never invokes transport',async()=>{
   const result=await probe('https://example.com/a',{resolver:async()=>[{address:'169.254.169.254',family:4}],request:()=>{called=true;throw Error('must not call');}});
   assert.equal(result.reason,'DNS_POLICY');assert.equal(called,false);
 });
+
+test('connection failures remain inconclusive with actionable diagnostics',async()=>{
+  for(const [code,expected] of [['ECONNREFUSED','CONNECTION_REFUSED'],['ECONNRESET','CONNECTION_RESET'],['CERT_HAS_EXPIRED','TLS_CERT_EXPIRED']]) {
+    const result=await probe('https://example.com/live.m3u8',{
+      resolver:async()=>[{address:'8.8.8.8',family:4}],
+      request:()=>({on(event,handler){if(event==='error')this.onError=handler;return this;},end(){queueMicrotask(()=>this.onError(Object.assign(new Error(code),{code})));}})
+    });
+    assert.equal(result.outcome,'inconclusive');assert.equal(result.reason,expected);
+  }
+});
