@@ -2034,7 +2034,7 @@ let memCache: IPTVChannel[] | null = null;
 function browserHls(url: string): boolean {
   try {
     const parsed = new URL(url);
-    return parsed.protocol === 'https:' && /\\.m3u8?(?:$|[?#])/i.test(parsed.pathname + parsed.search);
+    return parsed.protocol === 'https:' && /\.m3u8?(?:$|[?#])/i.test(parsed.pathname + parsed.search);
   } catch { return false; }
 }
 const deadIds = new Set<string>();
@@ -2229,10 +2229,13 @@ async function fetchExtraSources(): Promise<void> {
 
 export async function fetchAllChannels(): Promise<IPTVChannel[]> {
   if (memCache?.length) return memCache;
+  // Keep expired cache available as a safety net during a potentially partial refresh.
+  let previousCache: CacheData | null = null;
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (raw) {
       const cached: CacheData = JSON.parse(raw);
+      if (Array.isArray(cached.channels) && cached.channels.length > 100 && Number.isFinite(cached.timestamp)) previousCache = cached;
       if (Date.now() - cached.timestamp < CACHE_TTL && cached.channels.length > 100) {
         memCache = cached.channels;
         backgroundRefresh ??= fetchExtraSources().finally(() => { backgroundRefresh = null; });
@@ -2252,12 +2255,18 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
     for (const stream of rawStreams) {
       if (stream.channel && stream.url && browserHls(stream.url) && !streamMap.has(stream.channel)) streamMap.set(stream.channel, stream.url);
     }
-    memCache = shuffle(rawChannels.filter(ch => !ch.is_nsfw && ch.name && streamMap.has(ch.id)).map(ch => ({
+    let freshChannels = shuffle(rawChannels.filter(ch => !ch.is_nsfw && ch.name && streamMap.has(ch.id)).map(ch => ({
       id: ch.id, name: ch.name, logo: ch.logo || genLogoUrl(ch.name),
       country: ch.country || 'INT', countryCode: ch.country || 'INT',
       languages: ch.languages || [], categories: ch.categories?.length ? ch.categories : ['general'],
       streamUrl: streamMap.get(ch.id)!, alt_names: ch.alt_names || [], website: ch.website, network: ch.network,
     })));
+    // Reject a refresh that loses more than 35% of a useful prior catalogue.
+    if (previousCache && previousCache.channels.length >= 1000 && freshChannels.length < previousCache.channels.length * 0.65) {
+      console.warn('[IPTV] Catalogue refresh rejected: unexpected shrink', { previous: previousCache.channels.length, fresh: freshChannels.length });
+      freshChannels = previousCache.channels;
+    }
+    memCache = freshChannels;
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: memCache, timestamp: Date.now() })); } catch { /* quota */ }
     backgroundRefresh ??= fetchExtraSources().finally(() => { backgroundRefresh = null; });
     return memCache;
