@@ -278,7 +278,7 @@ class ChannelCatalogue extends ChangeNotifier {
                     (unit >= 65 && unit <= 90) || (unit >= 97 && unit <= 122));
                 imported.add(Channel('feed-$sourceKey-$safeId-${imported.length}',
                     streamName, pendingLogo ?? '', validCountry ? rawCountry.toUpperCase() : 'INT', [line],
-                    languages: pendingLanguage == null ? const [] : pendingLanguage!.split(';')
+                    languages: pendingLanguage == null ? const [] : pendingLanguage.split(';')
                         .map((value) => value.trim()).where((value) => value.isNotEmpty).toList()));
               }
               if (pendingId != null && approvedFreeTvIds.contains(pendingId) && index != null &&
