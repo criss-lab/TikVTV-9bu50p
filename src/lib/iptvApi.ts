@@ -2367,7 +2367,25 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
       freshChannels = previousCache.channels;
     }
     console.log(`[IPTV] Primary: ${rawChannels.length} channel records, ${rawStreams.length} stream records; accepted ${freshChannels.length} playable channels`);
-    memCache = freshChannels;
+    // The primary requests run concurrently with background discovery. Never replace
+    // channels discovered while those requests were in flight; dedupe by stream URL.
+    const merged = [...freshChannels];
+    const mergedUrls = new Set(merged.map(ch => ch.streamUrl.trim()));
+    const mergedIds = new Set(merged.map(ch => ch.id.toLowerCase()));
+    for (const ch of memCache ?? []) {
+      const url = ch.streamUrl.trim();
+      if (mergedUrls.has(url)) continue;
+      const candidate = { ...ch };
+      if (mergedIds.has(candidate.id.toLowerCase())) {
+        let suffix = 1;
+        while (mergedIds.has(`${candidate.id.toLowerCase()}-feed-${suffix}`)) suffix++;
+        candidate.id = `${candidate.id}-feed-${suffix}`;
+      }
+      merged.push(candidate);
+      mergedUrls.add(url);
+      mergedIds.add(candidate.id.toLowerCase());
+    }
+    memCache = merged;
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: memCache, timestamp: Date.now() })); } catch { /* quota */ }
     startCatalogueDiscovery();
     return memCache;
