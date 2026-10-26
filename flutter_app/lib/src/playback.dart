@@ -20,7 +20,7 @@ class SharedPlayback extends ChangeNotifier {
   VideoPlayerController? _candidate;
   Completer<void>? _candidateSettled;
   int _lease = 0;
-  static const Duration targetBufferAhead = Duration(seconds: 10);
+  static const Duration targetBufferAhead = Duration(seconds: 8);
   Duration bufferedAhead = Duration.zero;
   bool get bufferBelowTarget => bufferedAhead < targetBufferAhead;
   double get bufferHealth => (bufferedAhead.inMilliseconds / targetBufferAhead.inMilliseconds).clamp(0.0, 1.0);
@@ -47,7 +47,7 @@ class SharedPlayback extends ChangeNotifier {
     buffering = next;
   }
   DateTime? _lastRecoveryAt;
-  static const Duration stallRecoveryDelay = Duration(seconds: 18);
+  static const Duration stallRecoveryDelay = Duration(seconds: 8);
   static const Duration recoveryCooldown = Duration(seconds: 5);
   int recoveryCount = 0;
   int _lastReportedSecond = -1;
