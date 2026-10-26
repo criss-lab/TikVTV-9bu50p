@@ -8,11 +8,14 @@ const token = process.env.CACHE_ACCESS_TOKEN || '';
 if (!token || token.length < 32) throw new Error('CACHE_ACCESS_TOKEN must be at least 32 characters');
 const maxBytes = Number(process.env.CACHE_MAX_BYTES || 64 * 1024 * 1024);
 const maxObject = Number(process.env.CACHE_MAX_OBJECT_BYTES || 4 * 1024 * 1024);
+if (![maxBytes, maxObject].every(n => Number.isSafeInteger(n) && n > 0) || maxObject > maxBytes) throw new Error('Invalid cache memory limits');
+const maxPending = Number(process.env.CACHE_MAX_PENDING || 64);
+if (!Number.isSafeInteger(maxPending) || maxPending < 1) throw new Error('Invalid pending fetch limit');
 const cache = new Map();
 const pending = new Map();
 const assets = new Map();
 let used = 0;
-const stats = { hits: 0, misses: 0, coalesced: 0, upstreamBytes: 0 };
+const stats = { hits: 0, misses: 0, coalesced: 0, upstreamBytes: 0, rejectedOverload: 0 };
 const digest = value => createHash('sha256').update(value).digest('hex');
 const authorized = req => {
   const supplied = req.headers.authorization || '';
@@ -41,6 +44,7 @@ async function fetchOnce(key, url, ttl, playlist = false) {
     return hit;
   }
   if (pending.has(key)) { stats.coalesced++; return pending.get(key); }
+  if (pending.size >= maxPending) { stats.rejectedOverload++; throw new Error('Origin concurrency limit'); }
   stats.misses++;
   const work = (async () => {
     const controller = new AbortController();
@@ -48,7 +52,12 @@ async function fetchOnce(key, url, ttl, playlist = false) {
     try {
       const response = await fetch(url, { signal: controller.signal, redirect: 'error',
         headers: { 'accept-encoding': 'identity' } });
-      if (!response.ok) throw new Error('Origin status ' + response.status);
+      if (!response.ok || response.status !== 200) throw new Error('Origin status ' + response.status);
+      const policy = (response.headers.get('cache-control') || '').toLowerCase();
+      if (/no-store|private|no-cache/.test(policy) || response.headers.has('set-cookie')) throw new Error('Origin forbids shared caching');
+      const maxAge = /(?:^|,)\s*(?:s-maxage|max-age)\s*=\s*(\d+)/i.exec(policy);
+      const effectiveTtl = maxAge ? Math.min(ttl, Number(maxAge[1]) * 1000) : ttl;
+      if (!Number.isFinite(effectiveTtl) || effectiveTtl <= 0) throw new Error('Origin freshness disallows caching');
       const size = Number(response.headers.get('content-length') || 0);
       if (size > maxObject) throw new Error('Origin object too large');
       const chunks = []; let total = 0;
@@ -57,11 +66,12 @@ async function fetchOnce(key, url, ttl, playlist = false) {
         if (total > maxObject) { await response.body.cancel().catch(() => {}); throw new Error('Object limit exceeded'); }
         chunks.push(chunk);
       }
+      if (!total) throw new Error('Empty origin response');
       stats.upstreamBytes += total;
       const bytes = Buffer.concat(chunks);
       const type = playlist ? 'application/vnd.apple.mpegurl' :
         (response.headers.get('content-type') || 'application/octet-stream');
-      store(key, bytes, type, ttl);
+      store(key, bytes, type, effectiveTtl);
       return { bytes, type };
     } finally { clearTimeout(timeout); }
   })();
@@ -74,7 +84,7 @@ function rewrite(manifest, base, channel) {
     const register = raw => {
       const url = new URL(raw, base);
       if (url.protocol !== 'https:' || url.origin !== new URL(base).origin ||
-          url.username || url.password) throw new Error('Cross-origin or unsafe HLS asset');
+          url.username || url.password || url.search || url.hash) throw new Error('Cross-origin or unsafe HLS asset');
       const id = digest(channel + ':' + url.href);
       assets.set(channel + ':' + id, { url: url.href, expires: Date.now() + 120000 });
       return '/hls/' + encodeURIComponent(channel) + '/asset/' + id;
@@ -108,7 +118,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': result.type, 'Content-Length': bytes.length,
       'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': 'none' });
     res.end(bytes);
-  } catch (e) { console.error('Cache request failed:', e.message); res.writeHead(502); res.end(); }
+  } catch (e) { console.error('Cache request failed:', e.message); res.writeHead(e.message === 'Origin concurrency limit' ? 503 : 502); res.end(); }
 });
 server.listen(Number(process.env.PORT || 8090), '0.0.0.0', () => console.log('Opt-in HLS cache listening'));
 export { rewrite, server, stats };
