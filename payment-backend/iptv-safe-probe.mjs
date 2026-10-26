@@ -53,7 +53,9 @@ export async function fetchBounded(raw,{resolver=dns.lookup,request,maxBytes=655
     req.on('error',e=>{
       const code=String(e?.code||'');
       const reason=e.message==='TIMEOUT'?'TIMEOUT':({ENOTFOUND:'DNS_NOT_FOUND',EAI_AGAIN:'DNS_TEMPORARY',ECONNREFUSED:'CONNECTION_REFUSED',ECONNRESET:'CONNECTION_RESET',ETIMEDOUT:'CONNECT_TIMEOUT',EHOSTUNREACH:'HOST_UNREACHABLE',ENETUNREACH:'NETWORK_UNREACHABLE',CERT_HAS_EXPIRED:'TLS_CERT_EXPIRED',UNABLE_TO_VERIFY_LEAF_SIGNATURE:'TLS_CERT_UNTRUSTED',ERR_TLS_CERT_ALTNAME_INVALID:'TLS_HOSTNAME_MISMATCH',EPROTO:'TLS_PROTOCOL_ERROR',ERR_SSL_WRONG_VERSION_NUMBER:'TLS_PROTOCOL_ERROR',ERR_STREAM_PREMATURE_CLOSE:'STREAM_PREMATURE_CLOSE'}[code]||'NETWORK_ERROR');
-      // Log only the transport error code, never the URL, hostname or credentials.\n      if(reason==='NETWORK_ERROR') console.warn('[IPTV probe] Unmapped transport error code:', code || 'NO_CODE');\n      finish({outcome:'inconclusive',reason});
+      // Log only the transport error code, never the URL, hostname or credentials.
+      if(reason==='NETWORK_ERROR') console.warn('[IPTV probe] Unmapped transport error code:', code || 'NO_CODE');
+      finish({outcome:'inconclusive',reason});
     });
     req.end();
   });
