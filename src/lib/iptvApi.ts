@@ -2257,7 +2257,12 @@ function scheduleBackgroundDiscovery(): void {
   }, DISCOVERY_INTERVAL_MS);
 }
 
+const SOURCE_CURSOR_KEY = 'tikvtv_iptv_source_cursor_v1';
 let sourceCursor = 0;
+try {
+  const stored = Number(localStorage.getItem(SOURCE_CURSOR_KEY));
+  if (Number.isSafeInteger(stored) && stored >= 0) sourceCursor = stored;
+} catch { /* Storage may be unavailable. */ }
 async function fetchExtraSources(): Promise<void> {
   const allSources = [...new Map(EXTRA_SOURCES.map(([tag, url]) => [url, [tag, url] as [string, string]])).values()];
   // Scan a bounded rotating batch rather than keeping thousands of requests
@@ -2265,6 +2270,7 @@ async function fetchExtraSources(): Promise<void> {
   const batchSize = Math.min(80, allSources.length);
   const sources = Array.from({ length: batchSize }, (_, i) => allSources[(sourceCursor + i) % allSources.length]);
   sourceCursor = (sourceCursor + batchSize) % allSources.length;
+  try { localStorage.setItem(SOURCE_CURSOR_KEY, String(sourceCursor)); } catch { /* In-memory cursor still advances. */ }
   const existingIds = new Set((memCache ?? []).map(ch => ch.id.toLowerCase()));
   const existingUrls = new Set((memCache ?? []).map(ch => ch.streamUrl.trim()));
   let cursor = 0;
