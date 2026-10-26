@@ -1,0 +1,22 @@
+name: Virtual CDN cache tests
+on:
+  push:
+    paths:
+      - 'virtual-cdn/**'
+      - '.github/workflows/virtual-cdn.yml'
+  pull_request:
+    paths:
+      - 'virtual-cdn/**'
+      - '.github/workflows/virtual-cdn.yml'
+permissions:
+  contents: read
+jobs:
+  cache-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check virtual-cdn/segment-cache.mjs
+      - run: node --test virtual-cdn/*.test.mjs
