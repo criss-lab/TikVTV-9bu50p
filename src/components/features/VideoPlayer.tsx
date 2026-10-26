@@ -28,6 +28,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     const preloadTimerRef = useRef<ReturnType<typeof setTimeout>>();
     const readyRef    = useRef(false);
     const retryCount  = useRef(0);
+    const stallCount = useRef(0);
     const activeRef = useRef(isActive);
     const teaserTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -69,13 +70,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       readyRef.current = false;
 
       retryCount.current = 0;
+      stallCount.current = 0;
       timerRef.current = setTimeout(() => {
         if (!readyRef.current && activeRef.current) {
           setError(true);
           setBuffering(false);
           onError?.();
         }
-      }, 15_000);
+      }, 25_000);
 
       const markReady = () => {
         if (disposed) return;
@@ -112,13 +114,18 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         setBuffering(true);
         clearStall();
         stallTimerRef.current = setTimeout(() => {
-          if (disposed || !activeRef.current || video.paused || video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return;
-          const hls = hlsRef.current as { nextAutoLevel: number; startLoad: (position?: number) => void } | null;
-          if (hls) { hls.nextAutoLevel = 0; hls.startLoad(-1); }
-          else video.play().catch(() => {});
-        }, 6000);
+          if (disposed || !activeRef.current || video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return;
+          const hls = hlsRef.current as { nextAutoLevel: number; startLoad: (position?: number) => void; recoverMediaError: () => void } | null;
+          stallCount.current++;
+          if (hls) {
+            hls.nextAutoLevel = 0;
+            if (stallCount.current > 1) hls.recoverMediaError();
+            else hls.startLoad(-1);
+          }
+          void video.play().catch(() => {});
+        }, 4000);
       };
-      const onPlaying = () => { clearStall(); markReady(); if (!disposed) setBuffering(false); };
+      const onPlaying = () => { clearStall(); stallCount.current = 0; markReady(); if (!disposed) setBuffering(false); };
       const onCanPlay = () => { clearStall(); if (!disposed) { markReady(); setBuffering(false); if (activeRef.current) video.play().catch(() => {}); } };
       video.addEventListener('waiting', onWaiting);
       video.addEventListener('stalled', onWaiting);
@@ -136,15 +143,18 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             const hls = new Hls({
               enableWorker:           true,
               lowLatencyMode:         false,
-              maxBufferLength:        30,
-              maxMaxBufferLength:     45,
-              maxBufferSize:          40 * 1000 * 1000,
+              maxBufferLength:        20,
+              maxMaxBufferLength:     40,
+              maxBufferSize:          30 * 1000 * 1000,
+              backBufferLength:       15,
               startLevel:             0,
               capLevelToPlayerSize:  true,
               abrBandWidthFactor:    0.7,
               abrBandWidthUpFactor:  0.55,
-              abrEwmaDefaultEstimate: 650_000,
+              abrEwmaDefaultEstimate: 500_000,
               progressive:            true,
+              // Prefer a sustainable bitrate over repeated quality oscillation.
+              testBandwidth:         true,
               // Faster segment load retry
               manifestLoadingMaxRetry: 3,
               levelLoadingMaxRetry:    3,
@@ -318,7 +328,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           muted={muted}
           playsInline
           loop={false}
-          preload="auto"
+          preload="metadata"
         />
 
         {/* Placeholder while loading */}
