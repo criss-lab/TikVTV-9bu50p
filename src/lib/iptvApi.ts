@@ -2191,6 +2191,21 @@ async function fetchM3U(url: string, tag: string): Promise<IPTVChannel[]> {
 let backgroundRefresh: Promise<void> | null = null;
 const sourceHealth = new Map<string, number>();
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
+// Discover approved, configured public playlists periodically while the frontend is open.
+// The timer is installed once, pauses in hidden tabs, and never overlaps an ingestion run.
+const DISCOVERY_INTERVAL_MS = 15 * 60 * 1000;
+let discoveryTimer: ReturnType<typeof setInterval> | null = null;
+function scheduleBackgroundDiscovery(): void {
+  if (typeof window === 'undefined' || discoveryTimer !== null) return;
+  discoveryTimer = window.setInterval(() => {
+    if (document.visibilityState === 'hidden' || !memCache?.length || backgroundRefresh) return;
+    sourceHealth.clear(); // Retry temporarily failing sources on the next discovery cycle.
+    backgroundRefresh = fetchExtraSources().catch(error => {
+      console.warn('[IPTV] Background discovery failed:', error);
+    }).finally(() => { backgroundRefresh = null; });
+  }, DISCOVERY_INTERVAL_MS);
+}
+
 async function fetchExtraSources(): Promise<void> {
   const sources = [...new Map(EXTRA_SOURCES.map(([tag, url]) => [url, [tag, url] as [string, string]])).values()];
   const existingIds = new Set((memCache ?? []).map(ch => ch.id.toLowerCase()));
@@ -2234,7 +2249,8 @@ async function fetchExtraSources(): Promise<void> {
 }
 
 export async function fetchAllChannels(): Promise<IPTVChannel[]> {
-  if (memCache?.length) return memCache;
+  if (memCache?.length) { scheduleBackgroundDiscovery(); return memCache; }
+  scheduleBackgroundDiscovery();
   // Keep expired cache available as a safety net during a potentially partial refresh.
   let previousCache: CacheData | null = null;
   try {
