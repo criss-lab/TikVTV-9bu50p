@@ -7,6 +7,31 @@ import { prioritizeStreams } from '@/lib/streamHealth';
 const CHANNELS_API = 'https://iptv-org.github.io/api/channels.json';
 const STREAMS_API  = 'https://iptv-org.github.io/api/streams.json';
 
+// The Render API combines the independently approved OnSpaceAI and Infinity inventories.
+// Never bypass its publication gate or expose database credentials to the browser.
+const APPROVED_CATALOGUE_API = 'https://tikvtv-payment-api.onrender.com/v1/catalogue';
+interface ApprovedChannel { id: string | number; name: string; stream_url: string; country?: string; logo_url?: string; category?: string; language?: string; }
+async function fetchApprovedCatalogue(): Promise<IPTVChannel[]> {
+  const channels: IPTVChannel[] = [];
+  let cursor: number | null = 0;
+  const seenCursors = new Set<number>();
+  while (cursor !== null && !seenCursors.has(cursor) && channels.length < 50000) {
+    seenCursors.add(cursor);
+    const response = await fetch(`${APPROVED_CATALOGUE_API}?limit=100&after=${cursor}`, { signal: AbortSignal.timeout(12000) });
+    if (!response.ok) throw new Error(`Approved catalogue HTTP ${response.status}`);
+    const data: { publication?: string; channels?: ApprovedChannel[]; next_cursor?: number | null } = await response.json();
+    if (data.publication !== 'approved_only' || !Array.isArray(data.channels)) throw new Error('Unexpected catalogue publication response');
+    for (const ch of data.channels) {
+      if (!ch.name || !browserHls(ch.stream_url)) continue;
+      channels.push({ id: `approved-${ch.id}`, name: ch.name, streamUrl: ch.stream_url,
+        logo: ch.logo_url || genLogoUrl(ch.name), country: ch.country || 'INT', countryCode: ch.country || 'INT',
+        categories: [normalizeCategory(ch.category || 'general')], languages: ch.language ? [ch.language] : [], alt_names: [] });
+    }
+    cursor = typeof data.next_cursor === 'number' && Number.isSafeInteger(data.next_cursor) && data.next_cursor > cursor ? data.next_cursor : null;
+  }
+  return channels;
+}
+
 // ── All iptv-org M3U sources — categories, regions, languages, countries ──────
 const EXTRA_SOURCES: Array<[string, string]> = [
   // Free-TV curated
@@ -2260,7 +2285,18 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
       if (Array.isArray(cached.channels) && cached.channels.length > 100 && Number.isFinite(cached.timestamp)) previousCache = cached;
       if (Array.isArray(cached.channels) && Number.isFinite(cached.timestamp) && Date.now() - cached.timestamp < CACHE_TTL && cached.channels.length > 100) {
         memCache = cached.channels;
-        backgroundRefresh ??= fetchExtraSources().finally(() => { backgroundRefresh = null; });
+        backgroundRefresh ??= Promise.allSettled([fetchExtraSources(), fetchApprovedCatalogue()]).then(results => {
+      const approved = results[1];
+      if (approved.status === 'fulfilled' && approved.value.length) {
+        const urls = new Set((memCache ?? []).map(ch => ch.streamUrl.trim()));
+        const additions = approved.value.filter(ch => { const url = ch.streamUrl.trim(); if (urls.has(url)) return false; urls.add(url); return true; });
+        if (additions.length) {
+          memCache = [...(memCache ?? []), ...additions];
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: memCache, timestamp: Date.now() })); } catch { /* quota */ }
+          window.dispatchEvent(new Event('iptv-channels-updated'));
+        }
+      } else if (approved.status === 'rejected') console.warn('[IPTV] Approved catalogue unavailable:', approved.reason);
+    }).finally(() => { backgroundRefresh = null; });
         return memCache;
       }
     }
@@ -2302,7 +2338,18 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
     console.log(`[IPTV] Primary: ${rawChannels.length} channel records, ${rawStreams.length} stream records; accepted ${freshChannels.length} playable channels`);
     memCache = freshChannels;
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: memCache, timestamp: Date.now() })); } catch { /* quota */ }
-    backgroundRefresh ??= fetchExtraSources().finally(() => { backgroundRefresh = null; });
+    backgroundRefresh ??= Promise.allSettled([fetchExtraSources(), fetchApprovedCatalogue()]).then(results => {
+      const approved = results[1];
+      if (approved.status === 'fulfilled' && approved.value.length) {
+        const urls = new Set((memCache ?? []).map(ch => ch.streamUrl.trim()));
+        const additions = approved.value.filter(ch => { const url = ch.streamUrl.trim(); if (urls.has(url)) return false; urls.add(url); return true; });
+        if (additions.length) {
+          memCache = [...(memCache ?? []), ...additions];
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: memCache, timestamp: Date.now() })); } catch { /* quota */ }
+          window.dispatchEvent(new Event('iptv-channels-updated'));
+        }
+      } else if (approved.status === 'rejected') console.warn('[IPTV] Approved catalogue unavailable:', approved.reason);
+    }).finally(() => { backgroundRefresh = null; });
     return memCache;
   } catch (error) {
     console.warn('[IPTV] Primary catalogue unavailable:', error);
