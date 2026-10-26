@@ -56,6 +56,7 @@ class SharedPlayback extends ChangeNotifier {
   Timer? _watchdog;
   DateTime? _stalledAt;
   Duration? _previousPosition;
+  Duration _previousBufferedAhead = Duration.zero;
   int stallCount = 0;
   int _sameSourceRetries = 0;
   static const int maxSameSourceRetries = 1;
@@ -64,6 +65,7 @@ class SharedPlayback extends ChangeNotifier {
     _watchdog = null;
     _stalledAt = null;
     _previousPosition = null;
+    _previousBufferedAhead = Duration.zero;
   }
 
   /// A route owns only its lease; an older route cannot stop a newer player.
@@ -210,8 +212,21 @@ class SharedPlayback extends ChangeNotifier {
             _previousPosition = state.position;
             return;
           }
-          if (_previousPosition != state.position) {
-            _previousPosition = state.position;
+          // Native ExoPlayer can pause its clock while filling an HLS buffer.
+          // Restarting a stream that is actively receiving data discards useful
+          // segments and can create an endless play/buffer/reconnect cycle.
+          var ahead = Duration.zero;
+          for (final range in state.buffered) {
+            if (range.start <= state.position && range.end > state.position) {
+              ahead = range.end - state.position;
+              break;
+            }
+          }
+          final progressing = _previousPosition != state.position ||
+              ahead > _previousBufferedAhead + const Duration(milliseconds: 250);
+          _previousPosition = state.position;
+          _previousBufferedAhead = ahead;
+          if (progressing) {
             _stalledAt = null;
             return;
           }
