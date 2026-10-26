@@ -73,3 +73,27 @@ test('overload rejects new origin keys but still coalesces existing in-flight vi
   assert.equal(cache.stats().rejectedOverload, 1);
   assert.equal(cache.stats().inflight, 0);
 });
+
+test('rejects cache configurations that could loop or exceed the memory budget', () => {
+  for (const options of [{ maxEntries: 0 }, { maxBytes: 0 }, { maxInflight: 0 },
+    { ttlMs: -1 }, { maxSegmentBytes: 5, maxBytes: 4 }]) {
+    assert.throws(() => createSegmentCache(options), /must|exceed/);
+  }
+});
+test('respects origin freshness rather than serving an expired segment', async () => {
+  let clock = 1000, calls = 0;
+  const cache = createSegmentCache({ ttlMs: 12000, now: () => clock,
+    fetchImpl: async () => { calls++; return new Response(new Uint8Array([1, 2]), {
+      headers: { 'content-type': 'video/mp2t', 'cache-control': 'public, max-age=1' } }); } });
+  await cache.get(args);
+  clock += 999;
+  assert.equal((await cache.get(args)).cache, 'HIT');
+  clock += 2;
+  assert.equal((await cache.get(args)).cache, 'MISS');
+  assert.equal(calls, 2);
+});
+test('does not cache an origin segment with max-age zero', async () => {
+  const cache = createSegmentCache({ fetchImpl: async () => new Response(new Uint8Array([1]), {
+    headers: { 'content-type': 'video/mp2t', 'cache-control': 'public, max-age=0' } }) });
+  await assert.rejects(cache.get(args), /forbids shared caching/);
+});
