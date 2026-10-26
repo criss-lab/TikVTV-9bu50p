@@ -6,6 +6,11 @@ export function createSegmentCache({ fetchImpl = fetch, maxBytes = 32 * 1024 * 1
   maxEntries = 128, ttlMs = 12000, maxSegmentBytes = 4 * 1024 * 1024,
   maxInflight = 64,
   now = Date.now } = {}) {
+  for (const [name, value] of Object.entries({ maxBytes, maxEntries, ttlMs, maxSegmentBytes, maxInflight })) {
+    if (!Number.isSafeInteger(value) || value <= 0) throw new RangeError(`${name} must be a positive safe integer`);
+  }
+  if (maxSegmentBytes > maxBytes) throw new RangeError('maxSegmentBytes must not exceed maxBytes');
+  if (typeof fetchImpl !== 'function' || typeof now !== 'function') throw new TypeError('Invalid cache dependencies');
   const entries = new Map();
   const inflight = new Map();
   let bytes = 0;
@@ -61,6 +66,9 @@ export function createSegmentCache({ fetchImpl = fetch, maxBytes = 32 * 1024 * 1
       if (!response.ok || ![200].includes(response.status)) throw new Error('Origin segment failed');
       const policy = (response.headers.get('cache-control') || '').toLowerCase();
       if (/no-store|private|no-cache/.test(policy) || response.headers.has('set-cookie')) throw new Error('Origin forbids shared caching');
+      const maxAge = /(?:^|,)\s*(?:s-maxage|max-age)\s*=\s*(\d+)/i.exec(policy);
+      const effectiveTtlMs = maxAge ? Math.min(ttlMs, Number(maxAge[1]) * 1000) : ttlMs;
+      if (effectiveTtlMs <= 0) throw new Error('Origin forbids shared caching');
       const declared = Number(response.headers.get('content-length'));
       if (declared > maxSegmentBytes) throw new Error('Segment too large');
       const contentType = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
@@ -79,7 +87,7 @@ export function createSegmentCache({ fetchImpl = fetch, maxBytes = 32 * 1024 * 1
         }
       } finally { await reader.cancel().catch(() => {}); }
       if (!size) throw new Error('Empty segment response');
-      const value = { body: Buffer.concat(chunks), contentType, expires: now() + ttlMs };
+      const value = { body: Buffer.concat(chunks), contentType, expires: now() + effectiveTtlMs };
       put(key, value);
       return value;
     })();
