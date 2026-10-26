@@ -10,9 +10,17 @@ export async function verifyPlayback(url,{fetcher=fetchBounded,decoder=decodeTra
   const parsed=format==='hls'?inspectHls(root.body.toString('utf8'),url):inspectDash(root.body.toString('utf8'),url);
   if(!parsed.ok)return {outcome:'unhealthy',reason:parsed.reason,status:root.status,format};
   if(format==='dash')return {outcome:'inconclusive',reason:'DASH_SEGMENT_VALIDATION_REQUIRED',status:root.status,format};
-  if(parsed.kind==='master')return {outcome:'inconclusive',reason:'HLS_VARIANT_VALIDATION_REQUIRED',status:root.status,format};
+  // Inspect one validated variant; a master manifest by itself is not playback proof.
+  let media=parsed;
+  if(parsed.kind==='master') {
+    const variant=await fetcher(parsed.references[0],{maxBytes:65536});
+    if(variant.reason!=='HTTP_ONLY_NOT_PLAYBACK_PROOF') return {outcome:variant.outcome==='unhealthy'?'unhealthy':'inconclusive',reason:'VARIANT_'+(variant.reason||'UNKNOWN'),status:variant.status||null,format};
+    media=inspectHls(variant.body.toString('utf8'),parsed.references[0]);
+    if(!media.ok) return {outcome:'unhealthy',reason:media.reason,status:variant.status,format};
+    if(media.kind!=='media') return {outcome:'inconclusive',reason:'NESTED_MASTER_UNSUPPORTED',status:variant.status,format};
+  }
   let decoded=0;
-  for(const reference of parsed.references) {
+  for(const reference of media.references) {
     const segment=await fetcher(reference,{maxBytes:2097152});
     if(segment.reason!=='HTTP_ONLY_NOT_PLAYBACK_PROOF')return {outcome:segment.outcome==='unhealthy'?'unhealthy':'inconclusive',reason:'MEDIA_'+(segment.reason||'UNKNOWN'),status:segment.status||null,format};
     if(!segment.body?.length)return {outcome:'unhealthy',reason:'EMPTY_MEDIA',status:segment.status,format};
