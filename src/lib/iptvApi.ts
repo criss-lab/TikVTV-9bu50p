@@ -2296,6 +2296,12 @@ async function fetchExtraSources(): Promise<void> {
         if (body.length > MAX_SOURCE_BYTES || !body.includes('#EXTINF')) throw new Error('Invalid playlist');
         const parsedChannels = parseM3U(body, tag);
         const batch: IPTVChannel[] = [];
+        // Reconcile against the live catalogue: approved and primary refreshes may
+        // have appended channels since this discovery batch began.
+        for (const current of memCache ?? []) {
+          existingIds.add(current.id.toLowerCase());
+          existingUrls.add(current.streamUrl.trim());
+        }
         for (const ch of parsedChannels) {
           const id = ch.id.toLowerCase(), stream = ch.streamUrl.trim();
           if (!browserHls(stream) || !ch.name || ch.name.length < 2 || existingUrls.has(stream)) continue;
