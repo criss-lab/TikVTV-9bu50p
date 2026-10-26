@@ -17,10 +17,19 @@ async function fetchApprovedCatalogue(): Promise<IPTVChannel[]> {
   const seenCursors = new Set<number>();
   while (cursor !== null && !seenCursors.has(cursor) && channels.length < 50000) {
     seenCursors.add(cursor);
-    const response = await fetch(`${APPROVED_CATALOGUE_API}?limit=100&after=${cursor}`, { signal: AbortSignal.timeout(12000) });
-    if (!response.ok) throw new Error(`Approved catalogue HTTP ${response.status}`);
-    const data: { publication?: string; channels?: ApprovedChannel[]; next_cursor?: number | null } = await response.json();
-    if (data.publication !== 'approved_only' || !Array.isArray(data.channels)) throw new Error('Unexpected catalogue publication response');
+    let data: { publication?: string; channels?: ApprovedChannel[]; next_cursor?: number | null };
+    try {
+      const response = await fetch(`${APPROVED_CATALOGUE_API}?limit=100&after=${cursor}`, { signal: AbortSignal.timeout(12000) });
+      if (!response.ok) throw new Error(`Approved catalogue HTTP ${response.status}`);
+      data = await response.json();
+      if (data.publication !== 'approved_only' || !Array.isArray(data.channels)) throw new Error('Unexpected catalogue publication response');
+    } catch (error) {
+      // Keep earlier successfully retrieved approved pages if a later page fails.
+      // A first-page failure still propagates to the caller for diagnostics.
+      if (!channels.length) throw error;
+      console.warn('[IPTV] Approved catalogue pagination interrupted; keeping earlier pages:', error);
+      break;
+    }
     for (const ch of data.channels) {
       if (!ch.name || !browserHls(ch.stream_url)) continue;
       channels.push({ id: `approved-${ch.id}`, name: ch.name, streamUrl: ch.stream_url,
