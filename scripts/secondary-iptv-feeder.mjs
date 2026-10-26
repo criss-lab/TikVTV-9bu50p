@@ -8,6 +8,7 @@ const sources = [...new Set([...section.matchAll(/\[\s*'[^']+'\s*,\s*'(https:\/\
 if (sources.length < 2000) throw new Error('Expected 2000 source URLs; found ' + sources.length);
 const out = 'catalogue-discovery'; await rm(out, { recursive: true, force: true }); await mkdir(out, { recursive: true });
 const seen = new Map(); const health = []; let cursor = 0;
+const countryCounts = new Map();
 const normalize = value => value.trim();
 const MAX_BYTES = 8_000_000;
 async function boundedText(res) {
@@ -44,7 +45,12 @@ async function worker() {
         const name = metadata.split(',').slice(1).join(',').trim();
         const id = /tvg-id="([^"]+)"/.exec(metadata)?.[1] || '';
         const key = createHash('sha256').update(normalize(uri.href)).digest('hex');
-        if (!seen.has(key)) { seen.set(key, { id, name, url: line, firstSource: url, reviewStatus: 'unreviewed' }); added++; }
+        const country = (/tvg-country="([A-Za-z]{2})"/i.exec(metadata)?.[1] || '').toUpperCase();
+        if (!seen.has(key)) {
+          seen.set(key, { id, name, url: line, country: country || null, firstSource: url, reviewStatus: 'unreviewed' });
+          if (country) countryCounts.set(country, (countryCounts.get(country) || 0) + 1);
+          added++;
+        }
         metadata = '';
       }
       health.push({ source: url, status: 'ok', discovered, added, ms: Date.now() - started });
@@ -56,4 +62,5 @@ const records = [...seen.values()]; health.sort((a, b) => a.source.localeCompare
 for (let i = 0; i < records.length; i += pageSize) await writeFile(`${out}/page-${String(i / pageSize).padStart(5, '0')}.json`, JSON.stringify(records.slice(i, i + pageSize)));
 await writeFile(`${out}/manifest.json`, JSON.stringify({ generatedAt: new Date().toISOString(), sourceCount: sources.length, scanned: health.length, healthySources: health.filter(x => x.status === 'ok').length, uniqueStreamCandidates: records.length, pageSize, pages: Math.ceil(records.length / pageSize), disclaimer: 'Discovery candidates only. Not validated playable, licensed, or approved for subscription distribution.' }, null, 2));
 await writeFile(`${out}/source-health.json`, JSON.stringify(health, null, 2));
+await writeFile(`${out}/country-coverage.json`, JSON.stringify(Object.fromEntries([...countryCounts].sort(([a], [b]) => a.localeCompare(b))), null, 2));
 console.log('Secondary feeder:', sources.length, 'sources,', records.length, 'unique candidate stream URLs');
