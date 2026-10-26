@@ -2283,8 +2283,14 @@ async function fetchExtraSources(): Promise<void> {
         const batch: IPTVChannel[] = [];
         for (const ch of parsedChannels) {
           const id = ch.id.toLowerCase(), stream = ch.streamUrl.trim();
-          if (!browserHls(stream) || !ch.name || ch.name.length < 2 || existingIds.has(id) || existingUrls.has(stream)) continue;
-          existingIds.add(id); existingUrls.add(stream); batch.push(ch);
+          if (!browserHls(stream) || !ch.name || ch.name.length < 2 || existingUrls.has(stream)) continue;
+          // Preserve alternative stream URLs for the same tvg-id with distinct card keys.
+          if (existingIds.has(id)) {
+            let suffix = 1;
+            while (existingIds.has(`${id}-feed-${suffix}`)) suffix++;
+            ch.id = `${ch.id}-feed-${suffix}`;
+          }
+          existingIds.add(ch.id.toLowerCase()); existingUrls.add(stream); batch.push(ch);
         }
         console.log(`[IPTV] Source ${tag}: parsed ${parsedChannels.length}, accepted ${batch.length}`);
         if (batch.length) {
