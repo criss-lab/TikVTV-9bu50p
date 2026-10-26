@@ -93,5 +93,18 @@ try{
  let failed=0;
  for(const source of result.rows) if(!(await run(source))) failed++;
  if(failed) process.exitCode=1;
+ // A growth report must count distinct stream URLs across ALL sources, not summed rows.
+ // Keep review/health metrics separate: discovery is never publication approval.
+ const metrics=await pool.query(`select
+   count(*)::int as imported_rows,
+   count(distinct url_hash)::int as distinct_urls,
+   count(distinct country) filter (where nullif(trim(country),'') is not null)::int as countries_tagged,
+   count(*) filter (where rights_status='approved')::int as rights_approved_rows,
+   count(*) filter (where health_status='healthy')::int as healthy_rows
+   from iptv.streams`);
+ const approved=await pool.query(`select count(distinct s.url_hash)::int as publication_eligible_urls
+   from iptv.streams s join iptv.sources src on src.id=s.source_id
+   where src.enabled=true and src.publication_approved=true and s.rights_status='approved'`);
+ console.log(JSON.stringify({event:'catalogue_growth',...metrics.rows[0],...approved.rows[0],publication:'review_required'}));
  console.log(JSON.stringify({sources:result.rows.length,failed,publication:'review_required'}));
 }finally{await pool.end();}
