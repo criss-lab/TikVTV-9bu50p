@@ -2251,7 +2251,7 @@ let discoveryTimer: ReturnType<typeof setInterval> | null = null;
 function scheduleBackgroundDiscovery(): void {
   if (typeof window === 'undefined' || discoveryTimer !== null) return;
   discoveryTimer = window.setInterval(() => {
-    if (document.visibilityState === 'hidden' || !memCache?.length || backgroundRefresh) return;
+    if (document.visibilityState === 'hidden' || !memCache?.length) return;
     sourceHealth.clear(); // Retry temporarily failing sources on the next discovery cycle.
     startCatalogueDiscovery();
   }, DISCOVERY_INTERVAL_MS);
@@ -2312,7 +2312,7 @@ async function fetchExtraSources(): Promise<void> {
 }
 
 export async function fetchAllChannels(): Promise<IPTVChannel[]> {
-  if (memCache?.length) { scheduleBackgroundDiscovery(); return memCache; }
+  if (memCache?.length) { scheduleBackgroundDiscovery(); startCatalogueDiscovery(); return memCache; }
   scheduleBackgroundDiscovery();
   // Keep expired cache available as a safety net during a potentially partial refresh.
   let previousCache: CacheData | null = null;
