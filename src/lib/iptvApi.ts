@@ -334,10 +334,17 @@ async function fetchApprovedCatalogue(): Promise<IPTVChannel[]> {
   const approved: IPTVChannel[] = [];
   let after = 0;
   for (let page = 0; page < 500; page++) {
-    const response = await fetch(`${base}/v1/catalogue?limit=100&after=${after}`, { signal: AbortSignal.timeout(12000) });
-    if (!response.ok) throw new Error('Approved catalogue unavailable');
-    const payload = await response.json();
-    if (payload.publication !== 'approved_only' || !Array.isArray(payload.channels)) throw new Error('Unexpected catalogue response');
+    let payload: { publication?: string; channels?: any[]; next_cursor?: number | null };
+    try {
+      const response = await fetch(`${base}/v1/catalogue?limit=100&after=${after}`, { signal: AbortSignal.timeout(12000) });
+      if (!response.ok) throw new Error('Approved catalogue unavailable');
+      payload = await response.json();
+      if (payload.publication !== 'approved_only' || !Array.isArray(payload.channels)) throw new Error('Unexpected catalogue response');
+    } catch (error) {
+      if (!approved.length) throw error;
+      console.warn('[IPTV] Retaining approved pages after pagination interruption:', error);
+      break;
+    }
     for (const row of payload.channels) {
       if (!row || !browserHls(row.stream_url) || !row.name) continue;
       approved.push({ id: `approved-${row.id}`, name: row.name, logo: row.logo_url || genLogoUrl(row.name), country: row.country || 'INT', countryCode: row.country || 'INT', languages: row.language ? [row.language] : [], categories: [normalizeCategory(row.category || 'general')], streamUrl: row.stream_url, alt_names: [] });
