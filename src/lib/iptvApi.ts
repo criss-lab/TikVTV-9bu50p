@@ -161,7 +161,7 @@ let memCache: IPTVChannel[] | null = null;
 function browserHls(url: string): boolean {
   try {
     const parsed = new URL(url);
-    return parsed.protocol === 'https:' && /\\.m3u8?(?:$|[?#])/i.test(parsed.pathname + parsed.search);
+    return parsed.protocol === 'https:' && /\.m3u8?(?:$|[?#])/i.test(parsed.pathname + parsed.search);
   } catch { return false; }
 }
 const deadIds = new Set<string>();
@@ -351,11 +351,14 @@ async function fetchApprovedCatalogue(): Promise<IPTVChannel[]> {
 export async function fetchAllChannels(): Promise<IPTVChannel[]> {
   if (memCache && memCache.length > 0) return memCache;
 
+  let previousCache: CacheData | null = null;
   try {
+    // Preserve expired last-known-good data so a partial refresh cannot erase thousands of channels.
     const raw = localStorage.getItem(CACHE_KEY);
     if (raw) {
       const data: CacheData = JSON.parse(raw);
-      if (Date.now() - data.timestamp < CACHE_TTL && data.channels.length > 100) {
+      if (Array.isArray(data.channels) && data.channels.length > 100 && Number.isFinite(data.timestamp)) previousCache = data;
+      if (Array.isArray(data.channels) && Number.isFinite(data.timestamp) && Date.now() - data.timestamp < CACHE_TTL && data.channels.length > 100) {
         console.log('[IPTV] Cache hit:', data.channels.length, 'channels');
         memCache = data.channels;
         return memCache;
@@ -415,7 +418,12 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
       deduped.push(ch);
     }
 
-    const all = shuffle([...primary, ...deduped]);
+    let all = shuffle([...primary, ...deduped]);
+    // Reject a refresh that loses more than 35% of a useful prior catalogue; retry next hour.
+    if (previousCache && previousCache.channels.length >= 1000 && all.length < previousCache.channels.length * 0.65) {
+      console.warn('[IPTV] Catalogue refresh rejected: unexpected shrink', { previous: previousCache.channels.length, fresh: all.length });
+      all = previousCache.channels;
+    }
     console.log(`[IPTV] Total: ${all.length} (${primary.length} primary + ${deduped.length} extra)`);
 
     try {
@@ -428,8 +436,9 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
     memCache = all;
     return memCache;
   } catch (err) {
-    console.error('[IPTV] Primary fetch failed, using fallback:', err);
-    memCache = getFallbackChannels();
+    console.error('[IPTV] Primary fetch failed:', err);
+    // Prefer the last-known-good catalogue over a tiny fallback when upstream is down.
+    memCache = previousCache?.channels?.length ? previousCache.channels : getFallbackChannels();
     return memCache;
   }
 }
