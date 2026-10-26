@@ -4,11 +4,12 @@ import { createHash } from 'node:crypto';
 // The caller must verify the viewer's entitlement AND documented redistribution rights.
 export function createSegmentCache({ fetchImpl = fetch, maxBytes = 32 * 1024 * 1024,
   maxEntries = 128, ttlMs = 12000, maxSegmentBytes = 4 * 1024 * 1024,
+  maxInflight = 64,
   now = Date.now } = {}) {
   const entries = new Map();
   const inflight = new Map();
   let bytes = 0;
-  const metrics = { hits: 0, misses: 0, coalesced: 0, evictions: 0 };
+  const metrics = { hits: 0, misses: 0, coalesced: 0, evictions: 0, rejectedOverload: 0 };
   function remove(key) {
     const old = entries.get(key);
     if (old) { bytes -= old.body.length; entries.delete(key); metrics.evictions++; }
@@ -49,6 +50,10 @@ export function createSegmentCache({ fetchImpl = fetch, maxBytes = 32 * 1024 * 1
       const value = await inflight.get(key);
       return { body: Buffer.from(value.body), contentType: value.contentType, cache: 'COALESCED' };
     }
+    if (inflight.size >= maxInflight) {
+      metrics.rejectedOverload++;
+      throw new Error('Cache overloaded; use direct authorized playback');
+    }
     metrics.misses++;
     const work = (async () => {
       const response = await fetchImpl(uri, { redirect: 'error', signal: AbortSignal.timeout(8000),
@@ -84,5 +89,5 @@ export function createSegmentCache({ fetchImpl = fetch, maxBytes = 32 * 1024 * 1
       return { body: Buffer.from(value.body), contentType: value.contentType, cache: 'MISS' };
     } finally { inflight.delete(key); }
   }
-  return { get, stats: () => ({ ...metrics, entries: entries.size, bytes }) };
+  return { get, stats: () => ({ ...metrics, entries: entries.size, inflight: inflight.size, bytes }) };
 }
