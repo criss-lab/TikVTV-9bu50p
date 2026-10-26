@@ -78,9 +78,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       };
       timerRef.current = setTimeout(() => {
         if (!readyRef.current && activeRef.current) {
-          setError(true);
-          setBuffering(false);
-          onError?.();
+          markError();
         }
       }, 15_000);
 
@@ -97,7 +95,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         setBuffering(false);
         retryCount.current = 0;
         onReady?.();
-        if (activeRef.current) video.play().catch(() => {});
       };
 
       let disposed = false;
@@ -139,12 +136,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         }
       };
       const onPlaying = () => { clearStall(); finishStall(); markReady(); if (!disposed) setBuffering(false); };
-      const onCanPlay = () => { clearStall(); finishStall(); if (!disposed) { markReady(); setBuffering(false); if (activeRef.current) video.play().catch(() => {}); } };
+      const requestPlayback = () => {
+        if (disposed || !activeRef.current) return;
+        // A decoded frame is not proof that playback started; only 'playing' marks ready.
+        void video.play().catch(() => { if (!disposed && !video.paused) return; /* timeout retains the skip/retry path */ });
+      };
+      const onCanPlay = () => { if (!disposed) requestPlayback(); };
       video.addEventListener('waiting', onWaiting);
       video.addEventListener('stalled', onWaiting);
       video.addEventListener('playing', onPlaying);
       video.addEventListener('canplay', onCanPlay);
-      video.addEventListener('loadeddata', markReady);
+      video.addEventListener('loadeddata', requestPlayback);
 
       const init = async () => {
         try {
@@ -230,7 +232,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         video.removeEventListener('stalled', onWaiting);
         video.removeEventListener('canplay', onCanPlay);
         video.removeEventListener('playing', onPlaying);
-        video.removeEventListener('loadeddata', markReady);
+        video.removeEventListener('loadeddata', requestPlayback);
         video.onerror = null;
         destroyHls();
         if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
