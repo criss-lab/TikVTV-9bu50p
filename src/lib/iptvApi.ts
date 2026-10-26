@@ -2257,8 +2257,14 @@ function scheduleBackgroundDiscovery(): void {
   }, DISCOVERY_INTERVAL_MS);
 }
 
+let sourceCursor = 0;
 async function fetchExtraSources(): Promise<void> {
-  const sources = [...new Map(EXTRA_SOURCES.map(([tag, url]) => [url, [tag, url] as [string, string]])).values()];
+  const allSources = [...new Map(EXTRA_SOURCES.map(([tag, url]) => [url, [tag, url] as [string, string]])).values()];
+  // Scan a bounded rotating batch rather than keeping thousands of requests
+  // running in a browser tab. Subsequent discovery cycles resume where we left off.
+  const batchSize = Math.min(80, allSources.length);
+  const sources = Array.from({ length: batchSize }, (_, i) => allSources[(sourceCursor + i) % allSources.length]);
+  sourceCursor = (sourceCursor + batchSize) % allSources.length;
   const existingIds = new Set((memCache ?? []).map(ch => ch.id.toLowerCase()));
   const existingUrls = new Set((memCache ?? []).map(ch => ch.streamUrl.trim()));
   let cursor = 0;
