@@ -2283,6 +2283,17 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
       languages: ch.languages || [], categories: ch.categories?.length ? ch.categories : ['general'],
       streamUrl: streamMap.get(ch.id)!, alt_names: ch.alt_names || [], website: ch.website, network: ch.network,
     })));
+    // A successful HTTP response can still contain no usable browser streams.
+    // Never cache an empty catalogue as success: show the last-known-good or
+    // fallback immediately and keep trying optional configured sources.
+    if (freshChannels.length === 0) {
+      console.warn('[IPTV] Primary returned zero usable HLS channels; recovering catalogue');
+      memCache = previousCache?.channels?.length ? previousCache.channels : getFallbackChannels();
+      backgroundRefresh ??= fetchExtraSources().catch(error => {
+        console.warn('[IPTV] Recovery discovery failed:', error);
+      }).finally(() => { backgroundRefresh = null; });
+      return memCache;
+    }
     // Reject a refresh that loses more than 35% of a useful prior catalogue.
     if (previousCache && previousCache.channels.length >= 1000 && freshChannels.length < previousCache.channels.length * 0.65) {
       console.warn('[IPTV] Catalogue refresh rejected: unexpected shrink', { previous: previousCache.channels.length, fresh: freshChannels.length });
@@ -2297,6 +2308,9 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
     console.warn('[IPTV] Primary catalogue unavailable:', error);
     // Prefer the last-known-good catalogue over a tiny fallback when upstream is down.
     memCache = previousCache?.channels?.length ? previousCache.channels : getFallbackChannels();
+    backgroundRefresh ??= fetchExtraSources().catch(discoveryError => {
+      console.warn('[IPTV] Recovery discovery failed:', discoveryError);
+    }).finally(() => { backgroundRefresh = null; });
     return memCache;
   }
 }
