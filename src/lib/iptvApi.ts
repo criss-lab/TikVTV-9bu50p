@@ -2218,6 +2218,34 @@ const sourceHealth = new Map<string, number>();
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 // Discover approved, configured public playlists periodically while the frontend is open.
 // The timer is installed once, pauses in hidden tabs, and never overlaps an ingestion run.
+// Keep the fast approved API independent of the slower optional playlist crawl.
+// A slow source must never delay publishing channels already returned by the API.
+let approvedRefresh: Promise<void> | null = null;
+function refreshApprovedCatalogue(): void {
+  if (approvedRefresh) return;
+  approvedRefresh = fetchApprovedCatalogue().then(approved => {
+    if (!approved.length) return;
+    const urls = new Set((memCache ?? []).map(ch => ch.streamUrl.trim()));
+    const additions = approved.filter(ch => {
+      const url = ch.streamUrl.trim();
+      if (urls.has(url)) return false;
+      urls.add(url);
+      return true;
+    });
+    if (!additions.length) return;
+    memCache = [...(memCache ?? []), ...additions];
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: memCache, timestamp: Date.now() })); } catch { /* quota */ }
+    window.dispatchEvent(new Event('iptv-channels-updated'));
+  }).catch(error => console.warn('[IPTV] Approved catalogue unavailable:', error))
+    .finally(() => { approvedRefresh = null; });
+}
+function startCatalogueDiscovery(): void {
+  refreshApprovedCatalogue();
+  backgroundRefresh ??= fetchExtraSources().catch(error => {
+    console.warn('[IPTV] Optional discovery failed:', error);
+  }).finally(() => { backgroundRefresh = null; });
+}
+
 const DISCOVERY_INTERVAL_MS = 15 * 60 * 1000;
 let discoveryTimer: ReturnType<typeof setInterval> | null = null;
 function scheduleBackgroundDiscovery(): void {
@@ -2225,9 +2253,7 @@ function scheduleBackgroundDiscovery(): void {
   discoveryTimer = window.setInterval(() => {
     if (document.visibilityState === 'hidden' || !memCache?.length || backgroundRefresh) return;
     sourceHealth.clear(); // Retry temporarily failing sources on the next discovery cycle.
-    backgroundRefresh = fetchExtraSources().catch(error => {
-      console.warn('[IPTV] Background discovery failed:', error);
-    }).finally(() => { backgroundRefresh = null; });
+    startCatalogueDiscovery();
   }, DISCOVERY_INTERVAL_MS);
 }
 
@@ -2285,18 +2311,7 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
       if (Array.isArray(cached.channels) && cached.channels.length > 100 && Number.isFinite(cached.timestamp)) previousCache = cached;
       if (Array.isArray(cached.channels) && Number.isFinite(cached.timestamp) && Date.now() - cached.timestamp < CACHE_TTL && cached.channels.length > 100) {
         memCache = cached.channels;
-        backgroundRefresh ??= Promise.allSettled([fetchExtraSources(), fetchApprovedCatalogue()]).then(results => {
-      const approved = results[1];
-      if (approved.status === 'fulfilled' && approved.value.length) {
-        const urls = new Set((memCache ?? []).map(ch => ch.streamUrl.trim()));
-        const additions = approved.value.filter(ch => { const url = ch.streamUrl.trim(); if (urls.has(url)) return false; urls.add(url); return true; });
-        if (additions.length) {
-          memCache = [...(memCache ?? []), ...additions];
-          try { localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: memCache, timestamp: Date.now() })); } catch { /* quota */ }
-          window.dispatchEvent(new Event('iptv-channels-updated'));
-        }
-      } else if (approved.status === 'rejected') console.warn('[IPTV] Approved catalogue unavailable:', approved.reason);
-    }).finally(() => { backgroundRefresh = null; });
+        startCatalogueDiscovery();
         return memCache;
       }
     }
@@ -2325,9 +2340,7 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
     if (freshChannels.length === 0) {
       console.warn('[IPTV] Primary returned zero usable HLS channels; recovering catalogue');
       memCache = previousCache?.channels?.length ? previousCache.channels : getFallbackChannels();
-      backgroundRefresh ??= fetchExtraSources().catch(error => {
-        console.warn('[IPTV] Recovery discovery failed:', error);
-      }).finally(() => { backgroundRefresh = null; });
+      startCatalogueDiscovery();
       return memCache;
     }
     // Reject a refresh that loses more than 35% of a useful prior catalogue.
@@ -2338,26 +2351,13 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
     console.log(`[IPTV] Primary: ${rawChannels.length} channel records, ${rawStreams.length} stream records; accepted ${freshChannels.length} playable channels`);
     memCache = freshChannels;
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: memCache, timestamp: Date.now() })); } catch { /* quota */ }
-    backgroundRefresh ??= Promise.allSettled([fetchExtraSources(), fetchApprovedCatalogue()]).then(results => {
-      const approved = results[1];
-      if (approved.status === 'fulfilled' && approved.value.length) {
-        const urls = new Set((memCache ?? []).map(ch => ch.streamUrl.trim()));
-        const additions = approved.value.filter(ch => { const url = ch.streamUrl.trim(); if (urls.has(url)) return false; urls.add(url); return true; });
-        if (additions.length) {
-          memCache = [...(memCache ?? []), ...additions];
-          try { localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: memCache, timestamp: Date.now() })); } catch { /* quota */ }
-          window.dispatchEvent(new Event('iptv-channels-updated'));
-        }
-      } else if (approved.status === 'rejected') console.warn('[IPTV] Approved catalogue unavailable:', approved.reason);
-    }).finally(() => { backgroundRefresh = null; });
+    startCatalogueDiscovery();
     return memCache;
   } catch (error) {
     console.warn('[IPTV] Primary catalogue unavailable:', error);
     // Prefer the last-known-good catalogue over a tiny fallback when upstream is down.
     memCache = previousCache?.channels?.length ? previousCache.channels : getFallbackChannels();
-    backgroundRefresh ??= fetchExtraSources().catch(discoveryError => {
-      console.warn('[IPTV] Recovery discovery failed:', discoveryError);
-    }).finally(() => { backgroundRefresh = null; });
+    startCatalogueDiscovery();
     return memCache;
   }
 }
