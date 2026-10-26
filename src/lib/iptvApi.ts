@@ -334,7 +334,7 @@ async function fetchApprovedCatalogue(): Promise<IPTVChannel[]> {
   const approved: IPTVChannel[] = [];
   let after = 0;
   for (let page = 0; page < 500; page++) {
-    let payload: { publication?: string; channels?: any[]; next_cursor?: number | null };
+    let payload: { publication?: string; channels?: Array<{ id: string; name: string; stream_url: string; logo_url?: string | null; country?: string | null; language?: string | null; category?: string | null }>; next_cursor?: number | null };
     try {
       const response = await fetch(`${base}/v1/catalogue?limit=100&after=${after}`, { signal: AbortSignal.timeout(12000) });
       if (!response.ok) throw new Error('Approved catalogue unavailable');
