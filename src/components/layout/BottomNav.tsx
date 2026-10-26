@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Home, Search, Compass, Bookmark, Clock, Flame, Film, Calendar, User, Crown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWatchHistory } from '@/hooks/useWatchHistory';
+import { usePremiumAccess } from '@/hooks/usePremiumAccess';
 
 const tabs = [
   { id: 'home',     path: '/',          icon: Home,     label: 'Home' },
@@ -17,6 +18,7 @@ export default function BottomNav() {
   const location  = useLocation();
   const navigate  = useNavigate();
   const { history } = useWatchHistory();
+  const { active: premiumActive, loading: premiumLoading } = usePremiumAccess();
 
   // Only show 5 most relevant tabs based on available space
   const visibleTabs = tabs.slice(0, 7);
@@ -28,7 +30,7 @@ export default function BottomNav() {
         <AiSuggestionStrip />
       )}
 
-      {location.pathname !== '/premium' && (
+      {location.pathname !== '/premium' && !premiumLoading && !premiumActive && (
         <button
           type="button"
           onClick={() => navigate('/premium')}
