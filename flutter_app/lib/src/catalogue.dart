@@ -338,7 +338,12 @@ class ChannelCatalogue extends ChangeNotifier {
       // the last known-good primary catalogue. Do not auto-monetize links.
       final nextDiscoveredBySource = <String, int>{};
       final known = <String, int>{for (var i = 0; i < parsed.length; i++) parsed[i].id: i};
-      final extra = await Future.wait(additionalPlaylists.entries.map((entry) async {
+      final extra = <MapEntry<String, String>>[];
+      final playlistEntries = additionalPlaylists.entries.toList(growable: false);
+      // Mobile data and memory are limited: fetch a small bounded batch at a time.
+      for (var offset = 0; offset < playlistEntries.length; offset += 6) {
+        final batch = playlistEntries.skip(offset).take(6);
+        extra.addAll(await Future.wait(batch.map((entry) async {
         try {
           final response = await http.get(Uri.parse(entry.value))
               .timeout(const Duration(seconds: 20));
@@ -351,7 +356,8 @@ class ChannelCatalogue extends ChangeNotifier {
           debugPrint('Optional playlist unavailable: $e');
           return MapEntry(entry.key, '');
         }
-      }));
+        })));
+      }
       final approvedUrls = <String, Set<String>>{};
       final imported = <Channel>[];
       final importedUrls = parsed.expand((channel) => channel.urls).toSet();
