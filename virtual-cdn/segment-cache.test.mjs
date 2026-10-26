@@ -4,7 +4,7 @@ import { createSegmentCache } from './segment-cache.mjs';
 
 const channel = { id: 'licensed-demo', redistributionApproved: true, cacheApproved: true };
 const args = { viewer: { id: 'viewer' }, channel, authorize: async () => true,
-  approvedOrigins: ['https://licensed.example'], url: 'https://licensed.example/live/part01.ts' };
+  approvedOrigins: ['https://licensed.example'], scope: 'licensed-demo-public-segments', url: 'https://licensed.example/live/part01.ts' };
 const response = () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'video/mp2t' } });
 
 test('concurrent viewers coalesce identical authorized segments and return independent buffers', async () => {
@@ -38,4 +38,18 @@ test('expired segments are fetched again', async () => {
   const cache = createSegmentCache({ ttlMs: 100, now: () => clock, fetchImpl: async () => { calls++; return response(); } });
   await cache.get(args); clock += 101; await cache.get(args);
   assert.equal(calls, 2);
+});
+
+test('requires explicit trusted scope and rejects tokenized URLs', async () => {
+  const cache = createSegmentCache({ fetchImpl: async () => response() });
+  await assert.rejects(cache.get({ ...args, scope: undefined }), /scope required/);
+  await assert.rejects(cache.get({ ...args, url: args.url + '?token=private' }), /Unapproved/);
+});
+test('honors origin no-store and rejects empty segments', async () => {
+  const cache = createSegmentCache({ fetchImpl: async () => new Response('x', {
+    headers: { 'content-type': 'video/mp2t', 'cache-control': 'no-store' } }) });
+  await assert.rejects(cache.get(args), /forbids shared caching/);
+  const empty = createSegmentCache({ fetchImpl: async () => new Response(null, {
+    headers: { 'content-type': 'video/mp2t' } }) });
+  await assert.rejects(empty.get(args), /Empty segment/);
 });
