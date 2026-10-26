@@ -16,6 +16,7 @@ test('concurrent viewers coalesce identical authorized segments and return indep
   a.body[0] = 99;
   assert.equal(b.body[0], 1);
   assert.equal((await cache.get(args)).cache, 'HIT');
+  assert.equal(cache.stats().coalesced, 1);
 });
 test('rejects unauthorized viewers and unapproved channels before fetching', async () => {
   let calls = 0;
