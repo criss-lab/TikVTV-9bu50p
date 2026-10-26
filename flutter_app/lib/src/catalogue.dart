@@ -179,8 +179,7 @@ class ChannelCatalogue extends ChangeNotifier {
 
   static final ChannelCatalogue _instance = ChannelCatalogue._();
   factory ChannelCatalogue() => _instance;
-  ChannelCatalogue._() { Timer.periodic(const Duration(hours: 1), (_) { if (!_pendingRunning) load(force: true); }); }
-  bool get _pendingRunning => _pending != null;
+  ChannelCatalogue._();
 
   List<Channel> channels = [];
   bool loading = false;
