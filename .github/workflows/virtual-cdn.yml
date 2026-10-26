@@ -20,4 +20,5 @@ jobs:
         with:
           node-version: '22'
       - run: node --check virtual-cdn/segment-cache.mjs
+      - run: node --check virtual-cdn/server.mjs
       - run: node --test virtual-cdn/*.test.mjs
