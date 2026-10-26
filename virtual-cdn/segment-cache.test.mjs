@@ -54,3 +54,22 @@ test('honors origin no-store and rejects empty segments', async () => {
     headers: { 'content-type': 'video/mp2t' } }) });
   await assert.rejects(empty.get(args), /Empty segment/);
 });
+
+test('overload rejects new origin keys but still coalesces existing in-flight viewers', async () => {
+  let release;
+  const wait = new Promise(resolve => { release = resolve; });
+  let calls = 0;
+  const cache = createSegmentCache({ maxInflight: 1, fetchImpl: async () => {
+    calls++; await wait; return response();
+  } });
+  const first = cache.get(args);
+  const same = cache.get({ ...args, viewer: { id: 'second' } });
+  await assert.rejects(cache.get({ ...args, url: 'https://licensed.example/live/part02.ts' }), /overloaded/);
+  assert.equal(cache.stats().inflight, 1);
+  release();
+  const [a, b] = await Promise.all([first, same]);
+  assert.equal(calls, 1);
+  assert.deepEqual(new Set([a.cache, b.cache]), new Set(['MISS', 'COALESCED']));
+  assert.equal(cache.stats().rejectedOverload, 1);
+  assert.equal(cache.stats().inflight, 0);
+});
