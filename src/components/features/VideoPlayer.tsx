@@ -30,7 +30,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     const retryCount  = useRef(0);
     const activeRef = useRef(isActive);
     const metricsRef = useRef({ startedAt: 0, firstFrame: false, stallAt: 0, stalls: 0, stalledMs: 0, failed: false });
-    const teaserTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
 
     activeRef.current = isActive;
     const [retryKey, setRetryKey] = useState(0);
@@ -53,7 +53,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
 
     // ── HLS init ────────────────────────────────────────────────────────────
     useEffect(() => {
-      if (!shouldLoad || !src) {
+      if (!shouldLoad || !src || !isActive) {
         setReady(false);
         setBuffering(false);
         return;
@@ -127,7 +127,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         stallTimerRef.current = setTimeout(() => {
           if (disposed || !activeRef.current || video.paused || video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return;
           const hls = hlsRef.current as { nextAutoLevel: number; startLoad: (position?: number) => void } | null;
-          if (hls) { hls.nextAutoLevel = 0; hls.startLoad(-1); }
+          if (hls) { hls.nextAutoLevel = 0; hls.startLoad(); }
           else video.play().catch(() => {});
         }, 6000);
       };
@@ -172,12 +172,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             });
             hlsRef.current = hls;
 
-            hls.loadSource(src);
             hls.attachMedia(video);
-            // Warm a neighbouring stream for at most 15 seconds, then stop downloading.
-            if (!activeRef.current) preloadTimerRef.current = setTimeout(() => {
-              if (!disposed && !activeRef.current) hls.stopLoad();
-            }, 15_000);
+            hls.loadSource(src);
 
             hls.on(Hls.Events.MANIFEST_PARSED, (_: unknown, data: { levels: {height: number; bitrate: number}[] }) => {
               // Build quality levels list
@@ -230,7 +226,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         clearTimeout(timerRef.current);
         clearStall();
         clearTimeout(preloadTimerRef.current);
-        clearTimeout(teaserTimerRef.current);
         video.removeEventListener('waiting', onWaiting);
         video.removeEventListener('stalled', onWaiting);
         video.removeEventListener('canplay', onCanPlay);
@@ -241,7 +236,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
         readyRef.current = false;
       };
-    }, [src, shouldLoad, retryKey, onError, onReady]);
+    }, [src, shouldLoad, isActive, retryKey, onError, onReady]);
 
     // ── Play / pause ─────────────────────────────────────────────────────────
     useEffect(() => {
@@ -256,34 +251,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       } else { video.pause(); setBuffering(false); }
     }, [isActive, ready, shouldLoad, muted]);
 
-    // Neighbouring channels play a silent three-second teaser, pause for five
-    // seconds, and repeat. Only the focused channel can play continuously or
-    // with sound. The entitlement-controlled shouldLoad tears this down on lock.
-    useEffect(() => {
-      clearTimeout(teaserTimerRef.current);
-      const video = videoRef.current;
-      if (!video || !shouldLoad || isActive || !ready || error || document.hidden) return;
-      video.muted = true;
-      const hls = hlsRef.current as { startLoad: () => void; stopLoad: () => void } | null;
-      let cancelled = false;
-      const tease = () => {
-        if (cancelled || activeRef.current || document.hidden) return;
-        hls?.startLoad();
-        void video.play().catch(() => {});
-        teaserTimerRef.current = setTimeout(() => {
-          if (cancelled) return;
-          video.pause();
-          hls?.stopLoad();
-          teaserTimerRef.current = setTimeout(tease, 5000);
-        }, 3000);
-      };
-      tease();
-      return () => {
-        cancelled = true;
-        clearTimeout(teaserTimerRef.current);
-        if (!activeRef.current) { video.pause(); hls?.stopLoad(); }
-      };
-    }, [isActive, shouldLoad, ready, error]);
+    // Offscreen players never fetch or decode video. Adjacent channel metadata stays in the feed.
 
     // ── PiP events ───────────────────────────────────────────────────────────
     useEffect(() => {
