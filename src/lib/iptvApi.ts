@@ -2381,7 +2381,9 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
     const merged = [...freshChannels];
     const mergedUrls = new Set(merged.map(ch => ch.streamUrl.trim()));
     const mergedIds = new Set(merged.map(ch => ch.id.toLowerCase()));
-    for (const ch of memCache ?? []) {
+    // Retain unique last-known-good discoveries as well as concurrent additions.
+    // A healthy primary refresh only covers its own source, not the worldwide crawl.
+    for (const ch of [...(previousCache?.channels ?? []), ...(memCache ?? [])]) {
       const url = ch.streamUrl.trim();
       if (mergedUrls.has(url)) continue;
       const candidate = { ...ch };
