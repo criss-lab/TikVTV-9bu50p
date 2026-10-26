@@ -29,6 +29,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
     const readyRef    = useRef(false);
     const retryCount  = useRef(0);
     const activeRef = useRef(isActive);
+    const metricsRef = useRef({ startedAt: 0, firstFrame: false, stallAt: 0, stalls: 0, stalledMs: 0, failed: false });
     const teaserTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
     activeRef.current = isActive;
@@ -69,6 +70,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       readyRef.current = false;
 
       retryCount.current = 0;
+      metricsRef.current = {startedAt: performance.now(), firstFrame: false, stallAt: 0, stalls: 0, stalledMs: 0, failed: false};
+      const record = (event: string, durationMs?: number) => {
+        // Aggregate only: never collect stream URLs, channel names or viewer identity.
+        if (!activeRef.current) return;
+        console.info('[Playback metric]', JSON.stringify({event, durationMs: durationMs === undefined ? undefined : Math.round(durationMs), stalls: metricsRef.current.stalls, stalledMs: Math.round(metricsRef.current.stalledMs)}));
+      };
       timerRef.current = setTimeout(() => {
         if (!readyRef.current && activeRef.current) {
           setError(true);
@@ -82,6 +89,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         if (readyRef.current) return;
         clearTimeout(timerRef.current);
         readyRef.current = true;
+        if (activeRef.current && !metricsRef.current.firstFrame) {
+          metricsRef.current.firstFrame = true;
+          record('startup', performance.now() - metricsRef.current.startedAt);
+        }
         setReady(true);
         setBuffering(false);
         retryCount.current = 0;
@@ -93,6 +104,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       const markError = () => {
         if (disposed) return;
         clearTimeout(timerRef.current);
+        if (activeRef.current && !metricsRef.current.failed) { metricsRef.current.failed = true; record('failed_switch', performance.now() - metricsRef.current.startedAt); }
         setError(true);
         setReady(false);
         setBuffering(false);
@@ -110,6 +122,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       const onWaiting = () => {
         if (disposed || !activeRef.current || !readyRef.current) return;
         setBuffering(true);
+        if (!metricsRef.current.stallAt) metricsRef.current.stallAt = performance.now();
         clearStall();
         stallTimerRef.current = setTimeout(() => {
           if (disposed || !activeRef.current || video.paused || video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return;
@@ -118,8 +131,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           else video.play().catch(() => {});
         }, 6000);
       };
-      const onPlaying = () => { clearStall(); markReady(); if (!disposed) setBuffering(false); };
-      const onCanPlay = () => { clearStall(); if (!disposed) { markReady(); setBuffering(false); if (activeRef.current) video.play().catch(() => {}); } };
+      const finishStall = () => {
+        if (metricsRef.current.stallAt) {
+          const elapsed = performance.now() - metricsRef.current.stallAt;
+          metricsRef.current.stallAt = 0;
+          if (readyRef.current && activeRef.current) { metricsRef.current.stalls++; metricsRef.current.stalledMs += elapsed; record('rebuffer', elapsed); }
+        }
+      };
+      const onPlaying = () => { clearStall(); finishStall(); markReady(); if (!disposed) setBuffering(false); };
+      const onCanPlay = () => { clearStall(); finishStall(); if (!disposed) { markReady(); setBuffering(false); if (activeRef.current) video.play().catch(() => {}); } };
       video.addEventListener('waiting', onWaiting);
       video.addEventListener('stalled', onWaiting);
       video.addEventListener('playing', onPlaying);
@@ -205,6 +225,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
       init();
 
       return () => {
+        if (activeRef.current && readyRef.current) record('session_end', performance.now() - metricsRef.current.startedAt);
         disposed = true;
         clearTimeout(timerRef.current);
         clearStall();
