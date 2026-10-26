@@ -2034,7 +2034,7 @@ let memCache: IPTVChannel[] | null = null;
 function browserHls(url: string): boolean {
   try {
     const parsed = new URL(url);
-    return parsed.protocol === 'https:' && /\\.m3u8?(?:$|[?#])/i.test(parsed.pathname + parsed.search);
+    return parsed.protocol === 'https:' && /\.m3u8?(?:$|[?#])/i.test(parsed.pathname + parsed.search);
   } catch { return false; }
 }
 const deadIds = new Set<string>();
@@ -2191,6 +2191,21 @@ async function fetchM3U(url: string, tag: string): Promise<IPTVChannel[]> {
 let backgroundRefresh: Promise<void> | null = null;
 const sourceHealth = new Map<string, number>();
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
+// Discover approved, configured public playlists periodically while the frontend is open.
+// The timer is installed once, pauses in hidden tabs, and never overlaps an ingestion run.
+const DISCOVERY_INTERVAL_MS = 15 * 60 * 1000;
+let discoveryTimer: ReturnType<typeof setInterval> | null = null;
+function scheduleBackgroundDiscovery(): void {
+  if (typeof window === 'undefined' || discoveryTimer !== null) return;
+  discoveryTimer = window.setInterval(() => {
+    if (document.visibilityState === 'hidden' || !memCache?.length || backgroundRefresh) return;
+    sourceHealth.clear(); // Retry temporarily failing sources on the next discovery cycle.
+    backgroundRefresh = fetchExtraSources().catch(error => {
+      console.warn('[IPTV] Background discovery failed:', error);
+    }).finally(() => { backgroundRefresh = null; });
+  }, DISCOVERY_INTERVAL_MS);
+}
+
 async function fetchExtraSources(): Promise<void> {
   const sources = [...new Map(EXTRA_SOURCES.map(([tag, url]) => [url, [tag, url] as [string, string]])).values()];
   const existingIds = new Set((memCache ?? []).map(ch => ch.id.toLowerCase()));
@@ -2207,12 +2222,14 @@ async function fetchExtraSources(): Promise<void> {
         if (!response.ok || Number(response.headers.get('content-length') || 0) > MAX_SOURCE_BYTES) throw new Error('Source unavailable or oversized');
         const body = await response.text();
         if (body.length > MAX_SOURCE_BYTES || !body.includes('#EXTINF')) throw new Error('Invalid playlist');
+        const parsedChannels = parseM3U(body, tag);
         const batch: IPTVChannel[] = [];
-        for (const ch of parseM3U(body, tag)) {
+        for (const ch of parsedChannels) {
           const id = ch.id.toLowerCase(), stream = ch.streamUrl.trim();
           if (!browserHls(stream) || !ch.name || ch.name.length < 2 || existingIds.has(id) || existingUrls.has(stream)) continue;
           existingIds.add(id); existingUrls.add(stream); batch.push(ch);
         }
+        console.log(`[IPTV] Source ${tag}: parsed ${parsedChannels.length}, accepted ${batch.length}`);
         if (batch.length) {
           memCache = [...(memCache ?? []), ...batch];
           added += batch.length;
@@ -2224,16 +2241,24 @@ async function fetchExtraSources(): Promise<void> {
       }
     }
   }));
-  console.log('[IPTV] Background ingestion finished:', added, 'additional channels');
+  console.log('[IPTV] Background ingestion finished:', added, 'additional channels; catalogue total:', memCache?.length ?? 0);
+  // Persist the expanded catalogue, not just the smaller primary-only snapshot.
+  try {
+    if (memCache?.length) localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: memCache, timestamp: Date.now() }));
+  } catch { /* Storage quota or privacy mode; in-memory catalogue remains usable. */ }
 }
 
 export async function fetchAllChannels(): Promise<IPTVChannel[]> {
-  if (memCache?.length) return memCache;
+  if (memCache?.length) { scheduleBackgroundDiscovery(); return memCache; }
+  scheduleBackgroundDiscovery();
+  // Keep expired cache available as a safety net during a potentially partial refresh.
+  let previousCache: CacheData | null = null;
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (raw) {
       const cached: CacheData = JSON.parse(raw);
-      if (Date.now() - cached.timestamp < CACHE_TTL && cached.channels.length > 100) {
+      if (Array.isArray(cached.channels) && cached.channels.length > 100 && Number.isFinite(cached.timestamp)) previousCache = cached;
+      if (Array.isArray(cached.channels) && Number.isFinite(cached.timestamp) && Date.now() - cached.timestamp < CACHE_TTL && cached.channels.length > 100) {
         memCache = cached.channels;
         backgroundRefresh ??= fetchExtraSources().finally(() => { backgroundRefresh = null; });
         return memCache;
@@ -2252,18 +2277,26 @@ export async function fetchAllChannels(): Promise<IPTVChannel[]> {
     for (const stream of rawStreams) {
       if (stream.channel && stream.url && browserHls(stream.url) && !streamMap.has(stream.channel)) streamMap.set(stream.channel, stream.url);
     }
-    memCache = shuffle(rawChannels.filter(ch => !ch.is_nsfw && ch.name && streamMap.has(ch.id)).map(ch => ({
+    let freshChannels = shuffle(rawChannels.filter(ch => !ch.is_nsfw && ch.name && streamMap.has(ch.id)).map(ch => ({
       id: ch.id, name: ch.name, logo: ch.logo || genLogoUrl(ch.name),
       country: ch.country || 'INT', countryCode: ch.country || 'INT',
       languages: ch.languages || [], categories: ch.categories?.length ? ch.categories : ['general'],
       streamUrl: streamMap.get(ch.id)!, alt_names: ch.alt_names || [], website: ch.website, network: ch.network,
     })));
+    // Reject a refresh that loses more than 35% of a useful prior catalogue.
+    if (previousCache && previousCache.channels.length >= 1000 && freshChannels.length < previousCache.channels.length * 0.65) {
+      console.warn('[IPTV] Catalogue refresh rejected: unexpected shrink', { previous: previousCache.channels.length, fresh: freshChannels.length });
+      freshChannels = previousCache.channels;
+    }
+    console.log(`[IPTV] Primary: ${rawChannels.length} channel records, ${rawStreams.length} stream records; accepted ${freshChannels.length} playable channels`);
+    memCache = freshChannels;
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ channels: memCache, timestamp: Date.now() })); } catch { /* quota */ }
     backgroundRefresh ??= fetchExtraSources().finally(() => { backgroundRefresh = null; });
     return memCache;
   } catch (error) {
     console.warn('[IPTV] Primary catalogue unavailable:', error);
-    memCache = getFallbackChannels();
+    // Prefer the last-known-good catalogue over a tiny fallback when upstream is down.
+    memCache = previousCache?.channels?.length ? previousCache.channels : getFallbackChannels();
     return memCache;
   }
 }
