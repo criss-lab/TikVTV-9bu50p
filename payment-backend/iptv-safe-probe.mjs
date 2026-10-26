@@ -38,7 +38,7 @@ export async function fetchBounded(raw,{resolver=dns.lookup,request,maxBytes=655
     let settled=false;
     const finish=x=>{if(settled)return;settled=true;resolve({...x,latency:Date.now()-started});};
     const transport=request || (u.protocol==='https:' ? https.request : http.request);
-    const req=transport(u,{method:'GET',agent:false,timeout:7000,maxHeaderSize:8192,headers:{range:'bytes=0-4095','user-agent':'TikVTV-StreamVerifier/2.0','accept-encoding':'identity'},rejectUnauthorized:true,servername:u.hostname,lookup:(_host,_opts,cb)=>cb(null,ip,4)},async res=>{
+    const req=transport(u,{method:'GET',agent:false,timeout:7000,maxHeaderSize:8192,headers:{range:'bytes=0-4095','user-agent':'TikVTV-StreamVerifier/2.0','accept-encoding':'identity'},rejectUnauthorized:true,servername:u.hostname,lookup:(_host,opts,cb)=>opts?.all ? cb(null,[{address:ip,family:4}]) : cb(null,ip,4)},async res=>{
       const status=res.statusCode||0,type=String(res.headers['content-type']||'').split(';')[0].toLowerCase();
       if(status>=300&&status<400){res.destroy();return finish({outcome:'inconclusive',reason:'REDIRECT_BLOCKED',status,type});}
       if(status===401||status===403){res.destroy();return finish({outcome:'inconclusive',reason:'AUTH_REQUIRED',status,type});}
