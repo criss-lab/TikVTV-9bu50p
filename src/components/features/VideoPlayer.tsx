@@ -158,19 +158,22 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             const hls = new Hls({
               enableWorker:           true,
               lowLatencyMode:         false,
-              maxBufferLength:        30,
-              maxMaxBufferLength:     45,
-              maxBufferSize:          40 * 1000 * 1000,
+              maxBufferLength:        10,
+              maxMaxBufferLength:     24,
+              maxBufferSize:          24 * 1000 * 1000,
               startLevel:             0,
               capLevelToPlayerSize:  true,
-              abrBandWidthFactor:    0.7,
-              abrBandWidthUpFactor:  0.55,
-              abrEwmaDefaultEstimate: 650_000,
+              abrBandWidthFactor:    0.8,
+              abrBandWidthUpFactor:  0.7,
+              abrEwmaDefaultEstimate: 400_000,
               progressive:            true,
               // Faster segment load retry
               manifestLoadingMaxRetry: 3,
               levelLoadingMaxRetry:    3,
-              fragLoadingMaxRetry:     3,
+              fragLoadingMaxRetry:     4,
+              backBufferLength:       20,
+              maxBufferHole:          0.5,
+              nudgeMaxRetry:          4,
             });
             hlsRef.current = hls;
 
