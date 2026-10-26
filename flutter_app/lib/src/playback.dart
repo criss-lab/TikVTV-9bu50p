@@ -20,7 +20,42 @@ class SharedPlayback extends ChangeNotifier {
   VideoPlayerController? _candidate;
   Completer<void>? _candidateSettled;
   int _lease = 0;
-  static const Duration targetBufferAhead = Duration(seconds: 8);
+  static const Duration targetBufferAhead = Duration(seconds: 15);
+  static const Duration startupBufferTarget = Duration(seconds: 10);
+  static const Duration startupBufferTimeout = Duration(seconds: 18);
+  static const Duration lowBufferThreshold = Duration(seconds: 5);
+  bool startupBufferReady = false;
+  bool get bufferCritical => bufferedAhead < lowBufferThreshold;
+
+  static Duration playableAhead(VideoPlayerValue state) {
+    for (final range in state.buffered) {
+      if (range.start <= state.position && range.end > state.position) {
+        return range.end - state.position;
+      }
+    }
+    return Duration.zero;
+  }
+
+  /// Start the native pipeline while the UI still shows its loading surface.
+  /// Live sources may expose less than ten seconds; never wait forever for
+  /// segments which the broadcaster has not yet published.
+  Future<void> _prime(VideoPlayerController player, int token) async {
+    final deadline = DateTime.now().add(startupBufferTimeout);
+    await player.play().timeout(const Duration(seconds: 8));
+    while (token == _generation && !PlaybackGate.instance.locked &&
+        !player.value.hasError && DateTime.now().isBefore(deadline)) {
+      final ahead = playableAhead(player.value);
+      bufferedAhead = ahead;
+      if (ahead >= startupBufferTarget) {
+        startupBufferReady = true;
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    if (player.value.hasError) throw StateError(player.value.errorDescription ?? 'Preload failed');
+    // Best effort for short live windows, with an explicit observable flag.
+    startupBufferReady = playableAhead(player.value) >= startupBufferTarget;
+  }
   Duration bufferedAhead = Duration.zero;
   bool get bufferBelowTarget => bufferedAhead < targetBufferAhead;
   double get bufferHealth => (bufferedAhead.inMilliseconds / targetBufferAhead.inMilliseconds).clamp(0.0, 1.0);
@@ -121,6 +156,7 @@ class SharedPlayback extends ChangeNotifier {
     _lastReportedSecond = -1;
     _lastReportedBufferSecond = -1;
     bufferedAhead = Duration.zero;
+    startupBufferReady = false;
     _updateBuffering(false);
     rebufferEvents = 0;
     totalBuffering = Duration.zero;
@@ -189,7 +225,7 @@ class SharedPlayback extends ChangeNotifier {
         }
         await candidate.setLooping(false);
         if (PlaybackGate.instance.locked) { await _release(candidate); return; }
-        await candidate.play().timeout(const Duration(seconds: 8));
+        await _prime(candidate, token);
         if (token != _generation) {
           await _release(candidate);
           return;
@@ -266,13 +302,7 @@ class SharedPlayback extends ChangeNotifier {
             return;
           }
           _updateBuffering(candidate.value.isBuffering);
-          bufferedAhead = Duration.zero;
-          for (final range in candidate.value.buffered) {
-            if (range.start <= candidate.value.position && range.end > candidate.value.position) {
-              bufferedAhead = range.end - candidate.value.position;
-              break;
-            }
-          }
+          bufferedAhead = playableAhead(candidate.value);
           final second = candidate.value.position.inSeconds;
           final bufferSecond = bufferedAhead.inSeconds;
           if (second != _lastReportedSecond || bufferSecond != _lastReportedBufferSecond || buffering != _lastReportedBuffering) {
@@ -307,6 +337,7 @@ class SharedPlayback extends ChangeNotifier {
     ++_generation;
     _cancelWatchdog();
     bufferedAhead = Duration.zero;
+    startupBufferReady = false;
     _updateBuffering(false);
     final old = controller;
     controller = null;
