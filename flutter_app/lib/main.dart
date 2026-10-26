@@ -203,7 +203,7 @@ class _ChannelHomeState extends State<ChannelHome> with WidgetsBindingObserver {
       final trace = original.where((item) => item.name.toLowerCase().startsWith('trace ')).toList();
       channels.setAll(0, [...trace, ...original.where((item) => !trace.contains(item))]);
     }
-    const rail = <(String, String)>[('🔥','Hot'),('📰','News'),('⚽','Sports'),('🎬','Movies'),('🎵','Music'),('🎥','Entertainment'),('🧸','Kids'),('🌍','Travel'),('👨‍🍳','Cooking'),('✈️','Lifestyle')];
+    const rail = <(String, String)>[('🔥','Hot'),('📰','News'),('⚽','Sports'),('🎬','Movies'),('🎵','Music'),('🎥','Entertainment'),('🧸','Kids'),('🌍','Documentary'),('👨‍🍳','Cooking'),('✈️','Travel'),('✨','Lifestyle'),('💼','Business'),('🌤️','Weather'),('🔬','Science'),('🚗','Auto'),('📺','General')];
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF10121B), elevation: 0,
