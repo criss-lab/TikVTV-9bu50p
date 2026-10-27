@@ -27,11 +27,13 @@ class TikVtvMediaHandler extends BaseAudioHandler with SeekHandler {
   }
   @override
   Future<void> play() async {
+    player.setUserPaused(false);
     await player.controller?.play();
     _sync();
   }
   @override
   Future<void> pause() async {
+    player.setUserPaused(true);
     await player.controller?.pause();
     _sync();
   }
