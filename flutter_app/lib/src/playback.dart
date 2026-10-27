@@ -36,6 +36,16 @@ class SharedPlayback extends ChangeNotifier {
     return Duration.zero;
   }
 
+  /// Native buffering flags can remain stale between position callbacks.
+  /// Use a short progress grace window to prevent a spinner flashing over
+  /// healthy video, while still surfacing a real stall quickly.
+  static const Duration progressGrace = Duration(milliseconds: 1400);
+  static bool shouldShowBuffering({
+    required bool nativeBuffering,
+    required bool isPlaying,
+    required Duration timeSinceProgress,
+  }) => nativeBuffering && !(isPlaying && timeSinceProgress <= progressGrace);
+
   /// Start the native pipeline while the UI still shows its loading surface.
   /// Live sources may expose less than ten seconds; never wait forever for
   /// segments which the broadcaster has not yet published.
@@ -57,6 +67,11 @@ class SharedPlayback extends ChangeNotifier {
     startupBufferReady = playableAhead(player.value) >= startupBufferTarget;
   }
   Duration bufferedAhead = Duration.zero;
+  Duration _lastUiPosition = Duration.zero;
+  DateTime? _lastProgressAt;
+  DateTime? _openStartedAt;
+  Duration? startupLatency;
+  Duration get timeToFirstProgress => startupLatency ?? Duration.zero;
   bool get bufferBelowTarget => bufferedAhead < targetBufferAhead;
   double get bufferHealth => (bufferedAhead.inMilliseconds / targetBufferAhead.inMilliseconds).clamp(0.0, 1.0);
   bool buffering = false;
@@ -163,6 +178,10 @@ class SharedPlayback extends ChangeNotifier {
     _lastReportedSecond = -1;
     _lastReportedBufferSecond = -1;
     bufferedAhead = Duration.zero;
+    _lastUiPosition = Duration.zero;
+    _lastProgressAt = null;
+    _openStartedAt = DateTime.now();
+    startupLatency = null;
     startupBufferReady = false;
     _updateBuffering(false);
     rebufferEvents = 0;
@@ -311,7 +330,24 @@ class SharedPlayback extends ChangeNotifier {
             }));
             return;
           }
-          _updateBuffering(candidate.value.isBuffering);
+          final currentPosition = candidate.value.position;
+          final positionAdvanced = currentPosition > _lastUiPosition;
+          if (positionAdvanced) {
+            _lastUiPosition = currentPosition;
+            _lastProgressAt = DateTime.now();
+            startupLatency ??= _openStartedAt == null
+                ? Duration.zero
+                : DateTime.now().difference(_openStartedAt!);
+          }
+          final lastProgress = _lastProgressAt;
+          final timeSinceProgress = lastProgress == null
+              ? (_openStartedAt == null ? const Duration(days: 1) : DateTime.now().difference(_openStartedAt!))
+              : DateTime.now().difference(lastProgress);
+          _updateBuffering(shouldShowBuffering(
+            nativeBuffering: candidate.value.isBuffering,
+            isPlaying: candidate.value.isPlaying,
+            timeSinceProgress: timeSinceProgress,
+          ));
           bufferedAhead = playableAhead(candidate.value);
           final second = candidate.value.position.inSeconds;
           final bufferSecond = bufferedAhead.inSeconds;
