@@ -1,5 +1,10 @@
 name: Secondary IPTV discovery feeder
 on:
+  pull_request:
+    paths:
+      - 'scripts/secondary-iptv-feeder.mjs'
+      - '.github/workflows/secondary-iptv-feeder.yml'
+      - 'src/lib/iptvApi.ts'
   workflow_dispatch:
   schedule:
     - cron: '17 3 * * *'
