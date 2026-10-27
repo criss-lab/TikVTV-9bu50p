@@ -16,11 +16,23 @@ void main() {
     expect(SharedPlayback.playableAhead(value(const Duration(minutes: 2, seconds: 45))), Duration.zero);
   });
 
-  test('stale native buffering is hidden only while playback position advances', () {
-    expect(SharedPlayback.shouldShowBuffering(nativeBuffering: true, isPlaying: true, positionAdvanced: true), isFalse);
-    expect(SharedPlayback.shouldShowBuffering(nativeBuffering: true, isPlaying: true, positionAdvanced: false), isTrue);
-    expect(SharedPlayback.shouldShowBuffering(nativeBuffering: true, isPlaying: false, positionAdvanced: true), isTrue);
-    expect(SharedPlayback.shouldShowBuffering(nativeBuffering: false, isPlaying: true, positionAdvanced: false), isFalse);
+  test('stale buffering flag is ignored during recent playback progress', () {
+    expect(SharedPlayback.shouldShowBuffering(
+      nativeBuffering: true, isPlaying: true,
+      timeSinceProgress: const Duration(milliseconds: 200),
+    ), isFalse);
+    expect(SharedPlayback.shouldShowBuffering(
+      nativeBuffering: true, isPlaying: true,
+      timeSinceProgress: const Duration(seconds: 2),
+    ), isTrue);
+    expect(SharedPlayback.shouldShowBuffering(
+      nativeBuffering: true, isPlaying: false,
+      timeSinceProgress: const Duration(milliseconds: 200),
+    ), isTrue);
+    expect(SharedPlayback.shouldShowBuffering(
+      nativeBuffering: false, isPlaying: true,
+      timeSinceProgress: const Duration(seconds: 2),
+    ), isFalse);
   });
 
   test('disjoint buffered ranges cannot masquerade as playable lead', () {
