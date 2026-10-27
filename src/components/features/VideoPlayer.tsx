@@ -33,6 +33,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
 
 
     activeRef.current = isActive;
+    // Callback identity changes must never tear down an active HLS decoder.
+    const onErrorRef = useRef(onError);
+    const onReadyRef = useRef(onReady);
+    onErrorRef.current = onError;
+    onReadyRef.current = onReady;
     const [retryKey, setRetryKey] = useState(0);
 
     const [muted,       setMuted]       = useState(true);
@@ -94,7 +99,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         setReady(true);
         setBuffering(false);
         retryCount.current = 0;
-        onReady?.();
+        onReadyRef.current?.();
       };
 
       let disposed = false;
@@ -105,7 +110,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         setError(true);
         setReady(false);
         setBuffering(false);
-        onError?.();
+        onErrorRef.current?.();
       };
 
       const destroyHls = () => {
@@ -158,9 +163,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
             const hls = new Hls({
               enableWorker:           true,
               lowLatencyMode:         false,
-              maxBufferLength:        10,
-              maxMaxBufferLength:     24,
-              maxBufferSize:          24 * 1000 * 1000,
+              maxBufferLength:        30,
+              maxMaxBufferLength:     60,
+              maxBufferSize:          48 * 1000 * 1000,
               startLevel:             0,
               capLevelToPlayerSize:  true,
               abrBandWidthFactor:    0.8,
@@ -241,7 +246,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
         if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
         readyRef.current = false;
       };
-    }, [src, shouldLoad, isActive, retryKey, onError, onReady]);
+    }, [src, shouldLoad, isActive, retryKey]);
 
     // ── Play / pause ─────────────────────────────────────────────────────────
     useEffect(() => {
