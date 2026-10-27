@@ -60,7 +60,6 @@ class SharedPlayback extends ChangeNotifier {
   bool get bufferBelowTarget => bufferedAhead < targetBufferAhead;
   double get bufferHealth => (bufferedAhead.inMilliseconds / targetBufferAhead.inMilliseconds).clamp(0.0, 1.0);
   bool buffering = false;
-  bool _backgrounded = false;
   bool _userPaused = false;
   DateTime? _bufferingStartedAt;
   Duration totalBuffering = Duration.zero;
@@ -117,7 +116,6 @@ class SharedPlayback extends ChangeNotifier {
   }
 
   void setBackgrounded(bool value) {
-    _backgrounded = value;
     final current = controller;
     if (current == null) { return; }
     if (value) {
