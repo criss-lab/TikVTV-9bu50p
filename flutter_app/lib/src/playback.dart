@@ -83,6 +83,8 @@ class SharedPlayback extends ChangeNotifier {
   }
   DateTime? _lastRecoveryAt;
   static const Duration stallRecoveryDelay = Duration(seconds: 8);
+  // Native HLS buffering is not itself a dead decoder: allow segment delivery time.
+  static const Duration activeBufferingGrace = Duration(seconds: 30);
   static const Duration recoveryCooldown = Duration(seconds: 5);
   int recoveryCount = 0;
   int _lastReportedSecond = -1;
@@ -273,8 +275,11 @@ class SharedPlayback extends ChangeNotifier {
           }
           _stalledAt ??= DateTime.now();
           final now = DateTime.now();
-          if (loading || now.difference(_stalledAt!) < stallRecoveryDelay ||
+          if (loading || now.difference(_stalledAt!) < (state.isBuffering ? activeBufferingGrace : stallRecoveryDelay) ||
               (_lastRecoveryAt != null && now.difference(_lastRecoveryAt!) < recoveryCooldown)) { return; }
+          // Never discard an actively buffered live segment merely because its
+          // playback clock has not advanced during a normal rebuffer interval.
+          if (state.isBuffering && ahead > Duration.zero) return;
           _lastRecoveryAt = now;
           _cancelWatchdog();
           stallCount++;
