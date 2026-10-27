@@ -58,6 +58,8 @@ jobs:
           for feature in ('android.hardware.camera', 'android.hardware.camera.autofocus'):
               assert features.get(feature) == 'false', f'{feature} must be optional for camera-less TV devices'
           assert features.get('android.software.leanback') == 'true', 'TV launcher must require Leanback'
+          permissions = {node.get(ns + 'name') for node in root.findall('uses-permission')}
+          assert 'android.permission.CAMERA' not in permissions, 'TV must not request phone-only camera access'
           print('Verified: Android TV requires Leanback but not camera or autofocus')
           PY
       - name: Configure persistent signing when provisioned
