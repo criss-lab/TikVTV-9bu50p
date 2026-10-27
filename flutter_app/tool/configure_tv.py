@@ -5,6 +5,8 @@ manifest = Path("android/app/src/main/AndroidManifest.xml")
 if not manifest.exists():
     raise SystemExit("Generate the Flutter Android runner before configuring TV")
 xml = manifest.read_text()
+# TV pairing displays a QR code; scanning happens on the phone, not on the TV.
+xml = xml.replace('<uses-permission android:name="android.permission.CAMERA" />', '')
 if 'android.software.leanback' not in xml:
     xml = xml.replace("<application", '<uses-feature android:name="android.software.leanback" android:required="true" />\n    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />\n    <application', 1)
 if 'android.intent.category.LEANBACK_LAUNCHER' not in xml:
