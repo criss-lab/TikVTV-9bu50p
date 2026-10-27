@@ -89,6 +89,20 @@ jobs:
           exit 1
       - name: Build separate TV APK
         run: flutter build apk --release --target lib/main_tv.dart --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+      - name: Scan built APK for malware with ClamAV
+        run: |
+          set -euo pipefail
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          test -s "$APK"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clamav clamav-freshclam
+          sudo systemctl stop clamav-freshclam || true
+          sudo freshclam
+          clamscan --infected --no-summary "$APK"
+          mkdir -p build/security
+          unzip -q "$APK" -d build/security/unpacked
+          clamscan --recursive --infected --no-summary build/security/unpacked
+          echo "ClamAV APK and extracted payload scan completed with no detections"
       - name: Verify APK signature and package metadata
         run: |
           APK=build/app/outputs/flutter-apk/app-release.apk
