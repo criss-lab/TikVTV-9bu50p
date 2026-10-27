@@ -36,6 +36,12 @@ class SharedPlayback extends ChangeNotifier {
     return Duration.zero;
   }
 
+  /// Ignore a stale native buffering flag when the playback clock is moving.
+  /// Keep genuine stalls visible: the flag is suppressed only while a playing
+  /// decoder demonstrably advances its media position.
+  static bool shouldShowBuffering({required bool nativeBuffering, required bool isPlaying, required bool positionAdvanced}) =>
+      nativeBuffering && !(isPlaying && positionAdvanced);
+
   /// Start the native pipeline while the UI still shows its loading surface.
   /// Live sources may expose less than ten seconds; never wait forever for
   /// segments which the broadcaster has not yet published.
@@ -57,6 +63,7 @@ class SharedPlayback extends ChangeNotifier {
     startupBufferReady = playableAhead(player.value) >= startupBufferTarget;
   }
   Duration bufferedAhead = Duration.zero;
+  Duration _lastUiPosition = Duration.zero;
   bool get bufferBelowTarget => bufferedAhead < targetBufferAhead;
   double get bufferHealth => (bufferedAhead.inMilliseconds / targetBufferAhead.inMilliseconds).clamp(0.0, 1.0);
   bool buffering = false;
@@ -163,6 +170,7 @@ class SharedPlayback extends ChangeNotifier {
     _lastReportedSecond = -1;
     _lastReportedBufferSecond = -1;
     bufferedAhead = Duration.zero;
+    _lastUiPosition = Duration.zero;
     startupBufferReady = false;
     _updateBuffering(false);
     rebufferEvents = 0;
@@ -311,7 +319,14 @@ class SharedPlayback extends ChangeNotifier {
             }));
             return;
           }
-          _updateBuffering(candidate.value.isBuffering);
+          final currentPosition = candidate.value.position;
+          final positionAdvanced = currentPosition > _lastUiPosition;
+          if (positionAdvanced) _lastUiPosition = currentPosition;
+          _updateBuffering(shouldShowBuffering(
+            nativeBuffering: candidate.value.isBuffering,
+            isPlaying: candidate.value.isPlaying,
+            positionAdvanced: positionAdvanced,
+          ));
           bufferedAhead = playableAhead(candidate.value);
           final second = candidate.value.position.inSeconds;
           final bufferSecond = bufferedAhead.inSeconds;
