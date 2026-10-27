@@ -60,7 +60,7 @@ class SharedPlayback extends ChangeNotifier {
   bool get bufferBelowTarget => bufferedAhead < targetBufferAhead;
   double get bufferHealth => (bufferedAhead.inMilliseconds / targetBufferAhead.inMilliseconds).clamp(0.0, 1.0);
   bool buffering = false;
-  bool _backgrounded = false;
+  bool _userPaused = false;
   DateTime? _bufferingStartedAt;
   Duration totalBuffering = Duration.zero;
   int rebufferEvents = 0;
@@ -116,16 +116,20 @@ class SharedPlayback extends ChangeNotifier {
   }
 
   void setBackgrounded(bool value) {
-    _backgrounded = value;
     final current = controller;
     if (current == null) { return; }
     if (value) {
       _stalledAt = null;
       // Keep the selected stream running when the screen locks or the user switches apps.
       // Android foreground media-service configuration is installed by configure_android.py.
-    } else if (channel != null && !current.value.hasError) {
+    } else if (channel != null && !_userPaused && !current.value.hasError) {
       if (!current.value.isPlaying) unawaited(current.play().catchError((Object e) => debugPrint('$e')));
     }
+  }
+
+  void setUserPaused(bool paused) {
+    _userPaused = paused;
+    if (paused) _stalledAt = null;
   }
 
   Future<void> lockForPayment() async {
@@ -149,6 +153,7 @@ class SharedPlayback extends ChangeNotifier {
       return;
     }
     final token = ++_generation;
+    _userPaused = false;
     _lease = token;
     _cancelWatchdog();
     _sameSourceRetries = 0;
@@ -242,7 +247,7 @@ class SharedPlayback extends ChangeNotifier {
             return;
           }
           final state = candidate.value;
-          if (_backgrounded || !state.isInitialized || state.hasError ||
+          if (_userPaused || !state.isInitialized || state.hasError ||
               (!state.isPlaying && !state.isBuffering)) {
             _stalledAt = null;
             _previousPosition = state.position;
@@ -335,6 +340,7 @@ class SharedPlayback extends ChangeNotifier {
   void stopIfCurrent(String id, {int? lease}) {
     if (channel?.id != id || (lease != null && lease != _lease)) { return; }
     ++_generation;
+    _userPaused = false;
     _cancelWatchdog();
     bufferedAhead = Duration.zero;
     startupBufferReady = false;
