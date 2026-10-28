@@ -43,6 +43,10 @@ class ChannelCatalogue extends ChangeNotifier {
   // Guovin exports require an independently configured and reviewed deployment.
   static const additionalPlaylists = <String, String>{
     'freetv': 'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8',
+    // Additional public playlist candidates. They remain source-tagged and are not
+    // promoted to the backend's rights-approved subscription catalogue.
+    'guovin-api': 'https://raw.githubusercontent.com/Guovin/iptv-api/gd/output/result.m3u',
+    'shovo-public': 'https://shovo127.github.io/IPTV-By-Shovo/index.m3u',
     'news': 'https://iptv-org.github.io/iptv/categories/news.m3u',
     'sports': 'https://iptv-org.github.io/iptv/categories/sports.m3u',
     'music': 'https://iptv-org.github.io/iptv/categories/music.m3u',
