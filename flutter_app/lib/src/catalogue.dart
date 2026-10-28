@@ -343,8 +343,8 @@ class ChannelCatalogue extends ChangeNotifier {
       final known = <String, int>{for (var i = 0; i < parsed.length; i++) parsed[i].id: i};
       final extra = <MapEntry<String, String>>[];
       final playlistSources = Map<String, String>.from(additionalPlaylists);
-      // Share the same scheduled, source-tagged registry with React web. A registry
-      // failure must not block the built-in feeds or the primary iptv-org catalogue.
+      // Share the same scheduled, source-tagged registry with React web.
+      // If it is unavailable, keep using the built-in feeds.
       try {
         final manifestResponse = await http.get(Uri.parse(
           'https://raw.githubusercontent.com/criss-lab/TikVTV-9bu50p/main/public/iptv-sources/discovered.json',
@@ -352,140 +352,20 @@ class ChannelCatalogue extends ChangeNotifier {
         if (manifestResponse.statusCode == 200 &&
             manifestResponse.bodyBytes.length <= 512 * 1024) {
           final manifest = jsonDecode(manifestResponse.body) as Map<String, dynamic>;
-          final sources = manifest['sources'];
-          if (sources is List) {
-            for (final source in sources) {
+          final dynamic manifestSources = manifest['sources'];
+          if (manifestSources is List) {
+            for (final source in manifestSources) {
               if (source is! Map || source['status'] != 'enabled') continue;
               final id = source['id']?.toString() ?? '';
               final url = source['url']?.toString() ?? '';
               final uri = Uri.tryParse(url);
-              if (RegExp(r'^[a-zA-Z0-9_-]{1,80}
-      for (var offset = 0; offset < playlistEntries.length; offset += 6) {
-        final batch = playlistEntries.skip(offset).take(6);
-        extra.addAll(await Future.wait(batch.map((entry) async {
-        try {
-          final response = await http.get(Uri.parse(entry.value))
-              .timeout(const Duration(seconds: 20));
-          if (response.statusCode != 200 || response.bodyBytes.length > maxOptionalPlaylistBytes) {
-            debugPrint('Optional playlist rejected: ${entry.key} (HTTP ${response.statusCode}, ${response.bodyBytes.length} bytes)');
-            return MapEntry(entry.key, '');
-          }
-          return MapEntry(entry.key, response.body);
-        } catch (e) {
-          debugPrint('Optional playlist unavailable: $e');
-          return MapEntry(entry.key, '');
-        }
-        })));
-      }
-      final approvedUrls = <String, Set<String>>{};
-      final imported = <Channel>[];
-      final importedUrls = parsed.expand((channel) => channel.urls).toSet();
-      for (final entry in extra) {
-        var count = 0;
-        if (!entry.value.startsWith('#EXTM3U')) {
-          nextDiscoveredBySource[entry.key] = 0;
-          continue;
-        }
-        String? pendingId;
-        String? pendingName;
-        String? pendingLogo;
-        String? pendingCountry;
-        String? pendingLanguage;
-        bool pendingGeoBlocked = false;
-        final seen = <String>{};
-        for (final raw in const LineSplitter().convert(entry.value)) {
-          final line = raw.trim();
-          if (line.startsWith('#EXTINF:')) {
-            pendingId = RegExp(r'tvg-id="([^"]+)"').firstMatch(line)?.group(1);
-            pendingName = line.contains(',') ? line.substring(line.lastIndexOf(',') + 1).trim() : null;
-            pendingLogo = RegExp(r'tvg-logo="([^"]+)"').firstMatch(line)?.group(1);
-            pendingCountry = RegExp(r'tvg-country="([^"]+)"').firstMatch(line)?.group(1);
-            pendingLanguage = RegExp(r'tvg-language="([^"]+)"').firstMatch(line)?.group(1);
-            pendingGeoBlocked = line.toLowerCase().contains('[geo-blocked]') ||
-                (entry.key == 'free-tv' && line.contains('Ⓖ'));
-          } else if (line.isNotEmpty && !line.startsWith('#')) {
-            if (pendingGeoBlocked) {
-              pendingId = null;
-              pendingName = null;
-              pendingLogo = null;
-              pendingCountry = null;
-              pendingLanguage = null;
-              pendingGeoBlocked = false;
-              continue;
-            }
-            final uri = Uri.tryParse(line);
-            final streamName = pendingName?.trim();
-            final identity = (pendingId?.trim().isNotEmpty == true ? pendingId!.trim() : streamName ?? '');
-            if (identity.isNotEmpty && uri != null &&
-                (uri.scheme == 'https' || uri.scheme == 'http') &&
-                uri.host.isNotEmpty &&
-                (pendingId == null || !blocked.contains(pendingId)) &&
-                seen.add('$identity|$line')) {
-              count++;
-              final index = pendingId == null ? null : known[pendingId];
-              // Expand the browsable catalogue with distinct public-feed entries. Keep
-              // provenance in IDs and do not label these as subscription-approved.
-              if (importedUrls.add(line) && streamName != null && streamName.isNotEmpty) {
-                final sourceKey = entry.key.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
-                final safeId = identity.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
-                final rawCountry = pendingCountry?.trim() ?? '';
-                final validCountry = rawCountry.length == 2 && rawCountry.codeUnits.every((unit) =>
-                    (unit >= 65 && unit <= 90) || (unit >= 97 && unit <= 122));
-                imported.add(Channel('feed-$sourceKey-$safeId-${imported.length}',
-                    streamName, pendingLogo ?? '', validCountry ? rawCountry.toUpperCase() : 'INT', [line],
-                    languages: pendingLanguage == null ? const [] : pendingLanguage.split(';')
-                        .map((value) => value.trim()).where((value) => value.isNotEmpty).toList()));
-              }
-              if (pendingId != null && approvedFreeTvIds.contains(pendingId) && index != null &&
-                  approvedUrls.putIfAbsent(pendingId, () => parsed[index].urls.toSet()).add(line)) {
-                final ch = parsed[index];
-                parsed[index] = Channel(ch.id, ch.name, ch.logo, ch.country,
-                    List.unmodifiable([...ch.urls, line]),
-                    categories: ch.categories, languages: ch.languages);
-              }
-            }
-            pendingId = null;
-            pendingName = null;
-            pendingLogo = null;
-            pendingCountry = null;
-            pendingLanguage = null;
-            pendingGeoBlocked = false;
-          }
-        }
-        nextDiscoveredBySource[entry.key] = count;
-      }
-      discoveredBySource..clear()..addAll(nextDiscoveredBySource);
-      discoveredFreeTv = discoveredBySource['free-tv'] ?? 0;
-      // Imported public feeds are clearly source-tagged and remain separate from
-      // payment-API approved entries; deduplicate by stream URL before publishing.
-      parsed.addAll(imported);
-      // Merge only backend-approved catalogue additions, deduplicated against existing URLs.
-      try {
-        final knownUrls = parsed.expand((channel) => channel.urls).toSet();
-        for (final channel in await _approvedCatalogue()) {
-          if (knownUrls.add(channel.urls.first)) parsed.add(channel);
-        }
-      } catch (e) { debugPrint('Approved catalogue unavailable; retaining existing channels: $e'); }
-      approvedImportedCount = parsed.where((channel) => channel.id.startsWith('approved-')).length;
-      channels = List.unmodifiable(parsed);
-      _loadedAt = DateTime.now();
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('channel_catalogue_v1', jsonEncode({
-          'timestamp': _loadedAt!.millisecondsSinceEpoch,
-          'channels': parsed.map((ch) => {'id': ch.id, 'name': ch.name,
-            'logo': ch.logo, 'country': ch.country, 'urls': ch.urls, 'categories': ch.categories, 'languages': ch.languages}).toList(),
-        }));
-      } catch (e) { debugPrint('Catalogue cache write failed: $e'); }
-    } catch (e) {
-      error = e.toString(); // Preserve last successful catalogue when offline.
-    } finally {
-      loading = false; notifyListeners();
-    }
-  }
-}
-).hasMatch(id) &&
-                  uri != null && uri.scheme == 'https' && uri.host.isNotEmpty) {
+              final safeId = id.isNotEmpty && id.length <= 80 &&
+                  id.codeUnits.every((unit) =>
+                      (unit >= 48 && unit <= 57) ||
+                      (unit >= 65 && unit <= 90) ||
+                      (unit >= 97 && unit <= 122) ||
+                      unit == 45 || unit == 95);
+              if (safeId && uri != null && uri.scheme == 'https' && uri.host.isNotEmpty) {
                 playlistSources.putIfAbsent(id, () => url);
               }
             }
