@@ -1,0 +1,52 @@
+name: Discover and validate IPTV GitHub playlists
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 */12 * * *"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/iptv-source-discovery.yml"
+      - "scripts/discover-iptv-sources.py"
+permissions:
+  contents: write
+concurrency:
+  group: iptv-source-discovery
+  cancel-in-progress: false
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Discover repositories and validate playlist format
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IPTV_DISCOVERY_MAX_REPOS: "80"
+        run: python scripts/discover-iptv-sources.py
+      - name: Validate generated manifest
+        run: |
+          python -m json.tool public/iptv-sources/discovered.json >/dev/null
+          python - <<'PY'
+          import json
+          d=json.load(open("public/iptv-sources/discovered.json", encoding="utf-8"))
+          assert d["schemaVersion"] == 1
+          assert isinstance(d["sources"], list)
+          assert all(s["url"].startswith("https://") for s in d["sources"])
+          assert all(s["status"] in {"enabled", "review_required"} for s in d["sources"])
+          print("Manifest schema valid:", len(d["sources"]), "sources")
+          PY
+      - name: Commit refreshed manifest
+        run: |
+          if git diff --quiet -- public/iptv-sources/discovered.json; then
+            echo "Source manifest unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/iptv-sources/discovered.json
+          git commit -m "chore: refresh discovered IPTV playlist sources"
+          git push
