@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-28T00:00:00.000Z",
+  "policy": "Only status=enabled feeds are consumed by clients. Newly discovered feeds remain review_required; HTTP reachability is not proof of distribution rights or continuous playback.",
+  "searchedRepositories": 0,
+  "enabledSources": 3,
+  "reviewRequiredSources": 0,
+  "sources": [
+    {
+      "id": "freetv",
+      "url": "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8",
+      "repository": "Free-TV/IPTV",
+      "status": "enabled",
+      "sourceType": "curated"
+    },
+    {
+      "id": "guovin-api",
+      "url": "https://raw.githubusercontent.com/Guovin/iptv-api/gd/output/result.m3u",
+      "repository": "Guovin/iptv-api",
+      "status": "enabled",
+      "sourceType": "curated"
+    },
+    {
+      "id": "shovo-public",
+      "url": "https://shovo127.github.io/IPTV-By-Shovo/index.m3u",
+      "repository": "shovo127/IPTV-By-Shovo",
+      "status": "enabled",
+      "sourceType": "curated"
+    }
+  ]
+}
