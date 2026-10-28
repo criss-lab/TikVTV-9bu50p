@@ -11,6 +11,10 @@ const STREAMS_API  = 'https://iptv-org.github.io/api/streams.json';
 const EXTRA_SOURCES: Array<[string, string]> = [
   // Free-TV curated
   ['freetv',       'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8'],
+  // Additional community-maintained public playlist candidates. Imported as source-tagged entries;
+  // duplicate stream URLs are removed and only HTTPS HLS streams are exposed to browser playback.
+  ['guovin-api',   'https://raw.githubusercontent.com/Guovin/iptv-api/gd/output/result.m3u'],
+  ['shovo-public', 'https://shovo127.github.io/IPTV-By-Shovo/index.m3u'],
   // Categories
   ['news',         'https://iptv-org.github.io/iptv/categories/news.m3u'],
   ['sports',       'https://iptv-org.github.io/iptv/categories/sports.m3u'],
