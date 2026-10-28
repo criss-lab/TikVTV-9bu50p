@@ -304,7 +304,7 @@ function parseM3U(text: string, sourceTag: string): IPTVChannel[] {
 
 async function fetchM3U(url: string, tag: string): Promise<IPTVChannel[]> {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(5_000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(4_000) });
     if (!res.ok) return [];
     const text = await res.text();
     if (!text.includes('#EXTINF')) return [];
@@ -343,7 +343,7 @@ async function fetchExtraSources(): Promise<IPTVChannel[]> {
   const sources = [...new Map([...EXTRA_SOURCES, ...discovered].map(([tag, url]) => [url, [tag, url] as [string, string]])).values()];
   const results: IPTVChannel[][] = new Array(sources.length);
   let cursor = 0;
-  await Promise.all(Array.from({ length: Math.min(6, sources.length) }, async () => {
+  await Promise.all(Array.from({ length: Math.min(12, sources.length) }, async () => {
     while (cursor < sources.length) {
       const index = cursor++;
       const [tag, url] = sources[index];
