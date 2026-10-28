@@ -388,24 +388,31 @@ class ChannelCatalogue extends ChangeNotifier {
         debugPrint('Discovered-source manifest unavailable; using built-in feeds: $e');
       }
       final playlistEntries = playlistSources.entries.toList(growable: false);
-      // Mobile data and memory are limited: fetch a small bounded batch at a time.
-      for (var offset = 0; offset < playlistEntries.length; offset += 6) {
-        final batch = playlistEntries.skip(offset).take(6);
-        extra.addAll(await Future.wait(batch.map((entry) async {
-        try {
-          final response = await http.get(Uri.parse(entry.value))
-              .timeout(const Duration(seconds: 20));
-          if (response.statusCode != 200 || response.bodyBytes.length > maxOptionalPlaylistBytes) {
-            debugPrint('Optional playlist rejected: ${entry.key} (HTTP ${response.statusCode}, ${response.bodyBytes.length} bytes)');
-            return MapEntry(entry.key, '');
+      // Bounded worker pool avoids serial batches making catalogue startup take minutes.
+      // Keep request count controlled for mobile networks and cap each optional feed at 8 seconds.
+      var playlistCursor = 0;
+      await Future.wait(List.generate(
+        playlistEntries.length < 12 ? playlistEntries.length : 12,
+        (_) async {
+          while (true) {
+            if (playlistCursor >= playlistEntries.length) return;
+            final entry = playlistEntries[playlistCursor++];
+            try {
+              final response = await http.get(Uri.parse(entry.value))
+                  .timeout(const Duration(seconds: 8));
+              if (response.statusCode != 200 || response.bodyBytes.length > maxOptionalPlaylistBytes) {
+                debugPrint('Optional playlist rejected: ${entry.key} (HTTP ${response.statusCode}, ${response.bodyBytes.length} bytes)');
+                extra.add(MapEntry(entry.key, ''));
+              } else {
+                extra.add(MapEntry(entry.key, response.body));
+              }
+            } catch (e) {
+              debugPrint('Optional playlist unavailable: $e');
+              extra.add(MapEntry(entry.key, ''));
+            }
           }
-          return MapEntry(entry.key, response.body);
-        } catch (e) {
-          debugPrint('Optional playlist unavailable: $e');
-          return MapEntry(entry.key, '');
-        }
-        })));
-      }
+        },
+      ));
       final approvedUrls = <String, Set<String>>{};
       final imported = <Channel>[];
       final importedUrls = parsed.expand((channel) => channel.urls).toSet();
