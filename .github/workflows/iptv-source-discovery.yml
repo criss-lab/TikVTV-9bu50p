@@ -1,6 +1,11 @@
 name: Discover and validate IPTV GitHub playlists
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/iptv-source-discovery.yml"
+      - "scripts/discover-iptv-sources.py"
+      - "public/iptv-sources/discovered.json"
   schedule:
     - cron: "41 */12 * * *"
   push:
@@ -25,7 +30,7 @@ jobs:
       - name: Discover repositories and validate playlist format
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IPTV_DISCOVERY_MAX_REPOS: "80"
+          IPTV_DISCOVERY_MAX_REPOS: "20"
         run: python scripts/discover-iptv-sources.py
       - name: Validate generated manifest
         run: |
@@ -40,6 +45,7 @@ jobs:
           print("Manifest schema valid:", len(d["sources"]), "sources")
           PY
       - name: Commit refreshed manifest
+        if: github.event_name != 'pull_request'
         run: |
           if git diff --quiet -- public/iptv-sources/discovered.json; then
             echo "Source manifest unchanged."
