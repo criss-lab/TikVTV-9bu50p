@@ -342,7 +342,39 @@ class ChannelCatalogue extends ChangeNotifier {
       final nextDiscoveredBySource = <String, int>{};
       final known = <String, int>{for (var i = 0; i < parsed.length; i++) parsed[i].id: i};
       final extra = <MapEntry<String, String>>[];
-      final playlistEntries = additionalPlaylists.entries.toList(growable: false);
+      final playlistSources = Map<String, String>.from(additionalPlaylists);
+      // Share the same scheduled, source-tagged registry with React web.
+      // If it is unavailable, keep using the built-in feeds.
+      try {
+        final manifestResponse = await http.get(Uri.parse(
+          'https://raw.githubusercontent.com/criss-lab/TikVTV-9bu50p/main/public/iptv-sources/discovered.json',
+        )).timeout(const Duration(seconds: 6));
+        if (manifestResponse.statusCode == 200 &&
+            manifestResponse.bodyBytes.length <= 512 * 1024) {
+          final manifest = jsonDecode(manifestResponse.body) as Map<String, dynamic>;
+          final dynamic manifestSources = manifest['sources'];
+          if (manifestSources is List) {
+            for (final source in manifestSources) {
+              if (source is! Map || source['status'] != 'enabled') continue;
+              final id = source['id']?.toString() ?? '';
+              final url = source['url']?.toString() ?? '';
+              final uri = Uri.tryParse(url);
+              final safeId = id.isNotEmpty && id.length <= 80 &&
+                  id.codeUnits.every((unit) =>
+                      (unit >= 48 && unit <= 57) ||
+                      (unit >= 65 && unit <= 90) ||
+                      (unit >= 97 && unit <= 122) ||
+                      unit == 45 || unit == 95);
+              if (safeId && uri != null && uri.scheme == 'https' && uri.host.isNotEmpty) {
+                playlistSources.putIfAbsent(id, () => url);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Discovered-source manifest unavailable; using built-in feeds: $e');
+      }
+      final playlistEntries = playlistSources.entries.toList(growable: false);
       // Mobile data and memory are limited: fetch a small bounded batch at a time.
       for (var offset = 0; offset < playlistEntries.length; offset += 6) {
         final batch = playlistEntries.skip(offset).take(6);

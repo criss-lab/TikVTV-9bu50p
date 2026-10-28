@@ -317,10 +317,30 @@ async function fetchM3U(url: string, tag: string): Promise<IPTVChannel[]> {
   }
 }
 
+const DISCOVERED_SOURCE_MANIFEST = 'https://raw.githubusercontent.com/criss-lab/TikVTV-9bu50p/main/public/iptv-sources/discovered.json';
+
+async function fetchDiscoveredSources(): Promise<Array<[string, string]>> {
+  try {
+    const response = await fetch(DISCOVERED_SOURCE_MANIFEST, { signal: AbortSignal.timeout(5_000) });
+    if (!response.ok) return [];
+    const payload = await response.json() as { sources?: Array<{ id?: string; url?: string; status?: string }> };
+    if (!Array.isArray(payload.sources)) return [];
+    return payload.sources
+      .filter(source => source.status === 'enabled' && typeof source.id === 'string' &&
+        /^[a-zA-Z0-9_-]{1,80}$/.test(source.id) && typeof source.url === 'string' &&
+        source.url.startsWith('https://'))
+      .map(source => [source.id!, source.url!] as [string, string]);
+  } catch (error) {
+    console.warn('[IPTV] Discovered-source manifest unavailable; using built-in feeds:', error);
+    return [];
+  }
+}
+
 async function fetchExtraSources(): Promise<IPTVChannel[]> {
   // Categories, regions and countries overlap heavily. Fetch each distinct URL
-  // with bounded concurrency instead of silently discarding all but eight.
-  const sources = [...new Map(EXTRA_SOURCES.map(([tag, url]) => [url, [tag, url] as [string, string]])).values()];
+  // with bounded concurrency. The generated registry only exposes explicitly enabled feeds.
+  const discovered = await fetchDiscoveredSources();
+  const sources = [...new Map([...EXTRA_SOURCES, ...discovered].map(([tag, url]) => [url, [tag, url] as [string, string]])).values()];
   const results: IPTVChannel[][] = new Array(sources.length);
   let cursor = 0;
   await Promise.all(Array.from({ length: Math.min(6, sources.length) }, async () => {
