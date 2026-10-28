@@ -15,8 +15,8 @@ TOKEN = os.environ.get("GITHUB_TOKEN", "")
 HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "TikVTV-IPTV-Source-Discovery"}
 if TOKEN:
     HEADERS["Authorization"] = f"Bearer {TOKEN}"
-MAX_REPOS = int(os.environ.get("IPTV_DISCOVERY_MAX_REPOS", "80"))
-MAX_PLAYLISTS_PER_REPO = 3
+MAX_REPOS = int(os.environ.get("IPTV_DISCOVERY_MAX_REPOS", "20"))
+MAX_PLAYLISTS_PER_REPO = 2
 MAX_PLAYLIST_BYTES = 1024 * 1024
 TRUSTED = {
     "free-tv/iptv": ("freetv", "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8"),
