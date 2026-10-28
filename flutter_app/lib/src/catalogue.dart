@@ -269,18 +269,31 @@ class ChannelCatalogue extends ChangeNotifier {
     }
     return channels;
   }
+  // Public catalogue endpoints occasionally exceed a mobile network's latency budget.
+  // Retry transient transport/timeouts once; cached channels remain visible while this runs.
+  Future<http.Response> _getWithRetry(
+    Uri uri, {
+    Duration timeout = const Duration(seconds: 30),
+    int retries = 1,
+  }) async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        return await http.get(uri).timeout(timeout);
+      } catch (_) {
+        if (attempt >= retries) rethrow;
+        await Future.delayed(Duration(milliseconds: 350 * (attempt + 1)));
+      }
+    }
+  }
+
   Future<void> _fetch() async {
     loading = true; error = null; notifyListeners();
     try {
       final results = await Future.wait([
-        http.get(Uri.parse('https://iptv-org.github.io/api/channels.json'))
-          .timeout(const Duration(seconds: 15)),
-        http.get(Uri.parse('https://iptv-org.github.io/api/streams.json'))
-          .timeout(const Duration(seconds: 20)),
-        http.get(Uri.parse('https://iptv-org.github.io/api/logos.json'))
-          .timeout(const Duration(seconds: 20)),
-        http.get(Uri.parse('https://iptv-org.github.io/api/blocklist.json'))
-          .timeout(const Duration(seconds: 20)),
+        _getWithRetry(Uri.parse('https://iptv-org.github.io/api/channels.json')),
+        _getWithRetry(Uri.parse('https://iptv-org.github.io/api/streams.json')),
+        _getWithRetry(Uri.parse('https://iptv-org.github.io/api/logos.json')),
+        _getWithRetry(Uri.parse('https://iptv-org.github.io/api/blocklist.json')),
 
       ]);
       if (results[0].statusCode != 200 || results[1].statusCode != 200) {
