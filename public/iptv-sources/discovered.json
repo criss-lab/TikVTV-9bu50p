@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-06T07:25:01.212363+00:00",
+  "generatedAt": "2026-11-06T19:41:47.644302+00:00",
   "policy": "Only status=enabled feeds are consumed by clients. Newly discovered feeds remain review_required; HTTP reachability is not proof of distribution rights or continuous playback.",
   "searchedRepositories": 84,
   "enabledSources": 2,
@@ -13,7 +13,7 @@
       "status": "enabled",
       "playlistEntries": 2065,
       "sourceType": "curated",
-      "checkedAt": "2026-11-06T07:24:46.320283+00:00"
+      "checkedAt": "2026-11-06T19:41:26.606035+00:00"
     },
     {
       "id": "guovin-api",
@@ -22,7 +22,7 @@
       "status": "enabled",
       "playlistEntries": 1619,
       "sourceType": "curated",
-      "checkedAt": "2026-11-06T07:24:46.427836+00:00"
+      "checkedAt": "2026-11-06T19:41:26.787787+00:00"
     },
     {
       "id": "shovo-public",
@@ -31,7 +31,7 @@
       "status": "review_required",
       "playlistEntries": 0,
       "sourceType": "curated",
-      "checkedAt": "2026-11-06T07:24:46.584731+00:00"
+      "checkedAt": "2026-11-06T19:41:26.982164+00:00"
     },
     {
       "id": "gh-iptv-org-iptv-0",
@@ -40,9 +40,9 @@
       "status": "review_required",
       "playlistEntries": 1,
       "sourceType": "discovered",
-      "stars": 143371,
+      "stars": 143424,
       "license": "Unlicense",
-      "checkedAt": "2026-11-06T07:24:46.970719+00:00"
+      "checkedAt": "2026-11-06T19:41:27.789430+00:00"
     },
     {
       "id": "gh-iptv-org-iptv-1",
@@ -51,9 +51,9 @@
       "status": "review_required",
       "playlistEntries": 47,
       "sourceType": "discovered",
-      "stars": 143371,
+      "stars": 143424,
       "license": "Unlicense",
-      "checkedAt": "2026-11-06T07:24:47.077840+00:00"
+      "checkedAt": "2026-11-06T19:41:27.969280+00:00"
     },
     {
       "id": "gh-4gray-iptvnator-0",
@@ -62,9 +62,9 @@
       "status": "review_required",
       "playlistEntries": 1,
       "sourceType": "discovered",
-      "stars": 7618,
+      "stars": 7624,
       "license": "MIT",
-      "checkedAt": "2026-11-06T07:24:47.631248+00:00"
+      "checkedAt": "2026-11-06T19:41:29.037190+00:00"
     },
     {
       "id": "gh-4gray-iptvnator-1",
@@ -73,9 +73,9 @@
       "status": "review_required",
       "playlistEntries": 4,
       "sourceType": "discovered",
-      "stars": 7618,
+      "stars": 7624,
       "license": "MIT",
-      "checkedAt": "2026-11-06T07:24:47.720651+00:00"
+      "checkedAt": "2026-11-06T19:41:29.191380+00:00"
     },
     {
       "id": "gh-qwerttvv-eijing---0",
@@ -86,7 +86,7 @@
       "sourceType": "discovered",
       "stars": 2312,
       "license": "CC0-1.0",
-      "checkedAt": "2026-11-06T07:24:48.052978+00:00"
+      "checkedAt": "2026-11-06T19:41:29.725681+00:00"
     },
     {
       "id": "gh-qwerttvv-eijing---1",
@@ -97,7 +97,7 @@
       "sourceType": "discovered",
       "stars": 2312,
       "license": "CC0-1.0",
-      "checkedAt": "2026-11-06T07:24:48.160984+00:00"
+      "checkedAt": "2026-11-06T19:41:29.943742+00:00"
     },
     {
       "id": "gh-akiralereal-iptv-0",
@@ -106,9 +106,9 @@
       "status": "review_required",
       "playlistEntries": 42,
       "sourceType": "discovered",
-      "stars": 1861,
+      "stars": 1866,
       "license": "GPL-3.0",
-      "checkedAt": "2026-11-06T07:24:48.559005+00:00"
+      "checkedAt": "2026-11-06T19:41:30.574065+00:00"
     },
     {
       "id": "gh-akiralereal-iptv-1",
@@ -117,9 +117,9 @@
       "status": "review_required",
       "playlistEntries": 32,
       "sourceType": "discovered",
-      "stars": 1861,
+      "stars": 1866,
       "license": "GPL-3.0",
-      "checkedAt": "2026-11-06T07:24:48.657517+00:00"
+      "checkedAt": "2026-11-06T19:41:30.741567+00:00"
     },
     {
       "id": "gh--igaras-bundle-0",
@@ -130,7 +130,7 @@
       "sourceType": "discovered",
       "stars": 1048,
       "license": "GPL-3.0",
-      "checkedAt": "2026-11-06T07:24:49.240084+00:00"
+      "checkedAt": "2026-11-06T19:41:31.701649+00:00"
     },
     {
       "id": "gh-wuwentao-bj-unicom-iptv-0",
@@ -141,18 +141,18 @@
       "sourceType": "discovered",
       "stars": 721,
       "license": null,
-      "checkedAt": "2026-11-06T07:24:50.393249+00:00"
+      "checkedAt": "2026-11-06T19:41:33.481912+00:00"
     },
     {
       "id": "gh--3--1",
       "url": "https://raw.githubusercontent.com/LITUATUI/M3UPT/main/M3U/M3UPT.m3u",
       "repository": "LITUATUI/M3UPT",
       "status": "review_required",
-      "playlistEntries": 959,
+      "playlistEntries": 960,
       "sourceType": "discovered",
       "stars": 672,
       "license": "MIT",
-      "checkedAt": "2026-11-06T07:24:51.447738+00:00"
+      "checkedAt": "2026-11-06T19:41:35.190326+00:00"
     },
     {
       "id": "gh-m3u8-xtream-m3u8-xtream-playlist-0",
@@ -163,7 +163,7 @@
       "sourceType": "discovered",
       "stars": 567,
       "license": "Unlicense",
-      "checkedAt": "2026-11-06T07:24:53.784083+00:00"
+      "checkedAt": "2026-11-06T19:41:39.192212+00:00"
     },
     {
       "id": "gh---0",
@@ -174,7 +174,7 @@
       "sourceType": "discovered",
       "stars": 545,
       "license": "MIT",
-      "checkedAt": "2026-11-06T07:24:58.810062+00:00"
+      "checkedAt": "2026-11-06T19:41:43.887288+00:00"
     },
     {
       "id": "gh---1",
@@ -185,7 +185,7 @@
       "sourceType": "discovered",
       "stars": 545,
       "license": "MIT",
-      "checkedAt": "2026-11-06T07:24:58.966776+00:00"
+      "checkedAt": "2026-11-06T19:41:44.074568+00:00"
     }
   ]
 }
