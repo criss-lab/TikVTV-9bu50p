@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-08T18:05:43.712388+00:00",
+  "generatedAt": "2026-11-09T07:12:29.541549+00:00",
   "policy": "Only status=enabled feeds are consumed by clients. Newly discovered feeds remain review_required; HTTP reachability is not proof of distribution rights or continuous playback.",
   "searchedRepositories": 85,
   "enabledSources": 2,
@@ -13,7 +13,7 @@
       "status": "enabled",
       "playlistEntries": 2203,
       "sourceType": "curated",
-      "checkedAt": "2026-11-08T18:05:22.814450+00:00"
+      "checkedAt": "2026-11-09T07:12:14.339813+00:00"
     },
     {
       "id": "guovin-api",
@@ -22,7 +22,7 @@
       "status": "enabled",
       "playlistEntries": 1619,
       "sourceType": "curated",
-      "checkedAt": "2026-11-08T18:05:23.005251+00:00"
+      "checkedAt": "2026-11-09T07:12:14.575906+00:00"
     },
     {
       "id": "shovo-public",
@@ -31,7 +31,7 @@
       "status": "review_required",
       "playlistEntries": 0,
       "sourceType": "curated",
-      "checkedAt": "2026-11-08T18:05:23.268364+00:00"
+      "checkedAt": "2026-11-09T07:12:15.095485+00:00"
     },
     {
       "id": "gh-iptv-org-iptv-0",
@@ -40,9 +40,9 @@
       "status": "review_required",
       "playlistEntries": 1,
       "sourceType": "discovered",
-      "stars": 143582,
+      "stars": 143616,
       "license": "Unlicense",
-      "checkedAt": "2026-11-08T18:05:24.105165+00:00"
+      "checkedAt": "2026-11-09T07:12:15.619395+00:00"
     },
     {
       "id": "gh-iptv-org-iptv-1",
@@ -51,9 +51,9 @@
       "status": "review_required",
       "playlistEntries": 48,
       "sourceType": "discovered",
-      "stars": 143582,
+      "stars": 143616,
       "license": "Unlicense",
-      "checkedAt": "2026-11-08T18:05:24.261984+00:00"
+      "checkedAt": "2026-11-09T07:12:15.763503+00:00"
     },
     {
       "id": "gh-4gray-iptvnator-0",
@@ -62,9 +62,9 @@
       "status": "review_required",
       "playlistEntries": 1,
       "sourceType": "discovered",
-      "stars": 7634,
+      "stars": 7643,
       "license": "MIT",
-      "checkedAt": "2026-11-08T18:05:25.275075+00:00"
+      "checkedAt": "2026-11-09T07:12:16.569683+00:00"
     },
     {
       "id": "gh-4gray-iptvnator-1",
@@ -73,9 +73,9 @@
       "status": "review_required",
       "playlistEntries": 4,
       "sourceType": "discovered",
-      "stars": 7634,
+      "stars": 7643,
       "license": "MIT",
-      "checkedAt": "2026-11-08T18:05:25.630187+00:00"
+      "checkedAt": "2026-11-09T07:12:16.717988+00:00"
     },
     {
       "id": "gh-qwerttvv-eijing---0",
@@ -86,7 +86,7 @@
       "sourceType": "discovered",
       "stars": 2312,
       "license": "CC0-1.0",
-      "checkedAt": "2026-11-08T18:05:26.132147+00:00"
+      "checkedAt": "2026-11-09T07:12:17.247714+00:00"
     },
     {
       "id": "gh-qwerttvv-eijing---1",
@@ -97,7 +97,7 @@
       "sourceType": "discovered",
       "stars": 2312,
       "license": "CC0-1.0",
-      "checkedAt": "2026-11-08T18:05:26.291932+00:00"
+      "checkedAt": "2026-11-09T07:12:17.414909+00:00"
     },
     {
       "id": "gh-akiralereal-iptv-0",
@@ -106,9 +106,9 @@
       "status": "review_required",
       "playlistEntries": 42,
       "sourceType": "discovered",
-      "stars": 1903,
+      "stars": 1907,
       "license": "GPL-3.0",
-      "checkedAt": "2026-11-08T18:05:26.995284+00:00"
+      "checkedAt": "2026-11-09T07:12:18.115227+00:00"
     },
     {
       "id": "gh-akiralereal-iptv-1",
@@ -117,9 +117,9 @@
       "status": "review_required",
       "playlistEntries": 20,
       "sourceType": "discovered",
-      "stars": 1903,
+      "stars": 1907,
       "license": "GPL-3.0",
-      "checkedAt": "2026-11-08T18:05:27.145574+00:00"
+      "checkedAt": "2026-11-09T07:12:18.261044+00:00"
     },
     {
       "id": "gh--igaras-bundle-0",
@@ -130,7 +130,7 @@
       "sourceType": "discovered",
       "stars": 1048,
       "license": "GPL-3.0",
-      "checkedAt": "2026-11-08T18:05:28.232248+00:00"
+      "checkedAt": "2026-11-09T07:12:19.033133+00:00"
     },
     {
       "id": "gh-wuwentao-bj-unicom-iptv-0",
@@ -141,7 +141,7 @@
       "sourceType": "discovered",
       "stars": 721,
       "license": null,
-      "checkedAt": "2026-11-08T18:05:29.945564+00:00"
+      "checkedAt": "2026-11-09T07:12:20.526058+00:00"
     },
     {
       "id": "gh--3--1",
@@ -150,9 +150,9 @@
       "status": "review_required",
       "playlistEntries": 961,
       "sourceType": "discovered",
-      "stars": 672,
+      "stars": 671,
       "license": "MIT",
-      "checkedAt": "2026-11-08T18:05:32.328626+00:00"
+      "checkedAt": "2026-11-09T07:12:22.007489+00:00"
     },
     {
       "id": "gh-euzu-tuliprox-0",
@@ -163,7 +163,7 @@
       "sourceType": "discovered",
       "stars": 593,
       "license": "MIT",
-      "checkedAt": "2026-11-08T18:05:35.082911+00:00"
+      "checkedAt": "2026-11-09T07:12:24.152325+00:00"
     },
     {
       "id": "gh-euzu-tuliprox-1",
@@ -174,29 +174,29 @@
       "sourceType": "discovered",
       "stars": 593,
       "license": "MIT",
-      "checkedAt": "2026-11-08T18:05:35.472184+00:00"
+      "checkedAt": "2026-11-09T07:12:24.331402+00:00"
     },
     {
       "id": "gh-m3u8-xtream-m3u8-xtream-playlist-0",
       "url": "https://iptv-org.github.io/iptv/categories/entertainment.m3u",
       "repository": "m3u8-xtream/m3u8-xtream-playlist",
       "status": "review_required",
-      "playlistEntries": 908,
+      "playlistEntries": 907,
       "sourceType": "discovered",
-      "stars": 567,
+      "stars": 568,
       "license": "Unlicense",
-      "checkedAt": "2026-11-08T18:05:36.309171+00:00"
+      "checkedAt": "2026-11-09T07:12:25.172320+00:00"
     },
     {
       "id": "gh---1",
       "url": "https://raw.githubusercontent.com/CCSH/IPTV/main/live_lite.m3u",
       "repository": "CCSH/IPTV",
       "status": "review_required",
-      "playlistEntries": 3436,
+      "playlistEntries": 3437,
       "sourceType": "discovered",
-      "stars": 547,
+      "stars": 548,
       "license": "MIT",
-      "checkedAt": "2026-11-08T18:05:40.413832+00:00"
+      "checkedAt": "2026-11-09T07:12:26.872810+00:00"
     }
   ]
 }
